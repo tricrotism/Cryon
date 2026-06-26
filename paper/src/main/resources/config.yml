@@ -1,0 +1,16 @@
+# Cross-server infrastructure. Both must be enabled for the persistent, cross-server player
+# language override; otherwise locale falls back to each client's own setting.
+
+database:
+    enabled: false
+    host: localhost
+    port: 5432
+    database: cryon
+    username: cryon
+    password: ""
+    max-pool-size: 10
+
+redis:
+    enabled: false
+    # redis://[:password@]host:port/db
+    uri: "redis://localhost:6379/0"

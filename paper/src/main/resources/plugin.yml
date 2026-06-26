@@ -1,0 +1,22 @@
+name: Cryon
+version: '${version}'
+
+main: com.tricrotism.cryon.Cryon
+api-version: '26.2'
+load: POSTWORLD
+
+authors: [ tricrotism ]
+website: https://tricrotism.com/
+
+# Resolved by Paper's runtime library loader into the plugin classloader (visible to feature jars).
+# Commands use Paper's native Brigadier API (no extra library).
+libraries:
+    - com.github.ben-manes.caffeine:caffeine:3.1.8
+    - com.zaxxer:HikariCP:5.1.0
+    - org.postgresql:postgresql:42.7.4
+    - io.lettuce:lettuce-core:6.4.0.RELEASE
+
+permissions:
+    cryon.admin:
+        description: Access to Cryon admin / module-manager commands
+        default: op
