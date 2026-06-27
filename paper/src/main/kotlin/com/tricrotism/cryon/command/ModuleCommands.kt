@@ -9,6 +9,8 @@ import com.tricrotism.cryon.paper.api.command.Command
 import com.tricrotism.cryon.paper.api.command.Permission
 import com.tricrotism.cryon.paper.api.command.Subcommand
 import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.event.ClickEvent
+import net.kyori.adventure.text.event.HoverEvent
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder
 import org.bukkit.command.CommandSender
 
@@ -38,12 +40,15 @@ class ModuleCommands(private val modules: ModuleManager) {
             return
         }
         sender.sendMessage(
-            CommonMessages.info(
-                Mini.format(
-                    "<off_white>Module <highlight><id></highlight> is <state>",
-                    Placeholder.unparsed("id", id),
-                    Placeholder.component("state", stateLabel(state)),
-                )
+            Component.textOfChildren(
+                CommonMessages.info(
+                    Mini.format(
+                        "<off_white>Module <highlight><id></highlight> is <state> ",
+                        Placeholder.unparsed("id", id),
+                        Placeholder.component("state", stateLabel(state)),
+                    )
+                ),
+                actionButtons(id, state),
             )
         )
     }
@@ -63,6 +68,7 @@ class ModuleCommands(private val modules: ModuleManager) {
         }
         if (modules.reload(id)) {
             sender.sendMessage(CommonMessages.success(line("<off_white>Reloaded <highlight><id></highlight>.", id)))
+            resyncCommands(sender)
         } else {
             sender.sendMessage(
                 CommonMessages.error(
@@ -82,11 +88,17 @@ class ModuleCommands(private val modules: ModuleManager) {
     private fun list(sender: CommandSender) {
         val states = modules.states()
         sender.sendMessage(
-            CommonMessages.info(
-                Mini.format(
-                    "<off_white>Loaded modules <highlight>(<count>)</highlight>:",
-                    Placeholder.unparsed("count", states.size.toString())
-                )
+            Component.textOfChildren(
+                CommonMessages.info(
+                    Mini.format(
+                        "<off_white>Loaded modules <highlight>(<count>)</highlight>: ",
+                        Placeholder.unparsed("count", states.size.toString())
+                    )
+                ),
+                button(
+                    "↻ refresh", "sky_blue", "/cryon modules",
+                    Mini.format("<sky_blue><b>↻ Refresh</b></sky_blue><newline><slate_gray>Re-run this list"),
+                ),
             )
         )
         if (states.isEmpty()) {
@@ -95,10 +107,13 @@ class ModuleCommands(private val modules: ModuleManager) {
         }
         for ((id, state) in states) {
             sender.sendMessage(
-                Mini.format(
-                    "  <slate_gray>•</slate_gray> <off_white><id> <state>",
-                    Placeholder.unparsed("id", id),
-                    Placeholder.component("state", stateLabel(state)),
+                Component.textOfChildren(
+                    Mini.format(
+                        "  <slate_gray>•</slate_gray> <off_white><id></off_white> <state> ",
+                        Placeholder.unparsed("id", id),
+                        Placeholder.component("state", stateLabel(state)),
+                    ),
+                    actionButtons(id, state),
                 )
             )
         }
@@ -113,6 +128,7 @@ class ModuleCommands(private val modules: ModuleManager) {
         val changed = if (enable) modules.enable(id) else modules.disable(id)
         if (changed) {
             sender.sendMessage(CommonMessages.success(line("<off_white>Module <highlight><id></highlight> $verb.", id)))
+            resyncCommands(sender)
         } else {
             sender.sendMessage(
                 CommonMessages.warn(
@@ -123,6 +139,40 @@ class ModuleCommands(private val modules: ModuleManager) {
                 )
             )
         }
+    }
+
+    /** The clickable action row shown after a module — a state-aware toggle plus reload and info. */
+    private fun actionButtons(id: String, state: ModuleState): Component {
+        val toggle = if (state == ModuleState.ENABLED) {
+            button("■", "scarlet", "/cryon disable $id", actionHover("scarlet", "■ Disable", "disable", id))
+        } else {
+            button("▶", "emerald", "/cryon enable $id", actionHover("emerald", "▶ Enable", "enable", id))
+        }
+        return Component.textOfChildren(
+            toggle,
+            Component.space(),
+            button("↻", "sky_blue", "/cryon reload $id", actionHover("sky_blue", "↻ Reload", "reload", id)),
+            Component.space(),
+            button("ⓘ", "gold", "/cryon info $id", actionHover("gold", "ⓘ Info", "view details for", id)),
+        )
+    }
+
+    /** A bracketed, palette-coloured label that runs [command] on click and shows [hover] on mouse-over. */
+    private fun button(label: String, tag: String, command: String, hover: Component): Component =
+        Mini.format("<slate_gray>[</slate_gray><$tag>$label</$tag><slate_gray>]</slate_gray>")
+            .clickEvent(ClickEvent.runCommand(command))
+            .hoverEvent(HoverEvent.showText(hover))
+
+    private fun actionHover(tag: String, title: String, action: String, id: String): Component =
+        Mini.format(
+            "<$tag><b><t></b></$tag><newline><slate_gray>Click to $action <highlight><id></highlight>",
+            Placeholder.unparsed("t", title),
+            Placeholder.unparsed("id", id),
+        )
+
+    /** Push refreshed command trees so a toggled module's commands also appear/vanish in tab-complete. */
+    private fun resyncCommands(sender: CommandSender) {
+        sender.server.onlinePlayers.forEach { it.updateCommands() }
     }
 
     private fun line(template: String, id: String): Component = Mini.format(template, Placeholder.unparsed("id", id))

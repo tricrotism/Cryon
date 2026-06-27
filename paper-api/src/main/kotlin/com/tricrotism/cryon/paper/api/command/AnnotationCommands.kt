@@ -10,6 +10,7 @@ import io.papermc.paper.command.brigadier.CommandSourceStack
 import io.papermc.paper.command.brigadier.Commands
 import java.lang.reflect.Method
 import java.lang.reflect.Parameter
+import java.util.function.Predicate
 import com.mojang.brigadier.Command as BrigadierCommand
 
 /**
@@ -22,21 +23,29 @@ object AnnotationCommands {
 
     fun register(registrar: Commands, vararg handlers: Any) = handlers.forEach { register(registrar, it) }
 
-    fun register(registrar: Commands, handler: Any) {
+    /**
+     * Register [handler]. [available] is AND-ed into every node's access check, so a feature can pass
+     * its own enabled-state (`::isEnabled`) and have the whole command tree become unavailable while
+     * the module is disabled, then reappear on re-enable — re-evaluated per dispatch, no re-register.
+     */
+    fun register(registrar: Commands, handler: Any, available: () -> Boolean = { true }) {
         val type = handler.javaClass
         val command = type.getAnnotation(Command::class.java) ?: error("${type.name} is missing @Command")
 
         val root = Commands.literal(command.name)
-        type.getAnnotation(Permission::class.java)
-            ?.let { perm -> root.requires { it.sender.hasPermission(perm.value) } }
+        root.requires(guard(available, type.getAnnotation(Permission::class.java)?.value))
 
         for (method in type.methods) {
             val sub = method.getAnnotation(Subcommand::class.java) ?: continue
-            addMethod(root, handler, method, sub.value, method.getAnnotation(Permission::class.java)?.value)
+            addMethod(root, handler, method, sub.value, method.getAnnotation(Permission::class.java)?.value, available)
         }
 
         registrar.register(root.build(), command.description.ifEmpty { null }, command.aliases.toList())
     }
+
+    /** Brigadier access predicate: the module must be [available] and the sender hold any [permission]. */
+    private fun guard(available: () -> Boolean, permission: String?): Predicate<CommandSourceStack> =
+        Predicate { source -> available() && (permission == null || source.sender.hasPermission(permission)) }
 
     private fun addMethod(
         root: ArgumentBuilder<CommandSourceStack, *>,
@@ -44,6 +53,7 @@ object AnnotationCommands {
         method: Method,
         path: Array<out String>,
         permission: String?,
+        available: () -> Boolean,
     ) {
         val executor = BrigadierCommand<CommandSourceStack> { ctx ->
             invoke(handler, method, ctx)
@@ -57,13 +67,13 @@ object AnnotationCommands {
 
         if (elements.isEmpty()) {
             root.executes(executor)
-            permission?.let { perm -> root.requires { it.sender.hasPermission(perm) } }
+            permission?.let { perm -> root.requires(guard(available, perm)) }
             return
         }
 
         var current = elements.last()
         current.executes(executor)
-        permission?.let { perm -> current.requires { it.sender.hasPermission(perm) } }
+        permission?.let { perm -> current.requires(guard(available, perm)) }
         for (i in elements.size - 2 downTo 0) {
             current = elements[i].then(current)
         }

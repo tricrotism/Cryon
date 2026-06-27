@@ -39,10 +39,11 @@ class Cryon : JavaPlugin() {
     private val log: Logger = LoggerFactory.getLogger("Cryon")
     private lateinit var manager: ModuleManager
     private val moduleLoaders = ArrayList<URLClassLoader>()
+    private var apiLoader: URLClassLoader? = null
 
     private var database: Database? = null
     private var messenger: Messenger? = null
-    private var localeStore: PlayerLocaleStore? = null
+    private var localeStore: LocaleStore? = null
 
     override fun onEnable() {
         CryonPaper.init(this) // so Schedulers/Events can reach the plugin
@@ -56,10 +57,16 @@ class Cryon : JavaPlugin() {
         setupInfrastructure(services)
 
         manager = ModuleManager(log)
+        services.register(ModuleManager::class, manager) // so modules can query their own enabled-state
         val context = CryonContext(this, server, log, services)
 
+        // Shared cross-module contract layer: every jar in api/ is loaded once, into the parent of
+        // all feature loaders, so features can intertwine through the same shared types.
+        val apiDir = File(dataFolder, "api").apply { mkdirs() }
+        val moduleParent = loadSharedApi(apiDir)
+
         val modulesDir = File(dataFolder, "modules").apply { mkdirs() }
-        discover(modulesDir, messageService)
+        discover(modulesDir, moduleParent, messageService)
 
         manager.loadAll(context)
         manager.enableAll()
@@ -107,7 +114,7 @@ class Cryon : JavaPlugin() {
                 services.register(Database::class, db)
                 log.info("PostgreSQL connected")
             } catch (e: Exception) {
-                log.error("Failed to initialize PostgreSQL — continuing without it", e)
+                log.error("Failed to initialize PostgreSQL... continuing without it", e)
             }
         }
 
@@ -118,33 +125,58 @@ class Cryon : JavaPlugin() {
                 services.register(Messenger::class, redis)
                 log.info("Redis connected")
             } catch (e: Exception) {
-                log.error("Failed to initialize Redis — continuing without it", e)
+                log.error("Failed to initialize Redis... continuing without it", e)
             }
         }
 
         val db = database
         val redis = messenger
-        if (db != null && redis != null) {
-            val store = PlayerLocaleStore(db, redis)
-            store.init().exceptionally { log.error("Failed to create locale table", it); null }
-            localeStore = store
-            Locales.install(store)
-            Events.subscribe(PlayerJoinEvent::class.java).handler { store.load(it.player.uniqueId) }
-            Events.subscribe(PlayerQuitEvent::class.java).handler { store.unload(it.player.uniqueId) }
-            log.info("Persistent cross-server player locale enabled")
+        val store: LocaleStore = if (db != null && redis != null) {
+            PlayerLocaleStore(db, redis).also { s ->
+                s.init().exceptionally { log.error("Failed to create locale table", it); null }
+                Events.subscribe(PlayerJoinEvent::class.java).handler { event -> s.load(event.player.uniqueId) }
+                Events.subscribe(PlayerQuitEvent::class.java).handler { event -> s.unload(event.player.uniqueId) }
+                log.info("Persistent cross-server player locale enabled")
+            }
+        } else {
+            log.info("Player locale overrides are in-memory only (no database + redis) — they reset on restart")
+            MemoryLocaleStore()
         }
+        localeStore = store
+        Locales.install(store)
     }
 
     override fun onDisable() {
         if (::manager.isInitialized) manager.disableAll()
         moduleLoaders.forEach { runCatching(it::close) }
         moduleLoaders.clear()
+        // close children (modules) before the shared parent
+        apiLoader?.let { runCatching(it::close) }
+        apiLoader = null
         localeStore?.close()
         messenger?.close()
         database?.close()
     }
 
-    private fun discover(dir: File, messageService: MessageService) {
+    /**
+     * Load every jar in `plugins/Cryon/api/` into one shared [URLClassLoader] that becomes the parent
+     * of every feature loader — the cross-module contract layer. An `*-api` jar dropped here exposes
+     * its interfaces to *all* features at once (loaded once, so one shared type), letting a feature in
+     * one repo register a service that a feature in another repo consumes through the registry. Returns
+     * this plugin's own loader unchanged when `api/` is empty, so there's no extra layer until used.
+     */
+    private fun loadSharedApi(dir: File): ClassLoader {
+        val jars = dir.listFiles { f: File -> f.isFile && f.name.endsWith(".jar") }
+            ?.sortedBy(File::getName)
+            ?: emptyList()
+        if (jars.isEmpty()) return javaClass.classLoader
+        val loader = URLClassLoader(jars.map { it.toURI().toURL() }.toTypedArray(), javaClass.classLoader)
+        apiLoader = loader
+        log.info("Loaded {} shared API jar(s) from {}", jars.size, dir.path)
+        return loader
+    }
+
+    private fun discover(dir: File, moduleParent: ClassLoader, messageService: MessageService) {
         val jars = dir.listFiles { f: File -> f.isFile && f.name.endsWith(".jar") }
             ?.sortedBy(File::getName)
             ?: emptyList()
@@ -154,8 +186,9 @@ class Cryon : JavaPlugin() {
         }
         for (jar in jars) {
             try {
-                // One isolated loader per jar; parent = this plugin's loader (shared API + Paper).
-                val loader = URLClassLoader(arrayOf(jar.toURI().toURL()), javaClass.classLoader)
+                // One isolated loader per jar; parent = the shared API layer (which exposes Paper + the
+                // core API + any api/ contract jars). Features see the api/ types but not each other.
+                val loader = URLClassLoader(arrayOf(jar.toURI().toURL()), moduleParent)
                 moduleLoaders.add(loader)
 
                 // Auto-register any lang/<locale>.properties the feature bundles (read straight from

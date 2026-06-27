@@ -16,8 +16,9 @@ This repo (the core + published API):
   `event.Events`, and Paper `extension`s. Bukkit on `compileOnly`. **Published.**
 - **`:paper`** — the core plugin / **loader** (`com.tricrotism.cryon.Cryon`). Built with
   `paperweight.userdev` + Shadow + `run-paper`; bundles `:common` + `:paper-api` + kotlin-stdlib so
-  loaded features see them. On enable it calls `CryonPaper.init`, registers a `MessageService`, then
-  scans `plugins/Cryon/modules/` for jars. See **Module System** and **Utilities**.
+  loaded features see them. On enable it calls `CryonPaper.init`, registers a `MessageService`, loads
+  shared contract jars from `plugins/Cryon/api/`, then scans `plugins/Cryon/modules/` for feature
+  jars. See **Module System** and **Utilities**.
 
 Features live in **separate repos** (e.g. `Cryon-Modules/cryon-example-feature/`), compile the API
 as `compileOnly`, and build a thin jar dropped into `plugins/Cryon/modules/`. A `:velocity` loader
@@ -329,11 +330,14 @@ Features are **modules**, each shipped as its own jar (its own repo) and **loade
 core. Framework types live in `:common` (`com.tricrotism.cryon.common.module`); the Paper base in
 `:paper-api` (`com.tricrotism.cryon.paper.api`).
 
-**The loader** (`Cryon.kt`, `:paper`): on enable it scans `plugins/Cryon/modules/` for `*.jar`,
-loads **each jar in its own isolated `URLClassLoader`** (parent = the core plugin's loader, which
-exposes the shared API + Paper + kotlin-stdlib), discovers `Module`s via `ServiceLoader`, then runs
+**The loader** (`Cryon.kt`, `:paper`): on enable it first loads every jar in `plugins/Cryon/api/`
+into **one shared `URLClassLoader`** (the cross-module contract layer — see below), then scans
+`plugins/Cryon/modules/` for `*.jar` and loads **each in its own isolated `URLClassLoader`** whose
+parent is that shared API loader (which itself chains to the core plugin's loader → Paper +
+`:common`/`:paper-api` + kotlin-stdlib). It discovers `Module`s via `ServiceLoader`, then runs
 `ModuleManager.loadAll(context)` → `enableAll()`. A broken jar is logged and skipped (caught as
-`Throwable` — `ServiceConfigurationError` is an `Error`). Loaders are closed on disable.
+`Throwable` — `ServiceConfigurationError` is an `Error`). Loaders are closed on disable (modules
+before the shared parent). With an empty `api/` the shared layer is skipped — no behaviour change.
 
 **Core types:**
 
@@ -350,9 +354,24 @@ exposes the shared API + Paper + kotlin-stdlib), discovers `Module`s via `Servic
 
 **Isolation → intertwine only through shared interfaces.** Feature jars can't see each other's
 classes (separate loaders). A feature exposes behaviour by registering an implementation of an
-**API interface that lives in a shared, core-bundled artifact** (`:common`, `:paper-api`, or a
-dedicated feature-api jar both sides compile against). Never reference another feature's concrete
-classes.
+**API interface that lives in a shared artifact loaded by the common parent** — `:common`,
+`:paper-api`, or a **contract jar dropped in `plugins/Cryon/api/`** (see **Cross-module contracts**).
+Never reference another feature's concrete classes.
+
+**Cross-module contracts — the `api/` layer.** When one feature needs to expose an API to *another
+feature in a separate repo*, the contract type must be loaded by the **shared parent**, not bundled
+in either feature jar (two bundled copies = two `Class` objects in two loaders = `ClassCastException`
+through the registry). Mechanism: ship the interfaces in a thin **`*-api` jar** and drop it in
+`plugins/Cryon/api/`; the loader puts every such jar on the one shared classloader that parents all
+features, so they resolve the same type. Both the provider and the consumer depend on it
+**`compileOnly`** (the runtime copy comes from `api/`). The provider registers
+`services.register(FooService::class, impl)` in `onLoad`; the consumer resolves it with
+`services.find(FooService::class)` in `onEnable` (use `find`, not `get` — an independent repo may not
+be installed). The reference example is `Cryon-Modules/cryon-visibility-api` (contract) consumed by
+`cryon-visibility` (impl) — a separate `cryon-spawn` would `compileOnly` the same api jar and add its
+own `VisibilityRule`. Don't promote one-off, same-jar interfaces here; reserve `api/` for genuinely
+cross-repo contracts. (For a contract you own and ship with the core anyway, `:paper-api` is still
+fine — `api/` is for feature-defined contracts that shouldn't live in the core.)
 
 **Order-independence:** `onLoad` runs for *every* module before any `onEnable`, so a peer's
 services are always registered by the time you consume them in `onEnable`. No declared load order.
@@ -360,7 +379,16 @@ services are always registered by the time you consume them in `onEnable`. No de
 **Runtime management:** `ModuleManager` tracks a `ModuleState` per module
 (`REGISTERED`/`LOADED`/`ENABLED`/`DISABLED`/`FAILED`) and supports `enable`/`disable`/`reload(id)` at
 runtime — re-enabling reuses the context captured at load. The built-in **`/cryon`** command surfaces
-this (`/cryon modules|info|enable|disable|reload <id>`). It's lifecycle-only — no jar reload.
+this (`/cryon modules|info|enable|disable|reload <id>`). It's lifecycle-only — no jar reload. The
+manager is registered into the `ServiceRegistry`, so a module reads its own live state via
+`PaperModule.isEnabled()`.
+
+**Commands track module state.** A `@Command` class registered through `PaperModule.registerCommands(…)`
+is gated on `isEnabled()` (the helper passes it as the `available` guard to `AnnotationCommands`), so
+a Brigadier command can't be run — or tab-completed — while its module is disabled, and reappears on
+re-enable, all without re-registering (the guard is re-evaluated per dispatch). `/cryon enable|disable|reload`
+calls `Player.updateCommands()` so clients resync immediately. A disabled command shows the vanilla
+"unknown command" rather than a styled message; that's the trade-off for gating at the Brigadier layer.
 
 **Authoring a feature** (see `Cryon-Modules/cryon-example-feature/`): new repo → `compileOnly` the
 published `:common` + `:paper-api` (+ Paper API) → `class Foo : PaperModule()` with a no-arg ctor →
@@ -455,7 +483,11 @@ class ModuleCommands(private val modules: ModuleManager) {
 `@Command`/`@Subcommand`/`@Permission`/`@Arg(name, suggests)`/`@Greedy`. The `CommandSender` param is
 injected; `@Arg` names the Brigadier argument (types `String`/`Int`/`Boolean`) and a `suggests`
 method gives completions. Built-ins: **`/cryon`** (module manager, `cryon.admin`) and **`/language`**
-(`/lang`). Bodies wrap localized content in `CommonMessages` for the icon prefix.
+(`/lang`). Bodies wrap localized content in `CommonMessages` for the icon prefix. **Feature modules
+register via `PaperModule.registerCommands(handler…)` in `onLoad`**, not the raw lifecycle call — the
+helper registers in the COMMANDS window and passes `register(registrar, handler, available = ::isEnabled)`
+so the command is gated on the module being enabled (see **Module System → Commands track module state**).
+The core's own commands use the plain `register(registrar, vararg handlers)` (always available).
 
 **Cross-server infra (`:common` `…common.data` / `…common.net`):** opt-in, config-gated.
 
@@ -473,8 +505,11 @@ method gives completions. Built-ins: **`/cryon`** (module manager, `cryon.admin`
 override ?: client `locale()`**; all message helpers use it. The client locale is automatic and
 already consistent across servers (the client reports it). A **chosen override** (`player.setLanguage(de)`)
 persists to SQL and broadcasts a Redis invalidation so every server updates; `PlayerLocaleStore`
-caches it in memory (loaded on join) for synchronous reads. Without SQL+Redis configured, there's no
-override — resolution just returns the client locale.
+caches it in memory (loaded on join) for synchronous reads. The store is a `LocaleStore` interface:
+the core installs `PlayerLocaleStore` when SQL+Redis are configured, else a `MemoryLocaleStore` —
+overrides still work via `/language`, but per-server and **reset on restart** (no persistence, no
+cross-server sync). Either way a store is always installed; resolution falls back to the client
+locale for anyone without an override.
 
 ### Architecture — what doesn't exist yet
 

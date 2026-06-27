@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap
 class PlayerLocaleStore(
     private val database: Database,
     private val messenger: Messenger,
-) {
+) : LocaleStore {
     // present-value = override; present-empty = loaded, no override; absent = not loaded.
     private val cache = ConcurrentHashMap<UUID, Optional<Locale>>()
     private val subscription: MessengerSubscription = messenger.subscribe(CHANNEL, ::onInvalidate)
@@ -40,10 +40,10 @@ class PlayerLocaleStore(
     }
 
     /** The cached override for [uuid], or null (no override, or not loaded). Synchronous. */
-    fun cached(uuid: UUID): Locale? = cache[uuid]?.orElse(null)
+    override fun cached(uuid: UUID): Locale? = cache[uuid]?.orElse(null)
 
     /** Set [uuid]'s override, persist it, and invalidate other servers. */
-    fun set(uuid: UUID, locale: Locale): CompletableFuture<Void> =
+    override fun set(uuid: UUID, locale: Locale): CompletableFuture<Void> =
         database.update(
             "INSERT INTO cryon_player_locale (uuid, locale) VALUES (?, ?) " +
                     "ON CONFLICT (uuid) DO UPDATE SET locale = EXCLUDED.locale",
@@ -54,14 +54,14 @@ class PlayerLocaleStore(
         }
 
     /** Clear [uuid]'s override. */
-    fun clear(uuid: UUID): CompletableFuture<Void> =
+    override fun clear(uuid: UUID): CompletableFuture<Void> =
         database.update("DELETE FROM cryon_player_locale WHERE uuid = ?", uuid.toString())
             .thenCompose {
                 cache[uuid] = Optional.empty()
                 messenger.publish(CHANNEL, uuid.toString())
             }
 
-    fun close() {
+    override fun close() {
         subscription.unsubscribe()
     }
 

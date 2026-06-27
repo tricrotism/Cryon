@@ -1,0 +1,43 @@
+name: Crowdin
+
+# Pushes English sources to Crowdin when they change, and opens a PR with new translations daily
+# (or on demand). Requires repo secrets CROWDIN_PROJECT_ID and CROWDIN_PERSONAL_TOKEN — see
+# TRANSLATING.md. Does nothing destructive: translations arrive as a reviewable PR.
+
+on:
+    push:
+        branches: [ master ]
+        paths:
+            - '**/src/main/resources/lang/en_US.properties'
+            - 'crowdin.yml'
+    schedule:
+        -   cron: '0 6 * * *'
+    workflow_dispatch:
+
+concurrency:
+    group: crowdin-${{ github.ref }}
+    cancel-in-progress: true
+
+permissions:
+    contents: write
+    pull-requests: write
+
+jobs:
+    synchronize:
+        runs-on: ubuntu-latest
+        steps:
+            -   uses: actions/checkout@v4
+            -   name: Upload sources & download translations
+                uses: crowdin/github-action@v2
+                with:
+                    upload_sources: true
+                    upload_translations: false
+                    download_translations: true
+                    localization_branch_name: l10n_crowdin
+                    create_pull_request: true
+                    pull_request_base_branch_name: master
+                    pull_request_title: '[i18n] Sync translations from Crowdin'
+                    commit_message: '[i18n] Sync translations from Crowdin'
+                env:
+                    CROWDIN_PROJECT_ID: ${{ secrets.CROWDIN_PROJECT_ID }}
+                    CROWDIN_PERSONAL_TOKEN: ${{ secrets.CROWDIN_PERSONAL_TOKEN }}
