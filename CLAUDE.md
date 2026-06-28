@@ -1,117 +1,91 @@
 # Cryon Dev Guide
 
-**Kotlin** project for a **Velocity + Paper** network, built as a **feature-loader framework**:
-the Cryon core is a Paper plugin that discovers and loads independent **feature jars** (each its
-own repo) at boot. Stack: **JDK 25** toolchain, **Kotlin 2.4.20-Beta1**, Paper dev bundle **26.2**.
+**Kotlin** **Velocity + Paper** network built as a **feature-loader framework**: the Cryon core is a
+Paper plugin that discovers and loads independent **feature jars** (each its own repo) at boot.
+Stack: **JDK 25**, **Kotlin 2.4.20-Beta1**, Paper dev bundle **26.2**.
 
-This repo (the core + published API):
+Modules in this repo (core + published API):
 
-- **`:common`** — platform-neutral framework + utilities. Module system (`Module`, `ModuleManager`,
-  `ModuleContext`, `ServiceRegistry`), plus `number` (`LongUtils`, `BigDecimalUtils`, `NumberUtils`,
-  `CryonNumber`), `text` (`CryonPalette`, `MessageType`, `CommonMessages`), `locale` (`MessageService`
-    + sources), and primitive `extension`s. Adventure on `compileOnly`; no Bukkit/Velocity types, so a
-      future `:velocity` loader reuses it. **Published.**
-- **`:paper-api`** — Paper-side API feature repos compile against: `PaperModule`/`PaperModuleContext`,
-  `CryonPaper` (plugin handle), `item.ItemBuilder`, `scheduler.Schedulers` (Folia-aware),
-  `event.Events`, and Paper `extension`s. Bukkit on `compileOnly`. **Published.**
-- **`:paper`** — the core plugin / **loader** (`com.tricrotism.cryon.Cryon`). Built with
-  `paperweight.userdev` + Shadow + `run-paper`; bundles `:common` + `:paper-api` + kotlin-stdlib so
-  loaded features see them. On enable it calls `CryonPaper.init`, registers a `MessageService`, loads
-  shared contract jars from `plugins/Cryon/api/`, then scans `plugins/Cryon/modules/` for feature
-  jars. See **Module System** and **Utilities**.
+- **`:common`** — platform-neutral framework: module system (`Module`, `ModuleManager`,
+  `ModuleContext`, `ServiceRegistry`), `number` (`PackedDecimal`, `LongUtils`, `BigDecimalUtils`,
+  `NumberUtils`), `text` (`Mini`, `CryonPalette`, `MessageType`, `CommonMessages`), `locale`
+  (`MessageService` + sources), `data`/`net` (SQL + Redis), primitive `extension`s. Adventure
+  `compileOnly`; no Bukkit/Velocity types (a future `:velocity` loader reuses it). **Published.**
+- **`:paper-api`** — what feature repos compile against: `PaperModule`/`PaperModuleContext`,
+  `CryonPaper`, `item.ItemBuilder`, `scheduler.Schedulers` (Folia-aware), `event.Events`,
+  `command` (annotation framework), Paper `extension`s. Bukkit `compileOnly`. **Published.**
+- **`:paper`** — the core plugin / **loader** (`com.tricrotism.cryon.Cryon`). paperweight.userdev +
+  Shadow + run-paper; bundles `:common` + `:paper-api` + kotlin-stdlib for loaded features.
 
-Features live in **separate repos** (e.g. `Cryon-Modules/cryon-example-feature/`), compile the API
-as `compileOnly`, and build a thin jar dropped into `plugins/Cryon/modules/`. A `:velocity` loader
-can be added later against the same `:common` framework with no refactor.
+Features live in **separate repos** (e.g. `Cryon-Modules/cryon-example-feature/`), `compileOnly` the
+API, and ship a thin jar dropped into `plugins/Cryon/modules/`.
 
-Beyond the module loader there is still **no** DI container, codegen, menu framework, or coroutine
-bridge (SQL persistence, Redis messaging, and a `config.yml` now exist — see **Utilities**). This
-guide documents only what exists today
-plus the universal disciplines we hold across projects. **When you add infrastructure (DI, DB,
-KSP, InvUI, a config/feedback abstraction, Folia support, the `:velocity` loader), document it
-here in the same pass** — don't let this guide describe infra that doesn't exist, and don't
-leave new infra undocumented.
+**No** DI container, codegen, menu framework, or coroutine bridge yet. **When you add infrastructure
+(DI, KSP, InvUI, Folia, the `:velocity` loader), document it here in the same pass** — keep this
+guide and the code in lockstep.
 
 ---
 
 ## Working Practices
 
-Bias toward caution over speed. Use judgment on trivial tasks.
+Bias toward caution over speed; use judgment on trivial tasks.
 
-- **Think first.** State assumptions. If multiple interpretations exist, surface them — don't
-  pick silently. If something is unclear, stop and ask.
-- **Simplicity first.** Minimum code that solves the problem. No speculative features,
-  abstractions for single-use code, configurability, or error handling for impossible cases.
-  If you wrote 200 lines and it could be 50, rewrite.
-- **Light logic first.** Reach for the lightest tool: a one-line guard over a helper, a helper
-  over a class, a typed local over a new field, an existing extension function over a new one,
-  a direct `if`/`when` chain over a strategy/registry until 3+ branches truly vary
-  independently. When torn between two approaches, write the lighter one; escalate only when it
-  provably fails.
-- **Surgical changes.** Touch only what you must. Don't refactor what isn't broken or "improve"
-  adjacent code. Match existing style. Remove only the imports/symbols *your* change made
-  unused; mention pre-existing dead code, don't delete it.
-- **Update deprecated usages when you touch a file** — migrate legacy `§` color codes, untyped
-  lambdas, IDE-flagged `@Deprecated` Bukkit calls — but only on lines you'd already be reading
-  or changing. Don't open a file purely to chase deprecations. If a migration is non-trivial
-  (signature change, callsite cascade), ask first.
-- **Wire new effects everywhere they apply.** When a feature adds a multiplier, buff, debuff,
-  drop chance, or cost modifier that should stack with existing systems, hunt down every
-  relevant call site and hook it in (sell paths, drop paths, currency awards, crafting, etc.).
-  A new multiplier that only fires in one of four paths is a bug, not a feature. Grep for the
-  existing peers and mirror them. If unsure which paths apply, ask before shipping.
+- **Think first / ask.** State assumptions. Surface multiple interpretations — don't pick silently.
+  Unclear → stop and ask.
+- **Simplicity first.** Minimum code that solves the problem. No speculative features, single-use
+  abstractions, configurability, or error handling for impossible cases. 200 lines that could be 50 → rewrite.
+- **Light logic first.** Lightest tool wins: one-line guard over helper, helper over class, typed
+  local over field, existing extension over new one, `if`/`when` over strategy/registry until 3+
+  branches truly vary independently. Escalate only when the lighter form provably fails.
+- **Surgical changes.** Touch only what you must. Don't refactor or "improve" adjacent code. Match
+  existing style. Remove only the symbols *your* change made unused; mention pre-existing dead code, don't delete it.
+- **Update deprecations only on lines you already touch** (legacy `§`, untyped lambdas, `@Deprecated`
+  Bukkit calls). Don't open a file just to chase them. Non-trivial migration (signature/callsite cascade) → ask first.
+- **Wire new effects everywhere they apply.** A multiplier/buff/drop-chance/cost modifier must hook
+  every relevant call site (sell, drop, currency, crafting). Firing in one of four paths is a bug.
+  Grep the peers and mirror them; unsure → ask.
 
 ---
 
 ## Kotlin Style
 
-- `val` over `var`. Data classes for models. Sealed interfaces/classes for result types
-  (`sealed interface TransactionResult { data object Success; data class Failure(val reason: Component) }`).
-  `object` for singletons, `companion object` for factories/constants.
-- **Explicit types on public API** and anywhere inference hurts readability. Null-safety
-  (`?.` / `?:`) throughout — no Java-isms (`!!` only when truly invariant).
-- **Extension functions are preferred** — check existing extensions before writing a helper;
-  put genuinely reusable helpers in an `…extension` file rather than a static util.
-- **Scheduling goes through `Schedulers`** (`:paper-api`, Folia-aware) — `async { … }` for
-  off-thread work, `global`/`region`/`entity` for main-thread work in the right scope. Don't reach
-  for raw `Bukkit.getScheduler()`. No coroutine bridge yet; if one is added, document it here and
-  migrate. See **Utilities** and **Thread Safety**.
+- `val` over `var`. Data classes for models. Sealed interfaces/classes for result types. `object`
+  singletons, `companion object` factories/constants.
+- **Explicit types on public API** and where inference hurts readability. Null-safety (`?.`/`?:`)
+  throughout — no Java-isms; `!!` only when truly invariant.
+- **Prefer extension functions** — check existing ones first; reusable helpers go in an `…extension`
+  file, not a static util.
+- **Schedule through `Schedulers`** (Folia-aware), never raw `Bukkit.getScheduler()`.
 
 ---
 
 ## Code Quality
 
-Apply ordinary code-smell scrutiny when writing or reviewing:
+Apply ordinary code-smell scrutiny:
 
-- **Null-safety on external returns** — `Bukkit.getPlayer(...)`, config reads,
-  `event.item`, `inventory.getItem(...)`, anything crossing the Bukkit boundary. Internal code
-  can trust your own invariants.
-- **Resource leaks** — listeners never unregistered, scheduled tasks left running on disable,
-  `TextDisplay`/`ItemDisplay` entities not despawned, open inventories not handled.
+- **Null-safety on external returns** — `Bukkit.getPlayer`, config reads, `event.item`,
+  `inventory.getItem`, anything crossing the Bukkit boundary. Internal invariants you can trust.
+- **Resource leaks** — unregistered listeners, tasks left running on disable, `TextDisplay`/`ItemDisplay`
+  not despawned, open inventories unhandled.
 - **Mutable shared state without thread-safety** (see Thread Safety).
-- **Accidentally quadratic loops** — nested iterations over online players, per-block work
-  inside per-player work.
-- **Broad `catch (e: Exception)` that swallows context.** Rethrow, log with context, or scope
-  the catch.
-- **Misleading identifiers** (`get…` that mutates, `enabled` that means the opposite).
-- **Dead branches / unreachable returns** introduced by your own changes.
+- **Accidentally quadratic loops** — per-block work inside per-player work, etc.
+- **Broad `catch (e: Exception)` that swallows context** — rethrow, log with context, or scope it.
+- **Misleading identifiers** (`get…` that mutates, `enabled` meaning the opposite).
+- **Dead branches / unreachable returns** your change introduced.
 
-Don't flag (intentional or out of scope): many-parameter Bukkit event/command signatures,
-hardcoded dependency versions, `TODO` comments, wildcard Bukkit return types.
+Don't flag: many-param Bukkit event/command signatures, hardcoded dep versions, `TODO`s, wildcard Bukkit returns.
 
 ---
 
 ## Commit Messages
 
-Title: `[TICKET]` then a short imperative description. Single line.
+Single-line title: `[TICKET]` + short imperative. Ticket = Linear ID (`[DEV-915]`); none → scope tag
+(`[Build]`, `[Fishing]`, `[Global]`).
 
-- Ticket = Linear ID (`[DEV-915]`). With no ticket, fall back to a scope tag for the area
-  touched (`[Build]`, `[Fishing]`, `[Global]`).
-- For non-trivial changes: blank line, then a 1–2 paragraph body — **Problem** (concrete: name
-  the class/symptom/impact) then **Fix** (the mechanism, key invariant, preserved overrides).
-- Trivial commits (dep bumps, cosmetics, reverts) can stay title-only.
-- **Never add `Co-Authored-By:` trailers (Claude, Anthropic, AI tooling, anything) or emoji**,
-  even if the workflow seems to imply it.
+- Non-trivial: blank line, then **Problem** (concrete: class/symptom/impact) then **Fix** (mechanism,
+  key invariant, preserved overrides).
+- Trivial commits (dep bumps, cosmetics, reverts) → title only.
+- **Never `Co-Authored-By:` trailers (Claude/Anthropic/AI/anything) or emoji.**
 
 ```
 [Fishing] Gate rare-catch bonus behind the fishing feature flag
@@ -120,405 +94,361 @@ The ranged-spear bonus fired even when fishing was disabled, so admins
 couldn't kill it independently of the core sell loop.
 
 Wraps the bonus award in isEnabled(FISHING_RARE) and short-circuits before
-the BigDecimal multiply. /admin fishing force bypasses for testing.
+the BigDecimal multiply.
 ```
 
 ---
 
 ## Feature Flags
 
-**Every new feature gets one. Every independently-meaningful sub-feature gets its own too**
-(separate command, broadcast, scheduler, payout path, animation phase, mode toggle). Single
-umbrella flags force shutting off the whole feature when one slice breaks.
+**Every feature gets one; every independently-meaningful sub-feature gets its own** (command,
+broadcast, scheduler, payout path, animation phase, mode toggle). Umbrella flags force killing the
+whole feature when one slice breaks.
 
-There is **no flag system wired into Cryon yet.** Until one exists, still design features so a
-flag is the natural seam — keep each entry point (commands, event handlers, schedulers, menu
-opens) behind a single guard you can later point at a flag check, and keep distinct slices
-behind distinct guards. When you add the flag system, register a bare flag ID per slice
-(`FISHING`, `FISHING_RARE` — **no** gamemode prefixes), gate every entry point through it, and
-document the mechanism here.
+**No flag system exists yet.** Design for the seam: each entry point (commands, handlers, schedulers,
+menu opens) behind a single guard, distinct slices behind distinct guards. When you build the system,
+use bare flag IDs (`FISHING`, `FISHING_RARE` — **no** gamemode prefixes), gate every entry point, and document it here.
 
 ---
 
 ## Messaging — Adventure + MiniMessage
 
-Paper bundles Adventure. Send `Component`s, **never legacy `§` strings, never Kotlin string
-interpolation into messages.** Prefer the helpers in **Utilities** — `CommonMessages` for prefixed
-acks, `audience.sendError("…")` extensions, `Mini.format(...)`/`"…".mm()` for palette-aware parsing
-— over rolling raw MiniMessage. `Mini` is the project's cached, palette-loaded MiniMessage; never
-`MiniMessage.miniMessage()`.
+Send `Component`s — **never legacy `§` strings, never string interpolation into messages.** Use the
+helpers: `CommonMessages` acks, `audience.sendError("…")`, `Mini.format(...)`/`"…".mm()`. `Mini` is
+the cached, palette-loaded MiniMessage; **never `MiniMessage.miniMessage()`**.
 
 ```kotlin
-import com.tricrotism.cryon.paper.api.extension.sendError
-import com.tricrotism.cryon.paper.api.extension.mm
-
-player.sendError("You don't have enough scales.")            // « Error » prefix + sound-free ack
+player.sendError("You don't have enough scales.")            // « Error » prefix
 player.sendMessage("<emerald>Enchantment applied!".mm())
 ```
 
-For dynamic content use placeholders (`net.kyori.adventure.text.minimessage.tag.resolver.Placeholder`),
-**never** `"...$value..."`:
+Dynamic content uses placeholders, **never `"...$value..."`**:
 
 ```kotlin
-player.sendMessage(Mini.format(
-    "<off_white>Caught a <highlight><rarity></highlight> <type> fish! Earned <highlight><amount></highlight> scales.",
-    Placeholder.unparsed("rarity", rarity.name),
-    Placeholder.unparsed("type", type.name),
-    Placeholder.unparsed("amount", amount.toString()),
-))
+player.sendMessage(
+    Mini.format(
+        "<off_white>Caught a <highlight><rarity></highlight> fish! Earned <highlight><amount></highlight> scales.",
+        Placeholder.unparsed("rarity", rarity.name),
+        Placeholder.unparsed("amount", amount.toString()),
+    )
+)
 ```
 
-`Placeholder.unparsed("k", str)` for plain text, `Placeholder.component("k", component)` for a
-prebuilt `Component`, `Placeholder.parsed("k", "<aqua>")` to inject a parsed tag. Standard
-MiniMessage tags plus the full `CryonPalette` tag set (`<off_white>`, `<scarlet>`, semantic
-`<error>`/`<success>`/…) resolve through `Mini`. For player-facing copy that ships in multiple
-languages, pull templates from the `MessageService` by key rather than hardcoding strings — and for
-a localized **and** prefixed ack use `messages.send(player, MessageType.ERROR, "key", …)` (see
-**Utilities → i18n**).
+`Placeholder.unparsed`/`.component`/`.parsed`. Palette tags (`<off_white>`, `<scarlet>`, semantic
+`<error>`/`<success>`/…) resolve through `Mini`. Multi-language copy pulls from `MessageService` by
+key (never hardcode English); localized + prefixed ack → `messages.send(player, MessageType.ERROR, "key", …)`.
 
 ---
 
 ## Item Lore
 
-Prefer `ItemBuilder` (`:paper-api`) — it applies the non-italic (`<!i>`) convention to name/lore for
-you and chains flags/glow/attributes/PDC tags:
+Prefer `ItemBuilder` — auto-applies non-italic (`<!i>`) to name/lore and chains flags/glow/attributes/PDC:
 
 ```kotlin
 val item = Material.TRIDENT.toItem()
     .name("<aqua>Fish Spear")
     .lore("<gray>Deals bonus damage to fish.")
-    .addLore(Mini.format(
-        "<off_white>Level: <highlight><level>/<max>",
-        Placeholder.unparsed("level", level.toString()),
-        Placeholder.unparsed("max", maxLevel.toString()),
-    ))
     .build()
 ```
 
-Building meta by hand is fine for one-offs, but use `<!i>` on every name/lore line (`ItemBuilder`
-does this automatically) and remember lore lines are `Component`s, never `§`-coded strings.
+Hand-building meta is fine for one-offs, but every name/lore line needs `<!i>`, and lore lines are `Component`s, never
+`§`-coded.
 
 ---
 
 ## Audio Cues
 
-Silent feedback feels broken. Any time a player-facing action fires (message, menu open, state
-toggle, item redeemed, drop awarded), play a sound. Only vanilla `Sound.*` exists right now
-(no resource-pack sound set wired).
+Silent feedback feels broken — play a `Sound.*` on every player-facing action (message, menu, toggle,
+redeem, drop). Only vanilla sounds exist.
 
 ```kotlin
 player.playSound(player.location, Sound.ENTITY_PLAYER_LEVELUP, 1f, 1.5f)
 ```
 
-- Personal feedback → `player.location` (only the actor hears it). Ambient/broadcast → a world
-  `Location`.
-- Pitch carries meaning: `1.5f`–`2.0f` positive/rare, `1.0f` neutral, `0.5f`–`0.8f`
-  warnings/heavy actions. Volume `1f` standard; `0.5f` for incidental/repeating.
-- Match existing feature sounds before inventing new ones — players learn what each means.
+- Personal feedback → `player.location`. Ambient/broadcast → a world `Location`.
+- Pitch: `1.5f`–`2.0f` positive/rare, `1.0f` neutral, `0.5f`–`0.8f` warnings/heavy. Volume `1f`
+  standard, `0.5f` incidental/repeating.
+- Match existing feature sounds before inventing new ones.
 
 ---
 
 ## Giving Items
 
-Add to the player's inventory; **don't drop on the ground as the "inventory full" fallback** —
-anyone nearby can grab it and it can despawn. There's no box-storage helper yet, so handle
-overflow deliberately:
+`inventory.addItem` and **handle overflow deliberately** — never `dropItemNaturally` as the
+"inventory full" fallback (anyone can grab it; it despawns).
 
 ```kotlin
-val leftover = player.inventory.addItem(item) // map of slot -> what didn't fit
-// decide explicitly what to do with leftover: re-try later, hold it, message the player —
-// not a blind dropItemNaturally.
+val leftover = player.inventory.addItem(item) // slot -> what didn't fit; decide explicitly
 ```
 
-Drop on the ground (`world.dropItemNaturally`) only for genuinely world-placed drops (block
-breaks, deaths). When a give/box helper is added, prefer it over hand-rolled overflow loops and
-document it here.
+`world.dropItemNaturally` only for genuine world drops (block breaks, deaths).
 
 ---
 
 ## Events & Listeners
 
-Prefer the functional `Events` builder (`:paper-api`) — no `Listener` class, returns a cancellable
-`Subscription`, filters run before your handler:
+Prefer the functional `Events` builder — no `Listener` class, returns a cancellable `Subscription`,
+filters run before the handler:
 
 ```kotlin
-Events.subscribe(PlayerInteractEvent::class.java, EventPriority.HIGHEST)
+Events.subscribe(PlayerInteractEvent::class.java, EventPriority.HIGHEST)  // or Events.subscribe<PlayerInteractEvent>(…)
     .ignoreCancelled()
     .filter { it.hand == EquipmentSlot.HAND }
-    .filter { it.item?.type == Material.TRIDENT }
     .handler { event -> /* … */ }
 ```
 
-Inside a `PaperModule`, the `listen(listener)` helper still covers a classic `@EventHandler`
-`Listener` and auto-unregisters it on disable — use that when you want annotation-based handlers.
-Either way, filter cheaply first (hand, material, world) and tear down on disable (`Subscription
-.unregister()` / `listen` cleanup).
+Inside a `PaperModule`, `listen(listener)` covers a classic `@EventHandler` `Listener` and
+auto-unregisters on disable. Either way: filter cheaply first, tear down on disable.
 
 ---
 
 ## Thread Safety
 
-Shared mutable state (`object`/`companion object` fields touched by more than one thread or
-scheduler) must be thread-safe. Use the lightest correct type.
+Shared mutable state (`object`/`companion` fields touched by >1 thread/scheduler) must be thread-safe; lightest correct
+type:
 
-- **`ConcurrentHashMap`** for shared maps — never `HashMap`/`LinkedHashMap` for a static field
-  touched off the main thread.
-- **`Collections.newSetFromMap(ConcurrentHashMap())`** for shared sets.
-- **`merge()` for atomic counter increments** — `getOrDefault + 1 + put` is a TOCTOU race:
-  ```kotlin
-  rarityCount.merge(rarity, 1) { a, b -> a + b }
-  ```
-- **`computeIfAbsent` / `putIfAbsent`** for check-set, never `containsKey` + `put`.
-- **No Bukkit API off the main thread** — entities, inventories, particles, `TextDisplay.text(…)`
-  are Bukkit API and belong on the server thread. Do async work
-  (`runTaskAsynchronously`), then hop back with `runTask(plugin) { … }` for the Bukkit calls.
-  If Folia support is enabled later, switch world/entity ops to the region schedulers
-  (`Bukkit.getRegionScheduler()`, `entity.scheduler`) and document it.
-- **Locals inside a single tick can use plain `HashSet`/`ArrayList`** — non-concurrent
-  collections are fine and faster when the value never escapes the tick.
+- **`ConcurrentHashMap`** for shared maps; **`Collections.newSetFromMap(ConcurrentHashMap())`** for sets.
+- **`merge()` for counter increments** (`getOrDefault + 1 + put` is a TOCTOU race):
+  `rarityCount.merge(rarity, 1) { a, b -> a + b }`
+- **`computeIfAbsent`/`putIfAbsent`** for check-set, never `containsKey` + `put`.
+- **No Bukkit API off the main thread** — entities, inventories, particles, `TextDisplay.text(…)`.
+  Do async work, then hop back. Folia: use region/entity schedulers and document it.
+- **Locals that never escape a tick** can use plain `HashSet`/`ArrayList`.
 
 ---
 
 ## Performance
 
-- **Cache lookups before hot loops** — resolve plugin services / config values once above the
-  loop, not per iteration.
+- **Cache lookups before hot loops** — resolve services/config once above the loop.
 - **`x shr 4` for block→chunk coords**, not `block.chunk.x` (allocates a `Chunk`).
-- **Batch high-frequency work** — don't fire one DB write / recompute / redraw per block-break,
-  kill, or sell event. Accumulate deltas in a thread-safe per-player buffer and flush on a
-  short interval or a meaningful boundary (logout, level-up, sell-cycle end). One periodic
-  flush of N updates beats N individual ones.
-- **Math in hot loops:** `BigDecimal.valueOf(long)` over `BigDecimal(double)` (the latter has
-  non-deterministic expansion); hoist invariant multiplier lookups and constants above the
-  loop; branch out no-op multiplies (`multiplier == 1.0` is the common case); keep per-rank
-  multipliers as `BigDecimal` where a `long` could overflow.
-- **Avoid accidentally quadratic loops** — don't iterate online players inside a per-player or
-  per-block loop.
+- **Batch high-frequency work** — accumulate deltas in a thread-safe per-player buffer, flush on
+  interval or boundary (logout, level-up, sell-cycle end), not one DB write per event.
+- **Hot-loop math:** `BigDecimal.valueOf(long)` over `BigDecimal(double)`; hoist invariant lookups;
+  branch out no-op multiplies (`multiplier == 1.0`); keep per-rank multipliers as `BigDecimal` where a `long` could
+  overflow.
+- **No accidentally quadratic loops** — don't iterate online players inside per-player/per-block work.
+
+These target hot loops (per-tick/block/player). Cold paths (boot, admin commands, file events) follow **simplicity first
+** instead.
 
 ---
 
 ## Comments
 
-No decorative section dividers (`// ── fishing ───────`). Comment the *why* when it isn't
-self-evident; don't narrate what the code already says.
+No decorative dividers (`// ── fishing ──`). Comment the *why* when non-obvious; don't narrate what the code says.
 
 ---
 
 ## Build & Run
 
-JDK 25, Kotlin 2.4.20-Beta1, paperweight dev bundle 26.2. Gradle config-cache, parallel, and
-build-cache are on (`gradle.properties`). No unit-test suite — verify manually via a local
-server.
+JDK 25, Kotlin 2.4.20-Beta1, paperweight dev bundle 26.2. Gradle config-cache/parallel/build-cache on. No unit tests —
+verify on a local server.
 
-- `./gradlew build` — builds all modules; `:paper`'s `build` runs `shadowJar`. Core plugin jar
-  lands in `paper/build/libs/` (the shaded jar bundles `:common` + `:paper-api` + kotlin-stdlib —
-  **don't relocate kotlin-stdlib**; loaded feature jars resolve `kotlin.*` through it).
-- `./gradlew :paper:runServer` — boots a local Paper 26.2 server with the core loaded
-  (`-Xms2G -Xmx2G`, EULA auto-agreed). Drop feature jars into the server's
-  `plugins/Cryon/modules/` to have them loaded.
-- `./gradlew :common:publishToMavenLocal :paper-api:publishToMavenLocal` — publish the API so
-  feature repos can compile against it locally (production: `repo.striveservices.org`).
-- Plugin versions are declared once in the root `build.gradle.kts` (`apply false`); subprojects
-  apply them without versions. `group`/`version` come from `gradle.properties`.
-- `:paper`'s `plugin.yml` `${version}` is filled by `processResources` — don't hardcode it.
+- `./gradlew build` — all modules; `:paper`'s `build` runs `shadowJar` → `paper/build/libs/`. The
+  shaded jar bundles `:common` + `:paper-api` + kotlin-stdlib — **don't relocate kotlin-stdlib**
+  (features resolve `kotlin.*` through it).
+- `./gradlew :paper:runServer` — local Paper 26.2 with the core loaded; drop feature jars into `plugins/Cryon/modules/`.
+- `./gradlew :common:publishToMavenLocal :paper-api:publishToMavenLocal` — publish the API locally
+  (production: `repo.striveservices.org`).
+- Versions declared once in root `build.gradle.kts` (`apply false`); subprojects apply without
+  versions. `group`/`version` from `gradle.properties`. `plugin.yml` `${version}` filled by `processResources` — don't
+  hardcode.
 
 ---
 
 ## Module System
 
-Features are **modules**, each shipped as its own jar (its own repo) and **loaded at boot** by the
-core. Framework types live in `:common` (`com.tricrotism.cryon.common.module`); the Paper base in
-`:paper-api` (`com.tricrotism.cryon.paper.api`).
+Features are **modules**, each a jar (own repo) loaded by the core. Framework types in `:common`
+(`…common.module`); Paper base in `:paper-api`.
 
-**The loader** (`Cryon.kt`, `:paper`): on enable it first loads every jar in `plugins/Cryon/api/`
-into **one shared `URLClassLoader`** (the cross-module contract layer — see below), then scans
-`plugins/Cryon/modules/` for `*.jar` and loads **each in its own isolated `URLClassLoader`** whose
-parent is that shared API loader (which itself chains to the core plugin's loader → Paper +
-`:common`/`:paper-api` + kotlin-stdlib). It discovers `Module`s via `ServiceLoader`, then runs
-`ModuleManager.loadAll(context)` → `enableAll()`. A broken jar is logged and skipped (caught as
-`Throwable` — `ServiceConfigurationError` is an `Error`). Loaders are closed on disable (modules
-before the shared parent). With an empty `api/` the shared layer is skipped — no behaviour change.
+**Loader (`Cryon.kt` → `ModuleLoader`, `…cryon.module`):** on enable, loads every jar in
+`plugins/Cryon/api/` into **one shared `URLClassLoader`** (the contract layer), then loads each
+`modules/*.jar` in its **own isolated `URLClassLoader`** parented to that shared loader (→ core →
+Paper + `:common`/`:paper-api` + kotlin-stdlib). Discovers `Module`s via `ServiceLoader`, then
+`loadAll(context)` → `enableAll()`. Broken jar logged and skipped (caught as `Throwable` —
+`ServiceConfigurationError` is an `Error`). Loaders closed on disable (modules before parent). Empty `api/` → shared
+layer skipped.
+
+**Cache copies:** each feature jar is copied into a private `plugins/Cryon/.module-cache/` and loaded
+from the copy, so the original in `modules/` is never file-locked (matters on Windows) and can be
+deleted/replaced while running — the basis for hot-swap. Closing a loader frees its file handle and
+drops its lang bundle/listeners; reclaiming classes still depends on the module not leaking refs (usual reload caveat).
+Cache wiped on boot and disable.
 
 **Core types:**
 
-- **`Module`** (`:common`) — `id` + a two-phase lifecycle: `onLoad(context)` (publish services),
-  `onEnable()` (consume peers), `onDisable()`. Discovered by `ServiceLoader`, so impls need a
-  **no-arg constructor** and a `META-INF/services/com.tricrotism.cryon.common.module.Module` entry.
-- **`ModuleContext`** (`:common`) — handed to `onLoad`; carries `logger` + `services`. Paper's
-  `PaperModuleContext` (`:paper-api`) extends it with `plugin`/`server`.
-- **`ServiceRegistry`** (`:common`) — the intertwine seam. `register(Api::class, impl)` /
-  `get<Api>()` / `find<Api>()`, keyed by interface.
-- **`PaperModule`** (`:paper-api`) — base for Paper features. Exposes `plugin`/`server`/`services`/
-  `logger`; `listen(listener)` auto-unregisters on disable. Override `onLoad` (call
-  `super.onLoad(context)` first), `onEnable`, `onDisable` (call `super.onDisable()`).
+- **`Module`** (`:common`) — `id` + two-phase lifecycle: `onLoad(context)` (publish services),
+  `onEnable()` (consume peers), `onDisable()`. `ServiceLoader`-discovered → needs **no-arg ctor** +
+  `META-INF/services/com.tricrotism.cryon.common.module.Module` entry.
+- **`ModuleContext`** (`:common`) — `logger` + `services`; Paper's `PaperModuleContext` adds `plugin`/`server`.
+- **`ServiceRegistry`** (`:common`) — intertwine seam. `register(Api::class, impl)` / `get<Api>()` /
+  `find<Api>()` (reified variants exist), keyed by interface.
+- **`PaperModule`** (`:paper-api`) — base exposing `plugin`/`server`/`services`/`logger`; `listen(listener)`
+  auto-unregisters on disable. Override `onLoad` (call `super` first), `onEnable`, `onDisable` (call `super`).
 
 **Isolation → intertwine only through shared interfaces.** Feature jars can't see each other's
-classes (separate loaders). A feature exposes behaviour by registering an implementation of an
-**API interface that lives in a shared artifact loaded by the common parent** — `:common`,
-`:paper-api`, or a **contract jar dropped in `plugins/Cryon/api/`** (see **Cross-module contracts**).
-Never reference another feature's concrete classes.
+classes. Expose behaviour by registering an impl of an **API interface in a shared artifact** (`:common`,
+`:paper-api`, or an `api/` contract jar). Never reference another feature's concrete classes.
 
-**Cross-module contracts — the `api/` layer.** When one feature needs to expose an API to *another
-feature in a separate repo*, the contract type must be loaded by the **shared parent**, not bundled
-in either feature jar (two bundled copies = two `Class` objects in two loaders = `ClassCastException`
-through the registry). Mechanism: ship the interfaces in a thin **`*-api` jar** and drop it in
-`plugins/Cryon/api/`; the loader puts every such jar on the one shared classloader that parents all
-features, so they resolve the same type. Both the provider and the consumer depend on it
-**`compileOnly`** (the runtime copy comes from `api/`). The provider registers
-`services.register(FooService::class, impl)` in `onLoad`; the consumer resolves it with
-`services.find(FooService::class)` in `onEnable` (use `find`, not `get` — an independent repo may not
-be installed). The reference example is `Cryon-Modules/cryon-visibility-api` (contract) consumed by
-`cryon-visibility` (impl) — a separate `cryon-spawn` would `compileOnly` the same api jar and add its
-own `VisibilityRule`. Don't promote one-off, same-jar interfaces here; reserve `api/` for genuinely
-cross-repo contracts. (For a contract you own and ship with the core anyway, `:paper-api` is still
-fine — `api/` is for feature-defined contracts that shouldn't live in the core.)
+**Cross-module contracts — the `api/` layer.** To expose an API to a feature in *another repo*, the
+contract type must load from the **shared parent**, not be bundled in either jar (two copies = two
+`Class` objects = `ClassCastException`). Ship the interfaces in a thin **`*-api` jar** in
+`plugins/Cryon/api/`; both provider and consumer depend on it **`compileOnly`**. Provider
+`services.register(FooService::class, impl)` in `onLoad`; consumer `services.find(FooService::class)`
+in `onEnable` (**`find`, not `get`** — the other repo may be absent). Reference: `cryon-visibility-api`
+consumed by `cryon-visibility`. Reserve `api/` for genuinely cross-repo contracts; a contract the core ships can live in
+`:paper-api`.
 
-**Order-independence:** `onLoad` runs for *every* module before any `onEnable`, so a peer's
-services are always registered by the time you consume them in `onEnable`. No declared load order.
+**Order-independence:** every module's `onLoad` runs before any `onEnable`, so peer services are always available in
+`onEnable`. No declared load order.
 
-**Runtime management:** `ModuleManager` tracks a `ModuleState` per module
-(`REGISTERED`/`LOADED`/`ENABLED`/`DISABLED`/`FAILED`) and supports `enable`/`disable`/`reload(id)` at
-runtime — re-enabling reuses the context captured at load. The built-in **`/cryon`** command surfaces
-this (`/cryon modules|info|enable|disable|reload <id>`). It's lifecycle-only — no jar reload. The
-manager is registered into the `ServiceRegistry`, so a module reads its own live state via
-`PaperModule.isEnabled()`.
+**Runtime lifecycle.** `ModuleManager` tracks `ModuleState` (`REGISTERED`/`LOADED`/`ENABLED`/`DISABLED`/`FAILED`)
+and supports `enable`/`disable`/`reload(id)` (re-enable reuses the load-time context), plus
+`load(id, context)` and `unregister(id)` for single-module hot-swap churn. Surfaced via `/cryon
+modules|info|enable|disable|reload <id>`. Registered into `ServiceRegistry` so a module reads its own
+state via `PaperModule.isEnabled()`. **Main-thread only.**
 
-**Commands track module state.** A `@Command` class registered through `PaperModule.registerCommands(…)`
-is gated on `isEnabled()` (the helper passes it as the `available` guard to `AnnotationCommands`), so
-a Brigadier command can't be run — or tab-completed — while its module is disabled, and reappears on
-re-enable, all without re-registering (the guard is re-evaluated per dispatch). `/cryon enable|disable|reload`
-calls `Player.updateCommands()` so clients resync immediately. A disabled command shows the vanilla
-"unknown command" rather than a styled message; that's the trade-off for gating at the Brigadier layer.
+**Failure isolation — a feature must never crash the server.** Every seam where the framework invokes
+feature code catches **`Throwable`** (not just `Exception` — a stale/mislinked jar throws `Error`s
+like `NoSuchMethodError`): module `onLoad`/`onEnable`/`onDisable` (failure → `FAILED`, server
+continues), jar reads, command registration inside the COMMANDS lifecycle handler (both
+`PaperModule.registerCommands` and the core's — Paper rethrows lifecycle exceptions fatally, so they
+must be guarded), `Events` handlers, and the watcher thread. A `FAILED` module is in-memory only and
+doesn't auto-retry; it clears on a successful `/cryon enable|reload <id>`, a reload of its jar, or
+restart. The one thing outside our control is a feature that bypasses these helpers and registers its
+own raw Paper lifecycle handler — route command registration through `registerCommands`, and keep the
+published `:paper-api` binary-compatible (`@JvmOverloads` on defaulted params) so old feature jars still link.
 
-**Authoring a feature** (see `Cryon-Modules/cryon-example-feature/`): new repo → `compileOnly` the
-published `:common` + `:paper-api` (+ Paper API) → `class Foo : PaperModule()` with a no-arg ctor →
-add the `META-INF/services` entry → build the thin `jar` → drop into `plugins/Cryon/modules/`.
+**Hot-swap (jar level).** `ModuleLoader` adds/removes whole jars at runtime: `/cryon load <jar>`
+(load + enable a jar in `modules/`), `/cryon unload <id>` (disable + unregister every module in that
+jar, close its loader; the jar file stays — delete to remove permanently), `/cryon scan` (load newly
+dropped jars). A hot-loaded jar's modules all `onLoad` before any `onEnable`. Unload is whole-jar
+(can't partially close a loader). On unload the loader also calls `ServiceRegistry.unregisterByClassLoader`
+to drop services the jar published (so a reload re-registers cleanly and peers can't resolve a
+dead-loader instance). These call `Player.updateCommands()` to resync command trees.
 
-When you add the `:velocity` loader, give it its own `ModuleManager` + `VelocityModuleContext` over
-the same `:common` contract, and document it here.
+**`api/` reload (cascade).** The `api/` contract layer parents every module loader, so it can't be
+swapped alone (running modules stay linked to the old contract classes). `/cryon reload-api` does the
+only coherent thing: unload **all** modules → close + reload the `api/` loader → reload every module
+that was loaded, preserving the global two-phase order. Briefly takes all features down. Use it after
+replacing an `api/` jar.
+
+**Auto hot-reload (dev).** Two daemon `WatchService`s (`ModuleWatcher`) — one on `modules/` (per-jar
+load/reload/unload on file events) and one on `api/` (any change → a full `reload-api` cascade) —
+debounced and hopped to the main thread. **Config-gated** by `modules.auto-reload` in the core
+`config.yml`, **defaulting to `!production`** (`production: true` by default): a `production: false`
+dev server hot-reloads automatically, production doesn't, either overridable. The `/cryon
+load|unload|scan|reload-api` commands work regardless.
+
+**Runtime command-registration caveat.** Paper only allows registering a COMMANDS lifecycle handler
+during the bootstrap/enable window, so a module **loaded or reloaded at runtime** (hot-swap, `/cryon
+load`, `reload-api`) cannot (re)register its command tree — `PaperModule.registerCommands` catches
+this, logs a warning, and lets the module enable anyway; its commands refresh on the next server
+reload/restart. Everything else (listeners, services, schedulers) re-wires live. A proper fix (the
+core owning one COMMANDS handler that all modules contribute to) is the documented next step.
+
+**Commands track module state.** A `@Command` class registered via `PaperModule.registerCommands(…)`
+is gated on `isEnabled()` (passed as `available` to `AnnotationCommands`), so it can't run or
+tab-complete while disabled and reappears on re-enable without re-registering (guard re-evaluated per
+dispatch). `/cryon enable|disable|reload` calls `Player.updateCommands()`. A disabled command shows
+vanilla "unknown command" — the trade-off for gating at the Brigadier layer.
+
+**Authoring a feature:** new repo → `compileOnly` published `:common` + `:paper-api` (+ Paper API) →
+`class Foo : PaperModule()` no-arg ctor → add `META-INF/services` entry → build the thin jar → drop into `modules/`.
+
+When you add the `:velocity` loader, give it its own `ModuleManager` + `VelocityModuleContext` over the same `:common`
+contract, and document it here.
 
 ---
 
 ## Utilities
 
-Shared helpers features build on. **Check these before writing your own** — the Kotlin-style rule
-(prefer existing extensions) applies. Reach a peer feature's behaviour through the `ServiceRegistry`,
+Shared helpers — **check these before writing your own.** Reach a peer feature's behaviour through `ServiceRegistry`,
 not these.
 
-**Numbers (`:common` `…common.number` + `…common.extension`):**
+**Numbers (`…common.number`/`…extension`):**
 
-- `CryonNumber` — effectively-unbounded scaling value (`double` mantissa + `long` exponent) for
-  currencies/idle math: fast, ~15–16 sig figs. Operators (`+ - * /`, `compareTo`), `pow(Int)`/
-  `pow(Double)`, `sqrt`/`cbrt`, `log10`/`ln`/`log2`/`log(base)` (return `Double`), `abs`/`reciprocal`/
-  `min`/`max`, `of(...)`/`tenPow(...)`. Use it (not `BigDecimal`) for anything that can grow past
-  `~1e15` on a hot path.
-- `LongUtils` (`parseLong`, `parseLongShorthand`), `BigDecimalUtils` (`magnitude`, `log10` — safe
-  past `Double` range), `NumberUtils` (`formatBalance`/`formatCommas`/`roman`/`parseBalance`,
-  thread-safe formatters), and primitive extensions (`1500L.formatBalance()`, `5.cn`, `n.formatCommas()`).
+- `PackedDecimal` is the effectively-unbounded scaling value for currencies/idle math: a base-10
+  number (14-digit signed mantissa + power-of-ten exponent) packed into a single `Long`, so as a
+  `@JvmInline value class` it is **zero-allocation** and ~5x the throughput of a boxed mantissa/exponent
+  class. ~14 significant figures, range ~10^±32767 (the exponent saturates). Operators,
+  `pow`/`sqrt`/`cbrt`/`log*`, `of(...)`/`tenPow(...)`, `magnitude` (decimal order of magnitude). Use it
+  (not `BigDecimal`) for anything past `~1e15` on a hot path.
+- `LongUtils`, `BigDecimalUtils` (`magnitude`/`log10` past `Double` range), `NumberUtils`
+  (`formatBalance`/`formatCommas`/`roman`/`parseBalance`, thread-safe), primitive extensions (`1500L.formatBalance()`,
+  `5.pd`).
 
-**Text / messages (`:common` `…common.text`):**
+**Text (`…common.text`):**
 
-- `Mini` — the project's MiniMessage: non-strict, preloaded with the palette tags, a ~15s Caffeine
-  deserialize cache, and legacy (`§`) interop (`toLegacy`/`toComponent`/`stripFormatting`). Use
-  `Mini.format(...)` (or `"…".mm()` on Paper), **never** `MiniMessage.miniMessage()`.
-- `CryonPalette` — the full named colour set as `TextColor`s **and** tags (`<off_white>`, `<scarlet>`,
-  semantic `<error>`/`<success>`/`<info>`/`<warning>`, …). Tune hexes here; add project-specific
-  inserting tags by extending `RESOLVER`.
-- `CommonMessages` — prefixed acks (`error`/`success`/`info`/`warn`, `errorPlayer`, `notOnline`,
-  `notEnoughCurrency`, `noPermission`, `alert`) returning `Component`s. The prefix is a **bold
-  coloured icon** per `MessageType` (`✖`/`✔`/`✦`/`⚠`) — language-neutral, so generic acks take no
-  locale (`audience.sendError("…")`). The **canned phrases are localized**: bodies resolve through
-  `Messages` by `cryon.common.*` key with English inline as fallback, and take a `Locale`; the Paper
-  canned extensions (`player.sendNoPermission()`, `player.sendNotEnough(currency)`, …) pass
-  `player.resolvedLocale()`. Tune icons/colours in `MessageType`.
+- `Mini` — non-strict MiniMessage, palette-preloaded, ~15s Caffeine cache, legacy interop. Use
+  `Mini.format(...)`/`"…".mm()`, **never `MiniMessage.miniMessage()`**.
+- `CryonPalette` — named colours as `TextColor`s **and** tags (`<off_white>`, semantic `<error>`/`<success>`/…). Tune
+  hexes / extend `RESOLVER` here.
+- `CommonMessages` — prefixed acks (`error`/`success`/`info`/`warn`, `notOnline`, `notEnoughCurrency`,
+  `noPermission`, …) returning `Component`s. Prefix is a bold icon per `MessageType` (`✖`/`✔`/`✦`/`⚠`,
+  language-neutral). Canned bodies localized via `Messages` by `cryon.common.*` key; Paper extensions
+  (`player.sendNoPermission()`, …) pass `resolvedLocale()`.
 
-**i18n (`:common` `…common.locale`):** **everything user-facing is localizable.** `MessageService`
-resolves `(locale, key) → Component` across registered `MessageSource`s with a fallback chain, count
-pluralization (`renderPlural`), and hot `reload()`. `Messages` is the static facade (`get`/`getOr`/
-`rawOr`) the core installs so `CommonMessages`/`MessageType` localize without a handle.
+**i18n (`…common.locale`): everything user-facing is localizable.** `MessageService` resolves
+`(locale, key) → Component` across `MessageSource`s with a fallback chain, `renderPlural`, hot
+`reload()`. `Messages` is the static facade. **Auto-scanned — don't register by hand:** a jar's
+`lang/<locale>.properties` registers on load; `plugins/Cryon/lang/` (admin override) registers first
+and wins. Send via `messages.send(player, key, …)` or `messages.send(player, MessageType.ERROR, key, …)`. Missing keys
+render `⟨key⟩`.
 
-**Auto-scanner — don't register sources by hand.** The loader auto-discovers bundles:
+**Items (`…paper.api.item`/`…extension`):** `ItemBuilder` — name/lore (auto `<!i>`, palette-parsed),
+flags, glow, `enchant`, attributes, PDC `tag`s, `meta {}`. Extensions: `Material.toItem()`,
+`ItemStack.toBuilder()`/`modify {}`, `get/set/has/removeTag` (PDC), `isEmpty()`, `withAmount()`.
 
-- a feature jar's `lang/<locale>.properties` is registered when the jar loads (`LangScanner.fromJar`);
-- `plugins/Cryon/lang/<locale>.properties` (`DirectoryMessageSource`) is registered first, so admin
-  overrides win over jar defaults; both English fallbacks lose to either.
+**Scheduling (`…paper.api.scheduler`):** `Schedulers` — `global`/`region(loc)`/`entity(e)`/`async`,
+each with `*Later`/`*Timer`. Pick the scope owning the data; no Bukkit API in `async`.
 
-So: ship `lang/en_US.properties` etc. in your feature jar and they just work. Send in a player's
-locale with `messages.send(player, key, …)`, or localized **and** prefix-styled with
-`messages.send(player, MessageType.ERROR, key, …)`. Override the built-in `cryon.common.*` keys in
-any bundle. Missing keys render `⟨key⟩`, never silent.
+**Events (`…paper.api.event`):** `Events.subscribe(Type::class.java, priority)` (or reified
+`subscribe<Type>()`)`.filter{…}.handler{…}` → cancellable `Subscription`; `expireAfter(n)` self-unregisters. Handler
+exceptions logged, not propagated.
 
-**Items (`:paper-api` `…paper.api.item` + `…extension`):** `ItemBuilder` — name/lore (auto `<!i>`,
-palette-parsed), flags, glow, `enchant`, attributes, PDC `tag`s, `meta {}` escape hatch. Extensions:
-`Material.toItem()`, `ItemStack.toBuilder()`/`modify { }` (edit existing stacks), `getTag`/`setTag`/
-`hasTag`/`removeTag` (PDC), `isEmpty()`, `withAmount()`.
-
-**Scheduling (`:paper-api` `…paper.api.scheduler`):** `Schedulers` wraps Paper's threaded-region
-schedulers — `global`/`region(loc)`/`entity(e)`/`async`, each with `*Later`/`*Timer`. Pick the scope
-owning the data; never the global main thread for world/entity work. No Bukkit API in `async`.
-
-**Events (`:paper-api` `…paper.api.event`):** `Events.subscribe(Type::class.java, priority).filter{…}
-.handler{…}` returns a cancellable `Subscription`; `expireAfter(n)` self-unregisters. Handler
-exceptions are logged, not propagated.
-
-**Commands — annotation framework over Paper Brigadier** (`:paper-api` `…paper.api.command`).
-**Cloud does not work on this Paper build** — cloud-bukkit's `ItemStackParser` reflects for an
-`ItemInput` method that doesn't exist on 26.2, so any cloud manager throws at construction. Instead
-we ship a thin reflection-based `@Command` layer registered through Paper's native Brigadier
-`Commands` registrar (via `LifecycleEvents.COMMANDS`). **Never `plugin.yml` `commands:` /
-`CommandMap` / `Commands.create()` / Cloud.**
+**Commands — annotation framework over Paper Brigadier (`…paper.api.command`).** **Cloud is broken on
+26.2** (cloud-bukkit's `ItemStackParser` reflects a missing method). Use the `@Command` layer
+registered via `LifecycleEvents.COMMANDS`. **Never `plugin.yml commands:` / `CommandMap` / `Commands.create()` / Cloud.
+**
 
 ```kotlin
 @Command("cryon", "Module manager")
 @Permission("cryon.admin")
 class ModuleCommands(private val modules: ModuleManager) {
-    @Subcommand fun overview(sender: CommandSender) = list(sender)               // /cryon
+    @Subcommand
+    fun overview(sender: CommandSender) = list(sender)
     @Subcommand("enable")
-    fun enable(sender: CommandSender, @Arg("id", suggests = "ids") id: String) { … } // /cryon enable <id>
-    fun ids(): Collection<String> = modules.ids()                               // tab-complete suggester
+    fun enable(sender: CommandSender, @Arg("id", suggests = "ids") id: String) {
+        …
+    }
+    fun ids(): Collection<String> = modules.ids()   // suggester
 }
-// core: AnnotationCommands.register(event.registrar(), ModuleCommands(manager), …)
 ```
 
-`@Command`/`@Subcommand`/`@Permission`/`@Arg(name, suggests)`/`@Greedy`. The `CommandSender` param is
-injected; `@Arg` names the Brigadier argument (types `String`/`Int`/`Boolean`) and a `suggests`
-method gives completions. Built-ins: **`/cryon`** (module manager, `cryon.admin`) and **`/language`**
-(`/lang`). Bodies wrap localized content in `CommonMessages` for the icon prefix. **Feature modules
-register via `PaperModule.registerCommands(handler…)` in `onLoad`**, not the raw lifecycle call — the
-helper registers in the COMMANDS window and passes `register(registrar, handler, available = ::isEnabled)`
-so the command is gated on the module being enabled (see **Module System → Commands track module state**).
-The core's own commands use the plain `register(registrar, vararg handlers)` (always available).
+`@Command`/`@Subcommand`/`@Permission`/`@Arg(name, suggests)`/`@Greedy`. `CommandSender` injected;
+`@Arg` types `String`/`Int`/`Boolean`. Built-ins: `/cryon` (`cryon.admin`), `/language` (`/lang`).
+**Feature modules register via `PaperModule.registerCommands(…)` in `onLoad`** (gated on `isEnabled`);
+core commands use the plain `register(registrar, vararg handlers)` (always available).
 
-**Cross-server infra (`:common` `…common.data` / `…common.net`):** opt-in, config-gated.
+**Cross-server infra (`…common.data`/`…common.net`): opt-in, config-gated.**
 
-- `Database` (`PostgresDatabase`, HikariCP) — async SQL: `query(sql, …) { rs -> }` / `update(sql, …)`
-  return `CompletableFuture`s off the main thread. No ORM; run your own SQL. **Never block the main
-  thread** — these already hop off it; don't `.get()` on the main thread.
-- `Messenger` (`RedisMessenger`, Lettuce) — cross-server `publish`/`subscribe` + request/response
-  (`request`/`handle`). String payloads; encode richer data yourself.
-- Both are registered into the `ServiceRegistry` when enabled (`services.find<Database>()` /
-  `find<Messenger>()` — use `find`, they may be absent). Client libs aren't shaded; they load at
-  runtime via `plugin.yml` `libraries:`. Config lives in the core's `config.yml`
-  (`database.*`, `redis.*`), both `enabled: false` by default — Cryon boots fine without them.
+- `Database` (`PostgresDatabase`, HikariCP) — async SQL: `query`/`update` return `CompletableFuture`s
+  off-thread. No ORM. **Never `.get()` on the main thread.**
+- `Messenger` (`RedisMessenger`, Lettuce) — cross-server `publish`/`subscribe` + `request`/`handle`. String payloads.
+- Both registered into `ServiceRegistry` when enabled (`services.find<Database>()`/`find<Messenger>()`
+  — use `find`, may be absent). Client libs load at runtime via `plugin.yml` `libraries:`. `config.yml`
+  holds `database.*`, `redis.*` (both `enabled: false` by default), plus `production` (default `true`)
+  and `modules.auto-reload` (defaults to `!production`).
 
-**Player locale — persistent & cross-server.** Resolution is **`Player.resolvedLocale()` = stored
-override ?: client `locale()`**; all message helpers use it. The client locale is automatic and
-already consistent across servers (the client reports it). A **chosen override** (`player.setLanguage(de)`)
-persists to SQL and broadcasts a Redis invalidation so every server updates; `PlayerLocaleStore`
-caches it in memory (loaded on join) for synchronous reads. The store is a `LocaleStore` interface:
-the core installs `PlayerLocaleStore` when SQL+Redis are configured, else a `MemoryLocaleStore` —
-overrides still work via `/language`, but per-server and **reset on restart** (no persistence, no
-cross-server sync). Either way a store is always installed; resolution falls back to the client
-locale for anyone without an override.
+**Player locale — persistent & cross-server.** `Player.resolvedLocale()` = stored override ?: client
+`locale()`; all helpers use it. A chosen override (`player.setLanguage(de)`) persists to SQL +
+broadcasts a Redis invalidation; `PlayerLocaleStore` caches it in memory for sync reads. The core
+installs `PlayerLocaleStore` when SQL+Redis are configured, else `MemoryLocaleStore` (overrides work
+but per-server, reset on restart). A store is always installed; falls back to client locale without an override.
 
-### Architecture — what doesn't exist yet
-
-No DI container, codegen, menu framework, or coroutine bridge. (Persistence, cross-server messaging,
-the `@Command` framework, and a `config.yml` now exist — see above.) The core registers its own
-commands today; letting **feature modules** contribute `@Command` classes (the core collecting them
-in the `LifecycleEvents.COMMANDS` handler) is the natural next step. As the network grows, add the
-relevant infrastructure **and document it here in the same pass** — keep this guide and the code in
-lockstep.
+**Not yet:** DI container, codegen, menu framework, coroutine bridge. Add infrastructure **and document it here in the
+same pass.**
 
 ---
 
@@ -533,7 +463,7 @@ lockstep.
 | `ItemBuilder` / `Material.toItem()`                      | Hand-rolled `editMeta` for every item                          |
 | `Schedulers.async/global/region/entity`                  | raw `Bukkit.getScheduler()`                                    |
 | `Events.subscribe(...).filter{}.handler{}`               | ad-hoc `Listener` plumbing for one handler                     |
-| `CryonNumber` for values that grow past ~1e15            | `BigDecimal` on hot incremental-math paths                     |
+| `PackedDecimal` for values that grow past ~1e15          | `BigDecimal` on hot incremental-math paths                     |
 | `@Command`/`@Subcommand` + `AnnotationCommands.register` | `plugin.yml commands:` / `CommandMap` / Cloud (broken on 26.2) |
 | `player.resolvedLocale()` for messages                   | `player.locale()` directly (ignores overrides)                 |
 | `services.find<Database>()` / `find<Messenger>()`        | `get<…>()` assuming the infra is enabled                       |

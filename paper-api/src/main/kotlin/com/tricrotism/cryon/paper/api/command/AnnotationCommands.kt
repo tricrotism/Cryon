@@ -27,7 +27,11 @@ object AnnotationCommands {
      * Register [handler]. [available] is AND-ed into every node's access check, so a feature can pass
      * its own enabled-state (`::isEnabled`) and have the whole command tree become unavailable while
      * the module is disabled, then reappear on re-enable — re-evaluated per dispatch, no re-register.
+     *
+     * `@JvmOverloads` keeps the `register(Commands, Any)` JVM signature so feature jars built before
+     * `available` was added still link (this is a published API — preserve binary compatibility).
      */
+    @JvmOverloads
     fun register(registrar: Commands, handler: Any, available: () -> Boolean = { true }) {
         val type = handler.javaClass
         val command = type.getAnnotation(Command::class.java) ?: error("${type.name} is missing @Command")

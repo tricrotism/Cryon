@@ -24,6 +24,26 @@ class ServiceRegistry(private val logger: Logger) {
         logger.info("Registered service {}", type.simpleName)
     }
 
+    /**
+     * Drop every service whose implementation was loaded by [loader] — the hot-unload/reload cleanup.
+     * A module publishes impls defined in its own jar, so closing that jar's loader means removing its
+     * services here too; otherwise a reload (`onLoad` runs again) would hit "already registered", and
+     * peers could resolve a dead instance from a closed loader. Returns how many were removed.
+     */
+    fun unregisterByClassLoader(loader: ClassLoader): Int {
+        var removed = 0
+        val iterator = services.entries.iterator()
+        while (iterator.hasNext()) {
+            val (type, impl) = iterator.next()
+            if (impl.javaClass.classLoader === loader) {
+                iterator.remove()
+                removed++
+                logger.info("Unregistered service {}", type.simpleName)
+            }
+        }
+        return removed
+    }
+
     /** The service for [type], or throw — a missing required service is a wiring bug. */
     fun <T : Any> get(type: KClass<T>): T {
         val service = services[type] ?: error("No service registered for ${type.simpleName}")

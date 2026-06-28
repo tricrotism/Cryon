@@ -4,6 +4,7 @@ import com.tricrotism.cryon.common.module.ModuleManager
 import com.tricrotism.cryon.common.module.ModuleState
 import com.tricrotism.cryon.common.text.CommonMessages
 import com.tricrotism.cryon.common.text.Mini
+import com.tricrotism.cryon.module.ModuleLoader
 import com.tricrotism.cryon.paper.api.command.Arg
 import com.tricrotism.cryon.paper.api.command.Command
 import com.tricrotism.cryon.paper.api.command.Permission
@@ -13,15 +14,17 @@ import net.kyori.adventure.text.event.ClickEvent
 import net.kyori.adventure.text.event.HoverEvent
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder
 import org.bukkit.command.CommandSender
+import java.io.File
 
 /**
- * `/cryon modules | info <id> | enable <id> | disable <id> | reload <id>` — the built-in module
- * manager, annotation-defined and gated by `cryon.admin`. `<id>` tab-completes from the live module
- * list. Drives runtime lifecycle (no jar reload). Admin-facing English output.
+ * `/cryon modules | info <id> | enable <id> | disable <id> | reload <id>` — runtime *lifecycle*;
+ * `load <jar> | unload <id> | scan` — jar-level *hot-swap*; and `reload-api` — cascade-reload the
+ * shared `api/` contract layer plus every module. The built-in module manager, annotation-defined and
+ * gated by `cryon.admin`. `<id>`/`<jar>` tab-complete from the live state. Admin-facing English output.
  */
 @Command("cryon", "Cryon module manager")
 @Permission("cryon.admin")
-class ModuleCommands(private val modules: ModuleManager) {
+class ModuleCommands(private val modules: ModuleManager, private val loader: ModuleLoader) {
 
     @Subcommand
     fun overview(sender: CommandSender) = list(sender)
@@ -81,9 +84,112 @@ class ModuleCommands(private val modules: ModuleManager) {
         }
     }
 
+    @Subcommand("load")
+    fun load(sender: CommandSender, @Arg("jar", suggests = "loadableJars") jar: String) {
+        val file = File(loader.modulesDir, jar)
+        if (!file.isFile || !jar.endsWith(".jar")) {
+            sender.sendMessage(
+                CommonMessages.error(
+                    line(
+                        "<off_white>No jar <highlight><id></highlight> in modules/.",
+                        jar
+                    )
+                )
+            )
+            return
+        }
+        val enabled = loader.loadJar(file)
+        if (enabled.isEmpty()) {
+            sender.sendMessage(
+                CommonMessages.warn(
+                    line(
+                        "<off_white>Loaded <highlight><id></highlight> but no module enabled — check console.",
+                        jar
+                    )
+                )
+            )
+            return
+        }
+        sender.sendMessage(
+            CommonMessages.success(
+                Mini.format(
+                    "<off_white>Loaded <highlight><jar></highlight> — enabled <highlight><list></highlight>.",
+                    Placeholder.unparsed("jar", jar),
+                    Placeholder.unparsed("list", enabled.joinToString(", ")),
+                )
+            )
+        )
+        resyncCommands(sender)
+    }
+
+    @Subcommand("unload")
+    fun unload(sender: CommandSender, @Arg("id", suggests = "moduleIds") id: String) {
+        if (!modules.has(id)) {
+            sender.sendMessage(CommonMessages.error(notFound(id)))
+            return
+        }
+        val removed = loader.unloadModule(id)
+        if (removed == null) {
+            sender.sendMessage(
+                CommonMessages.error(
+                    line(
+                        "<off_white><highlight><id></highlight> isn't a jar-loaded module.",
+                        id
+                    )
+                )
+            )
+            return
+        }
+        sender.sendMessage(
+            CommonMessages.success(
+                Mini.format(
+                    "<off_white>Unloaded <highlight><list></highlight>. The jar stays in modules/ — delete it to remove permanently.",
+                    Placeholder.unparsed("list", removed.joinToString(", ")),
+                )
+            )
+        )
+        resyncCommands(sender)
+    }
+
+    @Subcommand("reload-api")
+    fun reloadApi(sender: CommandSender) {
+        val enabled = loader.reloadApi()
+        sender.sendMessage(
+            CommonMessages.success(
+                Mini.format(
+                    "<off_white>Reloaded the api/ layer and <highlight><count></highlight> module(s).",
+                    Placeholder.unparsed("count", enabled.size.toString()),
+                )
+            )
+        )
+        resyncCommands(sender)
+    }
+
+    @Subcommand("scan")
+    fun scan(sender: CommandSender) {
+        val enabled = loader.loadNew()
+        if (enabled.isEmpty()) {
+            sender.sendMessage(CommonMessages.info(Mini.format("<off_white>No new feature jars to load.")))
+            return
+        }
+        sender.sendMessage(
+            CommonMessages.success(
+                Mini.format(
+                    "<off_white>Loaded new modules: <highlight><list></highlight>.",
+                    Placeholder.unparsed("list", enabled.joinToString(", ")),
+                )
+            )
+        )
+        resyncCommands(sender)
+    }
+
     /** Suggester referenced by `@Arg(suggests = "moduleIds")`. */
     @Suppress("unused")
     fun moduleIds(): Collection<String> = modules.ids()
+
+    /** Suggester for `/cryon load` — jars sitting in modules/ that aren't loaded yet. */
+    @Suppress("unused")
+    fun loadableJars(): Collection<String> = loader.loadableJarNames()
 
     private fun list(sender: CommandSender) {
         val states = modules.states()

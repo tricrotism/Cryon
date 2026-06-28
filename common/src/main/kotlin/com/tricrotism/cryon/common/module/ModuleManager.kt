@@ -15,23 +15,45 @@ class ModuleManager(private val logger: Logger) {
     private val modules = LinkedHashMap<String, Module>()
     private val states = LinkedHashMap<String, ModuleState>()
 
-    fun register(module: Module) {
+    /** Track a discovered module. False (and ignored) if its id is already registered. */
+    fun register(module: Module): Boolean {
         if (modules.putIfAbsent(module.id, module) != null) {
             logger.warn("Duplicate module id '{}' — ignoring the duplicate", module.id)
-            return
+            return false
         }
         states[module.id] = ModuleState.REGISTERED
+        return true
+    }
+
+    /**
+     * Drop a module from tracking entirely (the hot-remove path). It must already be disabled —
+     * returns false while it is still `ENABLED`, so callers disable first. False too if unknown.
+     */
+    fun unregister(id: String): Boolean {
+        if (states[id] == ModuleState.ENABLED) return false
+        if (modules.remove(id) == null) return false
+        states.remove(id)
+        return true
     }
 
     fun loadAll(context: ModuleContext) {
-        for ((id, module) in modules) {
-            try {
-                module.onLoad(context)
-                states[id] = ModuleState.LOADED
-            } catch (e: Exception) {
-                states[id] = ModuleState.FAILED
-                logger.error("Failed to load module {}", id, e)
-            }
+        for (id in modules.keys.toList()) load(id, context)
+    }
+
+    /** Run `onLoad` for a single `REGISTERED` module (the hot-add path). True if it reached `LOADED`. */
+    fun load(id: String, context: ModuleContext): Boolean {
+        val module = modules[id] ?: return false
+        if (states[id] != ModuleState.REGISTERED) return false
+        return try {
+            module.onLoad(context)
+            states[id] = ModuleState.LOADED
+            true
+        } catch (e: Throwable) {
+            // Throwable, not Exception: a stale/mislinked jar throws Errors (NoSuchMethodError,
+            // NoClassDefFoundError, ServiceConfigurationError). One bad module must never crash the server.
+            states[id] = ModuleState.FAILED
+            logger.error("Failed to load module {} — left disabled, server continues", id, e)
+            false
         }
     }
 
@@ -78,9 +100,9 @@ class ModuleManager(private val logger: Logger) {
         states[id] = ModuleState.ENABLED
         logger.info("Enabled module {}", id)
         true
-    } catch (e: Exception) {
+    } catch (e: Throwable) {
         states[id] = ModuleState.FAILED
-        logger.error("Failed to enable module {}", id, e)
+        logger.error("Failed to enable module {}! Left it disabled so the server continues.", id, e)
         false
     }
 
@@ -89,8 +111,10 @@ class ModuleManager(private val logger: Logger) {
         states[id] = ModuleState.DISABLED
         logger.info("Disabled module {}", id)
         true
-    } catch (e: Exception) {
-        logger.error("Failed to disable module {}", id, e)
+    } catch (e: Throwable) {
+        // Still mark DISABLED: a module that threw mid-teardown must not block shutdown or a reload.
+        states[id] = ModuleState.DISABLED
+        logger.error("Error disabling module {}! Now forcing it disabled.", id, e)
         false
     }
 }

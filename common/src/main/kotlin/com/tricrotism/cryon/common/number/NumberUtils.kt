@@ -75,12 +75,12 @@ object NumberUtils {
     fun formatBalanceCompact(number: BigDecimal?): String = formatBalance(number, isLong = false)
 
     /**
-     * Suffixed balance for a [CryonNumber]. Within `BigDecimal` range it reuses the suffix table;
+     * Suffixed balance for a [PackedDecimal]. Within `BigDecimal` range it reuses the suffix table;
      * beyond it (where no named suffix exists) it falls back to scientific notation (`1.23e1500`).
      */
-    fun formatBalance(number: CryonNumber, isLong: Boolean = false): String = when {
+    fun formatBalance(number: PackedDecimal, isLong: Boolean = false): String = when {
         number.signum() == 0 -> "0"
-        number.exponent in -30..41 -> formatBalance(number.toBigDecimal(), isLong)
+        number.magnitude in -30..41 -> formatBalance(number.toBigDecimal(), isLong)
         else -> number.toScientificString()
     }
 

@@ -27,6 +27,9 @@ import java.util.logging.Level
 object Events {
     fun <T : Event> subscribe(type: Class<T>, priority: EventPriority = EventPriority.NORMAL): SubscriptionBuilder<T> =
         SubscriptionBuilder(type, priority)
+
+    inline fun <reified T : Event> subscribe(priority: EventPriority = EventPriority.NORMAL): SubscriptionBuilder<T> =
+        subscribe(T::class.java, priority)
 }
 
 class SubscriptionBuilder<T : Event> internal constructor(

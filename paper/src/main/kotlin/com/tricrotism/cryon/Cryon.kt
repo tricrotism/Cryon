@@ -6,12 +6,13 @@ import com.tricrotism.cryon.common.data.Database
 import com.tricrotism.cryon.common.data.DatabaseConfig
 import com.tricrotism.cryon.common.data.PostgresDatabase
 import com.tricrotism.cryon.common.locale.*
-import com.tricrotism.cryon.common.module.Module
 import com.tricrotism.cryon.common.module.ModuleManager
 import com.tricrotism.cryon.common.module.ServiceRegistry
 import com.tricrotism.cryon.common.net.Messenger
 import com.tricrotism.cryon.common.net.RedisConfig
 import com.tricrotism.cryon.common.net.RedisMessenger
+import com.tricrotism.cryon.module.ModuleLoader
+import com.tricrotism.cryon.module.ModuleWatcher
 import com.tricrotism.cryon.paper.api.CryonPaper
 import com.tricrotism.cryon.paper.api.PaperModuleContext
 import com.tricrotism.cryon.paper.api.command.AnnotationCommands
@@ -25,8 +26,6 @@ import org.bukkit.plugin.java.JavaPlugin
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.io.File
-import java.net.URLClassLoader
-import java.util.*
 
 /**
  * The bootstrap. On enable it scans `plugins/Cryon/modules/` for feature jars, loads each in its
@@ -38,8 +37,8 @@ class Cryon : JavaPlugin() {
 
     private val log: Logger = LoggerFactory.getLogger("Cryon")
     private lateinit var manager: ModuleManager
-    private val moduleLoaders = ArrayList<URLClassLoader>()
-    private var apiLoader: URLClassLoader? = null
+    private lateinit var loader: ModuleLoader
+    private val watchers = ArrayList<ModuleWatcher>()
 
     private var database: Database? = null
     private var messenger: Messenger? = null
@@ -60,18 +59,81 @@ class Cryon : JavaPlugin() {
         services.register(ModuleManager::class, manager) // so modules can query their own enabled-state
         val context = CryonContext(this, server, log, services)
 
-        // Shared cross-module contract layer: every jar in api/ is loaded once, into the parent of
-        // all feature loaders, so features can intertwine through the same shared types.
         val apiDir = File(dataFolder, "api").apply { mkdirs() }
-        val moduleParent = loadSharedApi(apiDir)
-
         val modulesDir = File(dataFolder, "modules").apply { mkdirs() }
-        discover(modulesDir, moduleParent, messageService)
+        loader = ModuleLoader(
+            manager,
+            messageService,
+            context,
+            log,
+            modulesDir,
+            File(dataFolder, ".module-cache"),
+            javaClass.classLoader
+        )
+
+        // Shared cross-module contract layer (api/) parents every feature loader, then register the
+        // feature jars in modules/ before driving the global two-phase load → enable.
+        loader.loadSharedApi(apiDir)
+        loader.prepareCache()
+        loader.registerAll()
 
         manager.loadAll(context)
         manager.enableAll()
 
-        registerCommands(messageService) // Cloud commands, after modules so /cryon sees their state
+        registerCommands(messageService) // after modules so /cryon sees their state
+        startWatchers(modulesDir, apiDir)
+    }
+
+    /**
+     * Start the dev hot-reload watchers when enabled. They run when `modules.auto-reload` is true,
+     * which **defaults to `!production`** — so a `production: false` (dev) server watches `modules/`
+     * (per-jar hot-swap) and `api/` (a full `reloadApi` cascade on any change) automatically, while a
+     * production server doesn't. The `/cryon load|unload|scan|reload-api` commands work regardless.
+     * Best-effort: a watcher failure degrades to manual hot-swap, never blocks boot.
+     */
+    private fun startWatchers(modulesDir: File, apiDir: File) {
+        val production = config.getBoolean("production", true)
+        val autoReload = config.getBoolean("modules.auto-reload", !production)
+        if (!autoReload) {
+            log.info(
+                "Hot-reload watchers off (production={}); use /cryon load|unload|scan|reload-api to hot-swap",
+                production
+            )
+            return
+        }
+        startWatcher(
+            modulesDir, "modules",
+            onChanged = { jar ->
+                runCatching { loader.loadJar(jar) }.onFailure {
+                    log.error(
+                        "Hot-load failed for {}",
+                        jar.name,
+                        it
+                    )
+                }
+            },
+            onDeleted = { jar ->
+                runCatching { loader.unloadJar(jar) }.onFailure {
+                    log.error(
+                        "Hot-unload failed for {}",
+                        jar.name,
+                        it
+                    )
+                }
+            },
+        )
+        // Any change to a contract jar means re-linking every module, so both edges trigger the cascade.
+        val reloadApi: (File) -> Unit =
+            { runCatching { loader.reloadApi() }.onFailure { log.error("api/ reload failed", it) } }
+        startWatcher(apiDir, "api", onChanged = reloadApi, onDeleted = reloadApi)
+    }
+
+    private fun startWatcher(dir: File, label: String, onChanged: (File) -> Unit, onDeleted: (File) -> Unit) {
+        try {
+            watchers += ModuleWatcher(dir, log, onChanged, onDeleted).also { it.start() }
+        } catch (e: Exception) {
+            log.error("Failed to start the {} watcher; falling back to manual hot-swap", label, e)
+        }
     }
 
     /** Register a disk `plugins/Cryon/lang/` folder so admins can override/add translations. */
@@ -89,7 +151,14 @@ class Cryon : JavaPlugin() {
     /** Register the built-in `@Command` classes onto Paper's native Brigadier registrar. */
     private fun registerCommands(messageService: MessageService) {
         lifecycleManager.registerEventHandler(LifecycleEvents.COMMANDS) { event ->
-            AnnotationCommands.register(event.registrar(), ModuleCommands(manager), LanguageCommands(messageService))
+            // Guard each handler: this runs inside Paper's lifecycle dispatch, which rethrows fatally.
+            for (handler in arrayOf(ModuleCommands(manager, loader), LanguageCommands(messageService))) {
+                try {
+                    AnnotationCommands.register(event.registrar(), handler)
+                } catch (t: Throwable) {
+                    log.error("Failed to register core command \"{}\" skipping...", handler.javaClass.simpleName, t)
+                }
+            }
         }
     }
 
@@ -147,69 +216,13 @@ class Cryon : JavaPlugin() {
     }
 
     override fun onDisable() {
+        watchers.forEach { runCatching { it.close() } }
+        watchers.clear()
         if (::manager.isInitialized) manager.disableAll()
-        moduleLoaders.forEach { runCatching(it::close) }
-        moduleLoaders.clear()
-        // close children (modules) before the shared parent
-        apiLoader?.let { runCatching(it::close) }
-        apiLoader = null
+        if (::loader.isInitialized) loader.close() // closes module loaders + the shared api/ parent
         localeStore?.close()
         messenger?.close()
         database?.close()
-    }
-
-    /**
-     * Load every jar in `plugins/Cryon/api/` into one shared [URLClassLoader] that becomes the parent
-     * of every feature loader — the cross-module contract layer. An `*-api` jar dropped here exposes
-     * its interfaces to *all* features at once (loaded once, so one shared type), letting a feature in
-     * one repo register a service that a feature in another repo consumes through the registry. Returns
-     * this plugin's own loader unchanged when `api/` is empty, so there's no extra layer until used.
-     */
-    private fun loadSharedApi(dir: File): ClassLoader {
-        val jars = dir.listFiles { f: File -> f.isFile && f.name.endsWith(".jar") }
-            ?.sortedBy(File::getName)
-            ?: emptyList()
-        if (jars.isEmpty()) return javaClass.classLoader
-        val loader = URLClassLoader(jars.map { it.toURI().toURL() }.toTypedArray(), javaClass.classLoader)
-        apiLoader = loader
-        log.info("Loaded {} shared API jar(s) from {}", jars.size, dir.path)
-        return loader
-    }
-
-    private fun discover(dir: File, moduleParent: ClassLoader, messageService: MessageService) {
-        val jars = dir.listFiles { f: File -> f.isFile && f.name.endsWith(".jar") }
-            ?.sortedBy(File::getName)
-            ?: emptyList()
-        if (jars.isEmpty()) {
-            log.info("No feature jars in {}", dir.path)
-            return
-        }
-        for (jar in jars) {
-            try {
-                // One isolated loader per jar; parent = the shared API layer (which exposes Paper + the
-                // core API + any api/ contract jars). Features see the api/ types but not each other.
-                val loader = URLClassLoader(arrayOf(jar.toURI().toURL()), moduleParent)
-                moduleLoaders.add(loader)
-
-                // Auto-register any lang/<locale>.properties the feature bundles (read straight from
-                // the jar, so a feature's bundle is never shadowed by a same-named core resource).
-                LangScanner.fromJar(jar)?.let {
-                    messageService.addSource(it)
-                    log.info("Registered lang bundle from {}", jar.name)
-                }
-
-                val modules = ServiceLoader.load(Module::class.java, loader).toList()
-                if (modules.isEmpty()) {
-                    log.warn("No Module service declared in {}", jar.name)
-                    continue
-                }
-                modules.forEach(manager::register)
-                log.info("Discovered {} module(s) in {}", modules.size, jar.name)
-            } catch (e: Throwable) {
-                // Isolate a broken jar (ServiceConfigurationError is an Error, not an Exception).
-                log.error("Failed to read feature jar {}", jar.name, e)
-            }
-        }
     }
 
     private class CryonContext(

@@ -1,3 +1,16 @@
+# Set true on live/production servers. Disables developer conveniences — currently the module
+# hot-reload watcher (see modules.auto-reload). Does not affect the /cryon load|unload|scan
+# commands, which always work.
+production: false
+
+modules:
+    # Watch plugins/Cryon/modules/ and automatically load, reload, and unload feature jars at
+    # runtime as they're added, replaced, or deleted — no /cryon command needed. Intended for dev
+    # iteration. Defaults to the opposite of `production` (on in dev, off in prod); uncomment to
+    # override. Feature jars are loaded from private copies, so the originals here are never locked
+    # and can be freely swapped while running.
+    auto-reload: true
+
 # Cross-server infrastructure. Both must be enabled for the persistent, cross-server player
 # language override; otherwise locale falls back to each client's own setting.
 

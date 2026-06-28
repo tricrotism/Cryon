@@ -1,3 +1,6 @@
+# DISABLED for now (renamed to .disabled so GitHub doesn't register it). Re-enable later by
+# renaming back to crowdin.yml once the Crowdin project + repo secrets are set up.
+
 name: Crowdin
 
 # Pushes English sources to Crowdin when they change, and opens a PR with new translations daily
