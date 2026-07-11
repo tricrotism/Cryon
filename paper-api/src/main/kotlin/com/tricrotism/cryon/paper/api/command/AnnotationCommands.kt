@@ -6,6 +6,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.builder.ArgumentBuilder
 import com.mojang.brigadier.context.CommandContext
+import com.mojang.brigadier.tree.LiteralCommandNode
 import io.papermc.paper.command.brigadier.CommandSourceStack
 import io.papermc.paper.command.brigadier.Commands
 import java.lang.reflect.Method
@@ -19,6 +20,14 @@ import com.mojang.brigadier.Command as BrigadierCommand
  * become Brigadier arguments (named via the annotation), and `@Arg(suggests = "method")` wires a
  * no-arg `Collection<String>` suggester. Uses Java reflection only — no kotlin-reflect.
  */
+/** A built command tree ready to hand to Paper's registrar or splice into the live dispatcher. */
+data class BuiltCommand(
+    val name: String,
+    val node: LiteralCommandNode<CommandSourceStack>,
+    val description: String?,
+    val aliases: List<String>,
+)
+
 object AnnotationCommands {
 
     fun register(registrar: Commands, vararg handlers: Any) = handlers.forEach { register(registrar, it) }
@@ -33,6 +42,16 @@ object AnnotationCommands {
      */
     @JvmOverloads
     fun register(registrar: Commands, handler: Any, available: () -> Boolean = { true }) {
+        val built = build(handler, available)
+        registrar.register(built.node, built.description, built.aliases)
+    }
+
+    /**
+     * Build [handler]'s Brigadier command tree without a registrar, so the caller can register it its
+     * own way (the boot flush hands it to Paper's registrar; the runtime path splices [BuiltCommand.node]
+     * straight into the live dispatcher). Throws if the class is missing `@Command`.
+     */
+    fun build(handler: Any, available: () -> Boolean = { true }): BuiltCommand {
         val type = handler.javaClass
         val command = type.getAnnotation(Command::class.java) ?: error("${type.name} is missing @Command")
 
@@ -44,7 +63,38 @@ object AnnotationCommands {
             addMethod(root, handler, method, sub.value, method.getAnnotation(Permission::class.java)?.value, available)
         }
 
-        registrar.register(root.build(), command.description.ifEmpty { null }, command.aliases.toList())
+        return BuiltCommand(command.name, root.build(), command.description.ifEmpty { null }, command.aliases.toList())
+    }
+
+    /**
+     * Reflect [handler]'s `@Command`/`@Subcommand`/`@Arg` annotations into a display-ready
+     * [CommandDescriptor] (name, description, aliases, permission, per-method usage lines), or null if
+     * the class isn't a command. Used by `/cryon info` — it never touches Brigadier.
+     */
+    fun describe(handler: Any): CommandDescriptor? {
+        val type = handler.javaClass
+        val command = type.getAnnotation(Command::class.java) ?: return null
+        val usages = type.methods
+            .filter { it.isAnnotationPresent(Subcommand::class.java) }
+            .map { usage(command.name, it) }
+            .distinct()
+            .sorted()
+        return CommandDescriptor(
+            command.name,
+            command.description,
+            command.aliases.toList(),
+            type.getAnnotation(Permission::class.java)?.value,
+            usages,
+        )
+    }
+
+    /** The usage line for one handler method, e.g. `/f`, `/f create <name>`. */
+    private fun usage(root: String, method: Method): String {
+        val path = method.getAnnotation(Subcommand::class.java).value
+        val args = method.parameters
+            .filter { it.isAnnotationPresent(Arg::class.java) }
+            .map { "<${it.getAnnotation(Arg::class.java).value}>" }
+        return (listOf("/$root") + path + args).joinToString(" ")
     }
 
     /** Brigadier access predicate: the module must be [available] and the sender hold any [permission]. */
@@ -59,8 +109,16 @@ object AnnotationCommands {
         permission: String?,
         available: () -> Boolean,
     ) {
+        method.isAccessible = true
+        val binders: Array<(CommandContext<CommandSourceStack>) -> Any?> = method.parameters.map { param ->
+            val arg = param.getAnnotation(Arg::class.java)
+            if (arg != null) argBinder(param, arg.value) else { ctx -> ctx.source.sender }
+        }.toTypedArray()
+
         val executor = BrigadierCommand<CommandSourceStack> { ctx ->
-            invoke(handler, method, ctx)
+            val args = arrayOfNulls<Any?>(binders.size)
+            for (i in binders.indices) args[i] = binders[i](ctx)
+            method.invoke(handler, *args)
             BrigadierCommand.SINGLE_SUCCESS
         }
 
@@ -107,18 +165,22 @@ object AnnotationCommands {
         else -> StringArgumentType.word()
     }
 
-    private fun invoke(handler: Any, method: Method, ctx: CommandContext<CommandSourceStack>) {
-        val args = method.parameters.map { param ->
-            val arg = param.getAnnotation(Arg::class.java)
-            if (arg != null) resolveArg(param, arg.value, ctx) else ctx.source.sender
-        }
-        method.invoke(handler, *args.toTypedArray())
-    }
-
-    private fun resolveArg(param: Parameter, name: String, ctx: CommandContext<CommandSourceStack>): Any =
+    private fun argBinder(param: Parameter, name: String): (CommandContext<CommandSourceStack>) -> Any? =
         when (param.type) {
-            Int::class.javaPrimitiveType, Int::class.javaObjectType -> IntegerArgumentType.getInteger(ctx, name)
-            Boolean::class.javaPrimitiveType, Boolean::class.javaObjectType -> BoolArgumentType.getBool(ctx, name)
-            else -> StringArgumentType.getString(ctx, name)
+            Int::class.javaPrimitiveType, Int::class.javaObjectType -> { ctx ->
+                IntegerArgumentType.getInteger(
+                    ctx,
+                    name
+                )
+            }
+
+            Boolean::class.javaPrimitiveType, Boolean::class.javaObjectType -> { ctx ->
+                BoolArgumentType.getBool(
+                    ctx,
+                    name
+                )
+            }
+
+            else -> { ctx -> StringArgumentType.getString(ctx, name) }
         }
 }

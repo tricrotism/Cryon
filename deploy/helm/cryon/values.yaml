@@ -1,0 +1,101 @@
+namespace: cryon
+
+# Accept the Minecraft EULA on every game server (https://aka.ms/MinecraftEULA).
+eula: true
+
+image:
+    registry: registry.example.com
+    # Per-family Paper images are <registry>/cryon-<family>:<tag>.
+    tag: latest
+    pullPolicy: IfNotPresent
+    velocity: registry.example.com/cryon-velocity:latest
+    geyser: registry.example.com/cryon-geyser:latest
+
+# Shared infra. Managed services are recommended in production for durability.
+redis:
+    uri: "redis://cryon-redis:6379/0"
+postgres:
+    host: cryon-postgres
+    port: 5432
+    database: cryon
+    username: cryon
+    # Password comes from the secret below (key: password), never from this file.
+
+# Secrets you create out-of-band (see deploy/README.md). Only names are referenced here.
+secrets:
+    postgres: cryon-postgres        # key: password
+    forwarding: cryon-forwarding    # key: secret   (Velocity modern forwarding, shared with backends)
+    floodgate: cryon-floodgate      # key: key.pem  (Bedrock; only needed when geyser.enabled)
+
+proxy:
+    replicas: 2
+    serviceType: LoadBalancer
+    port: 25565
+    resources:
+        requests:
+            cpu: "500m"
+            memory: "1Gi"
+        limits:
+            memory: "1Gi"
+
+geyser:
+    enabled: true
+    replicas: 1
+    serviceType: LoadBalancer
+    port: 19132
+
+# Persistent shards: interchangeable, routed to least-loaded, reclaimed when empty. The autoscaler
+# keeps `bufferSize` warm Ready servers; populated shards are Allocated and never scaled down.
+persistentFamilies:
+    -   name: hub
+        maxPlayers: 100
+        replicas: 2
+        bufferSize: 2
+        minReplicas: 1
+        maxReplicas: 5
+        shutdownWhenEmpty: true
+        resources:
+            requests:
+                cpu: "1"
+                memory: "3Gi"
+            limits:
+                memory: "3Gi"
+    -   name: skyblock
+        maxPlayers: 60
+        replicas: 3
+        bufferSize: 3
+        minReplicas: 2
+        maxReplicas: 25
+        shutdownWhenEmpty: true
+        resources:
+            requests:
+                cpu: "1"
+                memory: "4Gi"
+            limits:
+                memory: "4Gi"
+
+# Ephemeral matches: a fresh instance is allocated per game and self-shuts-down when it ends. One
+# Fleet per size variant so pod resources scale honestly.
+ephemeralFamilies:
+    -   name: bedwars-mini
+        maxPlayers: 8
+        bufferSize: 5
+        minReplicas: 2
+        maxReplicas: 50
+        resources:
+            requests:
+                cpu: "500m"
+                memory: "1500Mi"
+            limits:
+                memory: "1500Mi"
+    -   name: bedwars-mega
+        maxPlayers: 100
+        bufferSize: 2
+        minReplicas: 1
+        maxReplicas: 20
+        resources:
+            requests:
+                cpu: "2"
+                memory: "6Gi"
+            limits:
+                memory: "6Gi"

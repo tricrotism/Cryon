@@ -1,0 +1,10 @@
+{
+    "id": "cryon",
+    "name": "Cryon",
+    "version": "${version}",
+    "description": "Cryon network core: server registry, dynamic routing, and the Velocity module loader.",
+    "authors": [
+        "tricrotism"
+    ],
+    "main": "com.tricrotism.cryon.velocity.CryonVelocityPlugin"
+}

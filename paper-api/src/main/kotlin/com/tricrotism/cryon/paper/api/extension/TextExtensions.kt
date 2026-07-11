@@ -24,6 +24,7 @@ fun Audience.sendWarn(message: Component) = sendMessage(CommonMessages.warn(mess
 
 // Fully localized canned phrases (localized body in the player's resolved locale).
 fun Player.sendNoPermission() = sendMessage(CommonMessages.noPermission(resolvedLocale()))
+fun Player.sendFeatureDisabled(feature: String) = sendMessage(CommonMessages.featureDisabled(feature, resolvedLocale()))
 fun Player.sendUnknownPlayer(name: String) = sendMessage(CommonMessages.errorPlayer(name, resolvedLocale()))
 fun Player.sendNotOnline(name: String) = sendMessage(CommonMessages.notOnline(name, resolvedLocale()))
 fun Player.sendInvalidAmount(amount: String) = sendMessage(CommonMessages.errorAmount(amount, resolvedLocale()))

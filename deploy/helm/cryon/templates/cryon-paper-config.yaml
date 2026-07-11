@@ -1,0 +1,46 @@
+# Core config shared by every game server. Per-pod identity (family/instance/address) is left blank
+# so the plugin reads it from CRYON_* env; the DB password and forwarding secret are placeholders the
+# entrypoint fills from Secrets. paper-global.yml enables Velocity modern forwarding on the backends.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: cryon-paper-config
+    namespace: { { .Values.namespace } }
+data:
+    config.yml: |
+        production: true
+        modules:
+            auto-reload: false
+        server-name: ""
+        network:
+            registry-enabled: true
+            family: ""
+            instance-id: ""
+            address: ""
+            port: 0
+            max-players: 0
+            heartbeat-seconds: 5
+            agones:
+                health-seconds: 5
+                shutdown-when-empty: false
+                empty-grace-seconds: 60
+                min-instances: 1
+        database:
+            enabled: true
+            host: "{{ .Values.postgres.host }}"
+            port: { { .Values.postgres.port } }
+            database: "{{ .Values.postgres.database }}"
+            username: "{{ .Values.postgres.username }}"
+            password: "__DB_PASSWORD__"
+            max-pool-size: 10
+        redis:
+            enabled: true
+            uri: "{{ .Values.redis.uri }}"
+    paper-global.yml: |
+        # Minimal overlay: Paper fills the remaining defaults on first start. Modern forwarding must match
+        # the proxy's forwarding secret; online-mode true so only the proxy can connect backends.
+        proxies:
+            velocity:
+                enabled: true
+                online-mode: true
+                secret: "__FORWARDING_SECRET__"

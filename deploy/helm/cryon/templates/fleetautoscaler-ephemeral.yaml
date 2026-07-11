@@ -1,0 +1,18 @@
+{ { - range .Values.ephemeralFamilies } }
+---
+apiVersion: autoscaling.agones.dev/v1
+kind: FleetAutoscaler
+metadata:
+    name: { { .name } }
+    namespace: { { $.Values.namespace } }
+spec:
+    fleetName: { { .name } }
+    # Keep a warm pool of Ready match servers so allocation is instant; each allocation consumes one
+    # and the pool refills. Allocated matches self-Shutdown when they end.
+    policy:
+        type: Buffer
+        buffer:
+            bufferSize: { { .bufferSize } }
+            minReplicas: { { .minReplicas } }
+            maxReplicas: { { .maxReplicas } }
+  { { - end } }

@@ -1,0 +1,31 @@
+# Cryon proxy config. This proxy reads the shared server registry over Redis to route players and
+# register backends as game servers come and go. Redis is required; the database is optional here
+# (only game servers write the family catalog). Values can be overridden per deployment via env.
+
+database:
+    enabled: false
+    host: localhost
+    port: 5432
+    database: cryon
+    username: cryon
+    password: ""
+    max-pool-size: 10
+
+redis:
+    enabled: false
+    # redis://[:password@]host:port/db
+    uri: "redis://localhost:6379/0"
+
+network:
+    registry-enabled: true
+    heartbeat-seconds: 5
+
+# Network-wide maintenance mode. Toggle at runtime with /maintenance on|off [message] (permission
+# cryon.maintenance); the state syncs to every proxy over Redis. While on, the server list shows the
+# message with a protocol number no client matches (so it reads as unjoinable) and logins are denied
+# unless the player has cryon.maintenance.bypass.
+maintenance:
+    default-message: "The network is under maintenance."
+    # The protocol version reported in the ping while under maintenance. Any value clients won't match
+    # (-1 renders as an incompatible version). Change only if you need a specific display.
+    ping-protocol: -1

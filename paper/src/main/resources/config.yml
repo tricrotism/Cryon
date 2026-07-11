@@ -11,6 +11,40 @@ modules:
     # and can be freely swapped while running.
     auto-reload: true
 
+# This server's family (the interchangeable pool it belongs to, e.g. skyblock or hub). Also the
+# scope name server-scoped feature flags apply to, so a flag kills the whole pool at once. Kept as a
+# legacy alias for network.family below; prefer setting network.family.
+server-name: local
+
+# Network / sharding. This server registers itself in the shared server registry and heartbeats its
+# live player count, so proxies can route to it and an orchestrator can scale the pool. Requires both
+# database and redis. All values are env-first (a Kubernetes pod needs no baked config): CRYON_SERVER_FAMILY,
+# CRYON_INSTANCE_ID (or HOSTNAME), CRYON_INSTANCE_ADDRESS, CRYON_INSTANCE_PORT.
+network:
+    registry-enabled: true
+    # The interchangeable pool. Blank falls back to server-name above, then "local".
+    family: ""
+    # Unique per process. Blank falls back to CRYON_INSTANCE_ID, then HOSTNAME, then a generated id.
+    instance-id: ""
+    # The address a proxy dials to reach this server. Blank falls back to 127.0.0.1.
+    address: ""
+    # 0 falls back to the Paper server port.
+    port: 0
+    # 0 falls back to the Paper server max-players.
+    max-players: 0
+    heartbeat-seconds: 5
+
+    # Agones (Kubernetes game-server orchestration). Auto-detected via the injected sidecar env, so
+    # these only take effect inside an Agones-managed pod; elsewhere they are ignored.
+    agones:
+        health-seconds: 5
+        # Persistent shards: request Shutdown once empty for empty-grace-seconds, so the fleet can
+        # shrink. Guarded so it never kills the last min-instances of the family. Off by default,
+        # which is correct for singleton hubs and for ephemeral matches (they shut down on match end).
+        shutdown-when-empty: false
+        empty-grace-seconds: 60
+        min-instances: 1
+
 # Cross-server infrastructure. Both must be enabled for the persistent, cross-server player
 # language override; otherwise locale falls back to each client's own setting.
 

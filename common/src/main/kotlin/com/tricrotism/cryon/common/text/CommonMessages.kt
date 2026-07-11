@@ -28,6 +28,7 @@ object CommonMessages {
     const val KEY_NOT_ONLINE = "cryon.common.not_online"
     const val KEY_INVALID_AMOUNT = "cryon.common.invalid_amount"
     const val KEY_NOT_ENOUGH = "cryon.common.not_enough"
+    const val KEY_FEATURE_DISABLED = "cryon.common.feature_disabled"
 
     fun message(type: MessageType, content: Component): Component =
         Component.empty().append(type.prefix).appendSpace().append(content)
@@ -52,6 +53,19 @@ object CommonMessages {
 
     fun noPermission(locale: Locale = defaultLocale): Component =
         error(Messages.getOr(locale, KEY_NO_PERMISSION, "<off_white>You do not have access to this command."))
+
+    fun featureDisabled(feature: String, locale: Locale = defaultLocale): Component =
+        error(
+            Messages.getOr(
+                locale, KEY_FEATURE_DISABLED,
+                "<crimson><feature></crimson> <off_white>is currently disabled.",
+                Placeholder.unparsed("feature", prettyFlagName(feature)),
+            )
+        )
+
+    private fun prettyFlagName(feature: String): String =
+        feature.lowercase().split('_').filter { it.isNotEmpty() }
+            .joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
 
     /** "<name> has never joined the server before!" */
     fun errorPlayer(name: String, locale: Locale = defaultLocale): Component =

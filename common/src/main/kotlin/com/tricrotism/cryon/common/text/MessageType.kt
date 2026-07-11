@@ -16,6 +16,5 @@ enum class MessageType(val color: TextColor, val icon: String) {
     WARN(CryonPalette.WARNING, "⚠"),     // ⚠
     ;
 
-    val prefix: Component
-        get() = Component.text(icon).color(color).decoration(TextDecoration.BOLD, true)
+    val prefix: Component = Component.text(icon).color(color).decoration(TextDecoration.BOLD, true)
 }

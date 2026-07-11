@@ -4,6 +4,7 @@ import com.tricrotism.cryon.common.text.Mini
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -14,9 +15,17 @@ import java.util.concurrent.CopyOnWriteArrayList
  *
  * Thread-safe: sources are held in a `CopyOnWriteArrayList`; rendering is stateless.
  */
-class MessageService(@Volatile var defaultLocale: Locale = Locale.US) {
+class MessageService(defaultLocale: Locale = Locale.US) {
+
+    @Volatile
+    var defaultLocale: Locale = defaultLocale
+        set(value) {
+            field = value
+            chains.clear()
+        }
 
     private val sources = CopyOnWriteArrayList<MessageSource>()
+    private val chains = ConcurrentHashMap<Locale, List<Locale>>()
 
     fun addSource(source: MessageSource) = sources.add(source)
     fun removeSource(source: MessageSource) = sources.remove(source)
@@ -45,13 +54,13 @@ class MessageService(@Volatile var defaultLocale: Locale = Locale.US) {
         return Mini.format(template, *resolvers)
     }
 
-    private fun localeChain(locale: Locale): List<Locale> {
+    private fun localeChain(locale: Locale): List<Locale> = chains.computeIfAbsent(locale) { requested ->
         val chain = LinkedHashSet<Locale>()
-        chain.add(locale)
-        if (locale.country.isNotEmpty()) chain.add(Locale.of(locale.language))
+        chain.add(requested)
+        if (requested.country.isNotEmpty()) chain.add(Locale.of(requested.language))
         chain.add(defaultLocale)
         if (defaultLocale.country.isNotEmpty()) chain.add(Locale.of(defaultLocale.language))
-        return chain.toList()
+        chain.toList()
     }
 
     private fun missing(key: String): Component = Component.text("⟨$key⟩")

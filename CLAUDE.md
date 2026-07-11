@@ -9,19 +9,26 @@ Modules in this repo (core + published API):
 - **`:common`** — platform-neutral framework: module system (`Module`, `ModuleManager`,
   `ModuleContext`, `ServiceRegistry`), `number` (`PackedDecimal`, `LongUtils`, `BigDecimalUtils`,
   `NumberUtils`), `text` (`Mini`, `CryonPalette`, `MessageType`, `CommonMessages`), `locale`
-  (`MessageService` + sources), `data`/`net` (SQL + Redis), primitive `extension`s. Adventure
-  `compileOnly`; no Bukkit/Velocity types (a future `:velocity` loader reuses it). **Published.**
+  (`MessageService` + sources), `data`/`net` (SQL + Redis + `RedisStore` KV), `server` (server
+  registry + player routing), primitive `extension`s. Adventure `compileOnly`; no Bukkit/Velocity
+  types (the `:velocity` loader reuses it). **Published.**
 - **`:paper-api`** — what feature repos compile against: `PaperModule`/`PaperModuleContext`,
   `CryonPaper`, `item.ItemBuilder`, `scheduler.Schedulers` (Folia-aware), `event.Events`,
   `command` (annotation framework), Paper `extension`s. Bukkit `compileOnly`. **Published.**
 - **`:paper`** — the core plugin / **loader** (`com.tricrotism.cryon.Cryon`). paperweight.userdev +
   Shadow + run-paper; bundles `:common` + `:paper-api` + kotlin-stdlib for loaded features.
+- **`:velocity-api`** — what Velocity feature repos compile against: `VelocityModule`/
+  `VelocityModuleContext`. Velocity `compileOnly`. **Published.**
+- **`:velocity`** — the proxy **loader** (`com.tricrotism.cryon.velocity.CryonVelocityPlugin`). Shadow;
+  shades `:common` + `:velocity-api` + kotlin-stdlib + the cross-server client libs (no Paper-style
+  `libraries:` loader on Velocity). Reads the shared server registry to route players and register
+  backends live.
 
 Features live in **separate repos** (e.g. `Cryon-Modules/cryon-example-feature/`), `compileOnly` the
 API, and ship a thin jar dropped into `plugins/Cryon/modules/`.
 
 **No** DI container, codegen, menu framework, or coroutine bridge yet. **When you add infrastructure
-(DI, KSP, InvUI, Folia, the `:velocity` loader), document it here in the same pass** — keep this
+(DI, KSP, InvUI, Folia), document it here in the same pass** — keep this
 guide and the code in lockstep.
 
 ---
@@ -105,9 +112,28 @@ the BigDecimal multiply.
 broadcast, scheduler, payout path, animation phase, mode toggle). Umbrella flags force killing the
 whole feature when one slice breaks.
 
-**No flag system exists yet.** Design for the seam: each entry point (commands, handlers, schedulers,
-menu opens) behind a single guard, distinct slices behind distinct guards. When you build the system,
-use bare flag IDs (`FISHING`, `FISHING_RARE` — **no** gamemode prefixes), gate every entry point, and document it here.
+**The system: `FeatureFlags`** (`…common.flag`), created by the core and shared via the
+`ServiceRegistry`. Bare uppercase IDs (`FISHING`, `FISHING_RARE` — **no** gamemode prefixes; a
+gamemode-specific flag is scoped via the scope argument, never the ID). **Layered — most specific
+wins:** player override → server override (this server's family, `network.family`/legacy `server-name` in
+`config.yml`) → global
+override → default **enabled**. SQL-persisted (`cryon_feature_flags`, source of truth) and synced
+across every server via a Redis broadcast when the infra is configured; without it the same API runs
+in-memory per server (resets on restart).
+
+Admin surface (`cryon.admin`): `/cryon flags [scope]` — per-scope listing with clickable toggles;
+`/cryon flag enable|disable|clear <feature> [scope]` where scope is `global` (default), a server
+name, or `player:<name>`; `/cryon flag status <feature> [player]` — the layered breakdown; `/cryon
+flag delete <feature>` (hardcoded-authorized account only); `/cryon flag reload`.
+
+In a module: resolve once (`services.get(FeatureFlags::class)`), `register("SHOP_SELL")` each ID in
+`onEnable` (persists its default and lists it), then gate every entry point **inside** the handler —
+not at wiring time — so a runtime toggle bites without re-enabling the module. Commands use the
+one-line guard `flags.guard(player, FLAG)` (acks the localized "⟨Feature⟩ is currently disabled."
+and returns false); silent paths (event handlers, sell modifiers, payout code) use
+`isEnabled(FLAG, player.uniqueId)` — **pass the player whenever one is in context** so per-player
+overrides (canary rollouts, support cases) apply. Reference: the survival gamemode modules in
+`Cryon-Modules/` (`cryon-economy`/`cryon-skills`/`cryon-shop`).
 
 ---
 
@@ -311,9 +337,10 @@ state via `PaperModule.isEnabled()`. **Main-thread only.**
 **Failure isolation — a feature must never crash the server.** Every seam where the framework invokes
 feature code catches **`Throwable`** (not just `Exception` — a stale/mislinked jar throws `Error`s
 like `NoSuchMethodError`): module `onLoad`/`onEnable`/`onDisable` (failure → `FAILED`, server
-continues), jar reads, command registration inside the COMMANDS lifecycle handler (both
-`PaperModule.registerCommands` and the core's — Paper rethrows lifecycle exceptions fatally, so they
-must be guarded), `Events` handlers, and the watcher thread. A `FAILED` module is in-memory only and
+continues), jar reads, command registration (the core's single COMMANDS lifecycle handler flushes
+every contribution and guards each one, since Paper rethrows lifecycle exceptions fatally; the live
+runtime path in `CommandRegistry` is likewise guarded), `Events` handlers, and the watcher thread. A `FAILED` module is
+in-memory only and
 doesn't auto-retry; it clears on a successful `/cryon enable|reload <id>`, a reload of its jar, or
 restart. The one thing outside our control is a feature that bypasses these helpers and registers its
 own raw Paper lifecycle handler — route command registration through `registerCommands`, and keep the
@@ -340,12 +367,44 @@ debounced and hopped to the main thread. **Config-gated** by `modules.auto-reloa
 dev server hot-reloads automatically, production doesn't, either overridable. The `/cryon
 load|unload|scan|reload-api` commands work regardless.
 
-**Runtime command-registration caveat.** Paper only allows registering a COMMANDS lifecycle handler
-during the bootstrap/enable window, so a module **loaded or reloaded at runtime** (hot-swap, `/cryon
-load`, `reload-api`) cannot (re)register its command tree — `PaperModule.registerCommands` catches
-this, logs a warning, and lets the module enable anyway; its commands refresh on the next server
-reload/restart. Everything else (listeners, services, schedulers) re-wires live. A proper fix (the
-core owning one COMMANDS handler that all modules contribute to) is the documented next step.
+**spark profiler attribution (`SparkSupport`).** spark attributes a sampled frame in two steps: a
+`ClassFinder` resolves the frame's class *name* to a `Class`, then a `ClassSourceLookup` maps it to
+a source by walking its classloader chain for a Bukkit/Paper plugin loader. Both are blind to our
+module `URLClassLoader`s — Paper's finder (`Class.forName` + the Paper plugin loader group) can't
+even *find* module classes, so their frames are dropped before the lookup runs. spark exposes no
+API to extend either, so `SparkSupport.install` (run one tick after enable; every attribution call
+resolves through `SparkPlatform.plugin` live at export time, so post-hoc splicing works)
+reflectively swaps that field for a `Proxy` overriding three methods: `createClassFinder()` (real
+finder, then each module loader — read off spark's export thread via a concurrent map),
+`createClassSourceLookup()` (module classes resolve via `ModuleLoader.sourceName`, everything else
+falls through), and `getKnownSources()` (appends per-jar `SourceMetadata` so the viewer lists
+modules with versions — sources are named `Cryon-Module-<id>`, authored by the core plugin's
+`plugin.yml` authors). It reaches the `SparkPlatform` through spark's **registered API**
+(`SparkProvider.get()`, then the services registry as a fallback), so it works whether spark is a
+standalone plugin **or bundled into Paper** — Paper 26.x ships spark as a bundled *library*
+(`SparksFly` + `spark-paper.jar`), not a Bukkit plugin, so `getPlugin("spark")` is null. spark's
+internal types (`SparkPlugin`/`ClassSourceLookup`/`ClassFinder`/`SourceMetadata`) are taken from
+reflection metadata (field/method/generic types), never named, since Paper relocates spark's
+packages when it bundles them (`me.lucko.spark.paper.…`). **Best-effort** — spark absent or its
+internals shifted → a console warning and spark's default (module frames unattributed) stands.
+
+**Command registration (the core-owned `CommandService`).** Paper only hands out its `Commands`
+registrar inside a COMMANDS lifecycle handler, and only accepts that handler during the
+bootstrap/enable window. So the core owns command registration through one shared service
+(`…paper.api.command.CommandService`, impl `CommandRegistry` in `:paper`, registered into the
+`ServiceRegistry` before any module loads). `PaperModule.registerCommands` no longer registers its
+own lifecycle handler; it contributes its `@Command` handlers to the registry keyed by module id,
+gated on `isEnabled`. At boot the core's **single** COMMANDS handler flushes every queued
+contribution (core + all modules) through Paper's registrar. **A module loaded or reloaded at
+runtime** (hot-swap, `/cryon load`, `reload-api`) is past that window, so the registry splices its
+built Brigadier tree **straight into the live dispatcher** (reached via
+`CraftServer.getServer().getCommands().getDispatcher()`) and removes stale nodes reflectively
+(Brigadier exposes no public child removal), then `updateCommands()`s online players. So its commands
+appear immediately, no restart. On unload, `ModuleLoader` calls `CommandService.unregister(id)` to
+drop that jar's nodes. Both live paths are **best-effort**: if the server internals shift, runtime
+(un)registration logs and no-ops, while boot-time registration (the common path, pure Paper API) is
+unaffected. The registry also reflects each owner's commands (`describe(id)`), which is what `/cryon
+info <id>` lists (name, aliases, permission, per-subcommand usages).
 
 **Commands track module state.** A `@Command` class registered via `PaperModule.registerCommands(…)`
 is gated on `isEnabled()` (passed as `available` to `AnnotationCommands`), so it can't run or
@@ -356,8 +415,16 @@ vanilla "unknown command" — the trade-off for gating at the Brigadier layer.
 **Authoring a feature:** new repo → `compileOnly` published `:common` + `:paper-api` (+ Paper API) →
 `class Foo : PaperModule()` no-arg ctor → add `META-INF/services` entry → build the thin jar → drop into `modules/`.
 
-When you add the `:velocity` loader, give it its own `ModuleManager` + `VelocityModuleContext` over the same `:common`
-contract, and document it here.
+**Velocity loader (`:velocity`).** The proxy runs `CryonVelocityPlugin`, which builds its own
+`ModuleManager` + `VelocityModuleContext` (adds `proxy`/`plugin`) over the same `:common` module
+system, with a `VelocityModuleLoader` mirroring the Paper one (isolated `URLClassLoader` per jar,
+shared `api/` parent, `ServiceLoader` discovery). Velocity's `@Inject` appears **only on the
+`CryonVelocityPlugin` entrypoint**; feature modules stay no-arg-ctor `ServiceLoader`-discovered exactly
+like Paper, so the DI and the module system don't collide. Config is read from `plugins/cryon/config.yml`
+via (relocated) SnakeYAML with the same keys as Paper. Runtime hot-swap parity (a Velocity watcher and
+`/cryon`-style commands) is the documented next step. Velocity feature repos `compileOnly` `:common` +
+`:velocity-api`, `class Foo : VelocityModule()` no-arg ctor, add the `META-INF/services` entry, and
+drop the jar into the proxy's `plugins/cryon/modules/`.
 
 ---
 
@@ -429,13 +496,18 @@ class ModuleCommands(private val modules: ModuleManager) {
 `@Command`/`@Subcommand`/`@Permission`/`@Arg(name, suggests)`/`@Greedy`. `CommandSender` injected;
 `@Arg` types `String`/`Int`/`Boolean`. Built-ins: `/cryon` (`cryon.admin`), `/language` (`/lang`).
 **Feature modules register via `PaperModule.registerCommands(…)` in `onLoad`** (gated on `isEnabled`);
-core commands use the plain `register(registrar, vararg handlers)` (always available).
+the core contributes its own commands the same way. Both go through the core-owned `CommandService`,
+which flushes at boot and splices runtime-loaded modules into the live dispatcher (see *Command
+registration* above). Registering from `onEnable` instead of `onLoad` double-contributes on every
+reload, so always register in `onLoad`.
 
 **Cross-server infra (`…common.data`/`…common.net`): opt-in, config-gated.**
 
 - `Database` (`PostgresDatabase`, HikariCP) — async SQL: `query`/`update` return `CompletableFuture`s
   off-thread. No ORM. **Never `.get()` on the main thread.**
 - `Messenger` (`RedisMessenger`, Lettuce) — cross-server `publish`/`subscribe` + `request`/`handle`. String payloads.
+- `RedisStore` (`LettuceRedisStore`) — async Redis KV with TTL (`set`/`get`/`delete`/`keys`/`mget`),
+  for state that must expire on its own (server liveness). Registered when `redis.enabled`.
 - Both registered into `ServiceRegistry` when enabled (`services.find<Database>()`/`find<Messenger>()`
   — use `find`, may be absent). Client libs load at runtime via `plugin.yml` `libraries:`. `config.yml`
   holds `database.*`, `redis.*` (both `enabled: false` by default), plus `production` (default `true`)
@@ -447,8 +519,48 @@ broadcasts a Redis invalidation; `PlayerLocaleStore` caches it in memory for syn
 installs `PlayerLocaleStore` when SQL+Redis are configured, else `MemoryLocaleStore` (overrides work
 but per-server, reset on restart). A store is always installed; falls back to client locale without an override.
 
-**Not yet:** DI container, codegen, menu framework, coroutine bridge. Add infrastructure **and document it here in the
-same pass.**
+**Network / sharding (`…common.server`): interchangeable server pools + dynamic routing.** Each
+running server resolves an `InstanceIdentity` (env-first: `CRYON_SERVER_FAMILY`,
+`CRYON_INSTANCE_ID`/`HOSTNAME`, `CRYON_INSTANCE_ADDRESS`, `CRYON_INSTANCE_PORT`, else `config.yml`
+`network.*`, else Paper's own values), generalizing the old static `server-name` into a `family` (the
+pool, and the FeatureFlags server-scope) plus a per-process `instanceId`.
+
+- `ServerRegistry` (`RedisServerRegistry`) — the shared directory of live instances. Liveness is
+  **Redis KV with a TTL** (a crashed pod's key expires; each node also runs a local reaper), synced
+  over `cryon:registry:events` pub/sub into an in-memory replica so queries are non-blocking; the
+  slow-changing family catalog lives in Postgres. `bestInstance(family)` = least-loaded READY,
+  non-full. Requires Redis (Postgres optional). Resolve via `services.find(ServerRegistry::class)`.
+- `InstanceReporter` (`:paper`) — registers this server and heartbeats its live player count
+  (`AtomicInteger` fed by join/quit, so the async heartbeat never touches Bukkit off-thread); sets
+  DRAINING then deregisters on disable. Proxies never register themselves; they only read.
+- `PlayerRouter` (`RedisPlayerRouter`, in `:common`, runs on Paper and Velocity) — `route(uuid, family)`
+  picks the least-loaded candidates and **reserves a slot atomically** (`ServerRegistry.tryReserve`, a
+  Redis Lua/zset hold via `RedisStore.evalInt`) before broadcasting on `cryon:routing:transfer`, so two
+  proxies can't overfill one shard. The owning proxy connects the player, others no-op. A Paper feature
+  never needs a proxy handle: `services.find(PlayerRouter::class)?.route(...)`.
+- On Velocity, `BackendSynchronizer` registers/unregisters proxy servers off registry events and
+  `TransferListener` performs the connects. Ephemeral minigame families fall back to the `Matchmaker`
+  seam (interface only until a matchmaker module ships). `config.yml` adds a `network.*` block;
+  `server-name` remains a legacy alias for `network.family`.
+- `AgonesLifecycle` (`:paper`, `…network.agones`) — active only under an Agones sidecar (detected via
+  `AGONES_SDK_HTTP_PORT`). Talks to the sidecar over REST (`AgonesClient`, JDK `HttpClient`, no gRPC):
+  marks `Ready` after registration, pings `Health`, mirrors the player count to an annotation, and
+  optionally reclaims an empty **persistent** shard (`shutdown-when-empty`, env-first via
+  `CRYON_AGONES_SHUTDOWN_WHEN_EMPTY`, guarded to never kill the last `min-instances`). Registered into
+  the `ServiceRegistry` so a matchmaker/match-end handler can call `requestShutdown()`.
+- **Maintenance mode** (`…common.maintenance` `MaintenanceService`/`RedisMaintenanceService`, Redis-synced
+  like FeatureFlags). On Velocity, `/maintenance on|off [message]` (permission `cryon.maintenance`) flips
+  every proxy; `MaintenanceListener` shows the message with an unjoinable ping protocol and denies logins
+  without `cryon.maintenance.bypass`.
+
+**Deployment** lives in `deploy/` (outside the Gradle build): per-family Paper / Velocity / Geyser
+Dockerfiles + entrypoints (`images/`), baked family jar sets (`families/`), and a Helm chart
+(`helm/cryon/`) of Agones Fleets + Buffer FleetAutoscalers, the proxy Deployment/Service, standalone
+Geyser (UDP) + Floodgate, ConfigMaps, and allocator RBAC. See `deploy/README.md`.
+
+**Not yet:** DI container, codegen, menu framework, coroutine bridge; the ephemeral `Matchmaker`
+implementation + a k8s allocator, the Agones Counter (player-count) autoscaler, and safe drain/transfer
+of populated shards on node upgrades. Add infrastructure **and document it here in the same pass.**
 
 ---
 
@@ -467,6 +579,8 @@ same pass.**
 | `@Command`/`@Subcommand` + `AnnotationCommands.register` | `plugin.yml commands:` / `CommandMap` / Cloud (broken on 26.2) |
 | `player.resolvedLocale()` for messages                   | `player.locale()` directly (ignores overrides)                 |
 | `services.find<Database>()` / `find<Messenger>()`        | `get<…>()` assuming the infra is enabled                       |
+| `PlayerRouter.route(uuid, family)` to move players       | Hardcoding a backend server name to connect to                 |
+| `find<ServerRegistry>()`; `bestInstance(family)`         | Assuming a fixed server list; picking a full/STARTING instance |
 | Consume the DB/Redis `CompletableFuture` async           | `.get()` on a DB future on the main thread                     |
 | Play a `Sound.*` on player-facing actions                | Silent state changes / redeems                                 |
 | `inventory.addItem` + handle overflow deliberately       | `dropItemNaturally` as the "didn't fit" path                   |

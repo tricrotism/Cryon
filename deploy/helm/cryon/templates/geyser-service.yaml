@@ -1,0 +1,25 @@
+{ { - if .Values.geyser.enabled } }
+apiVersion: v1
+kind: Service
+metadata:
+    name: cryon-geyser
+    namespace: { { .Values.namespace } }
+    labels:
+        app.kubernetes.io/name: cryon
+        app.kubernetes.io/component: geyser
+    annotations:
+        # Many cloud LBs need UDP opted in explicitly; confirm your provider supports UDP LoadBalancers.
+        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+spec:
+    type: { { .Values.geyser.serviceType } }
+    # Bedrock is stateful UDP (RakNet); keep a client on one Geyser pod.
+    sessionAffinity: ClientIP
+    externalTrafficPolicy: Local
+    selector:
+        app.kubernetes.io/component: geyser
+    ports:
+        -   name: bedrock
+            port: { { .Values.geyser.port } }
+            targetPort: 19132
+            protocol: UDP
+  { { - end } }

@@ -7,10 +7,12 @@ import com.tricrotism.cryon.common.module.Module
 import com.tricrotism.cryon.common.module.ModuleContext
 import com.tricrotism.cryon.common.module.ModuleManager
 import com.tricrotism.cryon.common.module.ModuleState
+import com.tricrotism.cryon.paper.api.command.CommandService
 import org.slf4j.Logger
 import java.io.File
 import java.net.URLClassLoader
 import java.util.*
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Owns the jar ↔ classloader ↔ module mapping for the core and the runtime hot-swap operations the
@@ -45,11 +47,18 @@ class ModuleLoader(
         val lang: MessageSource?,
     )
 
+    /** A module jar as the profiler should present it: display [name] (its module ids) + [version]. */
+    data class ModuleSource(val name: String, val version: String)
+
     private var apiLoader: URLClassLoader? = null
     private var apiDir: File? = null
     private var moduleParent: ClassLoader = coreLoader
     private val jars = LinkedHashMap<String, LoadedJar>() // key: source path; insertion = load order
     private val moduleToJar = HashMap<String, String>()   // module id -> jar key
+
+    // Module classloader -> source info, for spark profiler attribution (see sourceName). Concurrent
+    // because the profiler reads it off its own export thread while hot-swaps mutate it on main.
+    private val loaderSources = ConcurrentHashMap<ClassLoader, ModuleSource>()
 
     /**
      * Load every jar in the shared `api/` contract layer into one [URLClassLoader] that parents all
@@ -90,6 +99,7 @@ class ModuleLoader(
         val ids = sources.flatMap { readJar(it) ?: emptyList() }
         val loaded = ids.filter { manager.load(it, context) }
         loaded.forEach(manager::enable)
+        context.services.find(CommandService::class)?.refresh() // reveal re-enabled commands
         val enabled = loaded.filter { manager.state(it) == ModuleState.ENABLED }
         log.info("Reloaded api/ and {} module(s) ({} re-enabled)", sources.size, enabled.size)
         return enabled
@@ -126,6 +136,7 @@ class ModuleLoader(
         val ids = readJar(source) ?: return emptyList()
         val loaded = ids.filter { manager.load(it, context) }
         loaded.forEach(manager::enable)
+        context.services.find(CommandService::class)?.refresh() // reveal now-enabled commands
         return loaded.filter { manager.state(it) == ModuleState.ENABLED }
     }
 
@@ -143,11 +154,30 @@ class ModuleLoader(
     /** Jar files sitting in `modules/` that aren't loaded yet — for the `/cryon load` suggester. */
     fun loadableJarNames(): List<String> = jarFiles().filterNot(::isLoaded).map(File::getName)
 
+    /**
+     * Display name for a module's classloader, or null if [loader] isn't one of ours. Used by
+     * [SparkSupport] so the profiler can credit feature modules instead of lumping them under the
+     * core; null lets spark fall back to its normal lookup (e.g. core classes -> Cryon). Read off the
+     * profiler's export thread.
+     */
+    fun sourceName(loader: ClassLoader?): String? = loader?.let { loaderSources[it]?.name }
+
+    /**
+     * Live view of every module classloader — [SparkSupport]'s class-finder fallback. spark can only
+     * attribute a sampled class it can *find*, and Paper's own lookup can't see into these isolated
+     * loaders. Safe to iterate off-thread (concurrent map view).
+     */
+    fun moduleClassLoaders(): Collection<ClassLoader> = loaderSources.keys
+
+    /** Snapshot of every loaded jar's source info — spark's "known sources" metadata. */
+    fun sources(): Collection<ModuleSource> = loaderSources.values.toList()
+
     /** Close every loader (modules before the shared parent) and clear the cache. For plugin disable. */
     fun close() {
         jars.values.forEach { runCatching { it.loader.close() } }
         jars.clear()
         moduleToJar.clear()
+        loaderSources.clear()
         apiLoader?.let { runCatching { it.close() } }
         apiLoader = null
         cacheDir.listFiles()?.forEach { it.delete() }
@@ -188,6 +218,10 @@ class ModuleLoader(
             }
 
             jars[sourceKey] = LoadedJar(source, cache, loader, ids, lang)
+            loaderSources[loader] = ModuleSource(
+                ids.joinToString(", ") { id -> "Cryon-Module-${id.replaceFirstChar(Char::uppercase)}" },
+                jarVersion(source.name),
+            )
             log.info("Discovered {} module(s) in {}", ids.size, source.name)
             return ids
         } catch (e: Throwable) {
@@ -203,10 +237,13 @@ class ModuleLoader(
 
     private fun unloadByKey(jarKey: String): List<String>? {
         val jar = jars.remove(jarKey) ?: return null
+        loaderSources.remove(jar.loader)
+        val commands = context.services.find(CommandService::class)
         for (id in jar.moduleIds.reversed()) {
             manager.disable(id) // no-op if already disabled
             manager.unregister(id)
             moduleToJar.remove(id)
+            commands?.unregister(id) // drop its commands from the live dispatcher
         }
         // Drop services this jar published before closing its loader, so a reload re-registers cleanly
         // and peers can't resolve an impl from a now-dead loader.
@@ -224,4 +261,10 @@ class ModuleLoader(
             ?: emptyList()
 
     private fun key(file: File): String = file.toPath().toAbsolutePath().normalize().toString()
+
+    /** `cryon-economy-1.0.0.jar` -> `1.0.0`; falls back to the whole base name for unversioned jars. */
+    private fun jarVersion(fileName: String): String {
+        val base = fileName.removeSuffix(".jar")
+        return Regex("-(\\d[\\w.+-]*)$").find(base)?.groupValues?.get(1) ?: base
+    }
 }

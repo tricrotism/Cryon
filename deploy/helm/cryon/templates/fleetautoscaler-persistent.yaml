@@ -1,0 +1,19 @@
+{ { - range .Values.persistentFamilies } }
+---
+apiVersion: autoscaling.agones.dev/v1
+kind: FleetAutoscaler
+metadata:
+    name: { { .name } }
+    namespace: { { $.Values.namespace } }
+spec:
+    fleetName: { { .name } }
+    # Buffer policy: keep bufferSize warm Ready servers; every allocation consumes one and the
+    # autoscaler refills. Only Ready (unallocated) servers are ever scaled down, so a populated shard
+    # (Allocated) is never terminated. Swap to a Counter policy once player-count mirroring is in place.
+    policy:
+        type: Buffer
+        buffer:
+            bufferSize: { { .bufferSize } }
+            minReplicas: { { .minReplicas } }
+            maxReplicas: { { .maxReplicas } }
+  { { - end } }

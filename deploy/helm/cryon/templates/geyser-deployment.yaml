@@ -1,0 +1,43 @@
+{ { - if .Values.geyser.enabled } }
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    name: cryon-geyser
+    namespace: { { .Values.namespace } }
+    labels:
+        app.kubernetes.io/name: cryon
+        app.kubernetes.io/component: geyser
+spec:
+    replicas: { { .Values.geyser.replicas } }
+    selector:
+        matchLabels:
+            app.kubernetes.io/component: geyser
+    template:
+        metadata:
+            labels:
+                app.kubernetes.io/name: cryon
+                app.kubernetes.io/component: geyser
+        spec:
+            containers:
+                -   name: geyser
+                    image: { { .Values.image.geyser } }
+                    imagePullPolicy: { { .Values.image.pullPolicy } }
+                    ports:
+                        -   name: bedrock
+                            containerPort: 19132
+                            protocol: UDP
+                    volumeMounts:
+                        -   name: geyser-config
+                            mountPath: /geyser-config
+                            readOnly: true
+                        -   name: floodgate
+                            mountPath: /floodgate
+                            readOnly: true
+            volumes:
+                -   name: geyser-config
+                    configMap:
+                        name: cryon-geyser-config
+                -   name: floodgate
+                    secret:
+                        secretName: { { .Values.secrets.floodgate } }
+  { { - end } }

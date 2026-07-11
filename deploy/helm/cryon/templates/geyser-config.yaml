@@ -1,0 +1,21 @@
+{ { - if .Values.geyser.enabled } }
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: cryon-geyser-config
+    namespace: { { .Values.namespace } }
+data:
+    config.yml: |
+        bedrock:
+            address: 0.0.0.0
+            port: 19132
+        remote:
+            # Point at the Velocity Service; from there a Bedrock player is an ordinary Java player.
+            address: cryon-velocity
+            port: { { .Values.proxy.port } }
+            auth-type: floodgate
+        # The Floodgate key must be identical across Geyser, the proxies, and every backend.
+        floodgate-key-file: key.pem
+        passthrough-motd: true
+        passthrough-player-counts: true
+  { { - end } }

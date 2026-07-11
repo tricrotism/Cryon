@@ -1,0 +1,16 @@
+{ { - range .Values.ephemeralFamilies } }
+---
+apiVersion: agones.dev/v1
+kind: Fleet
+metadata:
+    name: { { .name } }
+    namespace: { { $.Values.namespace } }
+    labels:
+        app.kubernetes.io/name: cryon
+        cryon.dev/family: { { .name } }
+        cryon.dev/policy: ephemeral
+spec:
+    replicas: { { .replicas | default .bufferSize } }
+    template:
+  { { include "cryon.gameServerTemplate" (dict "root" $ "family" .name "resources" .resources "shutdownWhenEmpty" false) | indent 4 } }
+  { { - end } }

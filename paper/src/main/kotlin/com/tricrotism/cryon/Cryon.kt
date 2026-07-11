@@ -5,20 +5,28 @@ import com.tricrotism.cryon.command.ModuleCommands
 import com.tricrotism.cryon.common.data.Database
 import com.tricrotism.cryon.common.data.DatabaseConfig
 import com.tricrotism.cryon.common.data.PostgresDatabase
+import com.tricrotism.cryon.common.flag.FeatureFlags
 import com.tricrotism.cryon.common.locale.*
 import com.tricrotism.cryon.common.module.ModuleManager
 import com.tricrotism.cryon.common.module.ServiceRegistry
-import com.tricrotism.cryon.common.net.Messenger
-import com.tricrotism.cryon.common.net.RedisConfig
-import com.tricrotism.cryon.common.net.RedisMessenger
+import com.tricrotism.cryon.common.net.*
+import com.tricrotism.cryon.common.server.*
+import com.tricrotism.cryon.common.text.Mini
+import com.tricrotism.cryon.module.CommandRegistry
 import com.tricrotism.cryon.module.ModuleLoader
 import com.tricrotism.cryon.module.ModuleWatcher
+import com.tricrotism.cryon.module.SparkSupport
+import com.tricrotism.cryon.network.InstanceReporter
+import com.tricrotism.cryon.network.agones.AgonesClient
+import com.tricrotism.cryon.network.agones.AgonesLifecycle
 import com.tricrotism.cryon.paper.api.CryonPaper
 import com.tricrotism.cryon.paper.api.PaperModuleContext
-import com.tricrotism.cryon.paper.api.command.AnnotationCommands
+import com.tricrotism.cryon.paper.api.command.CommandService
 import com.tricrotism.cryon.paper.api.event.Events
+import com.tricrotism.cryon.paper.api.scheduler.Schedulers
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents
 import org.bukkit.Server
+import org.bukkit.configuration.file.FileConfiguration
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.plugin.Plugin
@@ -26,6 +34,7 @@ import org.bukkit.plugin.java.JavaPlugin
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.io.File
+import java.time.Duration
 
 /**
  * The bootstrap. On enable it scans `plugins/Cryon/modules/` for feature jars, loads each in its
@@ -38,25 +47,39 @@ class Cryon : JavaPlugin() {
     private val log: Logger = LoggerFactory.getLogger("Cryon")
     private lateinit var manager: ModuleManager
     private lateinit var loader: ModuleLoader
+    private lateinit var commandRegistry: CommandRegistry
     private val watchers = ArrayList<ModuleWatcher>()
 
+    private lateinit var featureFlags: FeatureFlags
     private var database: Database? = null
     private var messenger: Messenger? = null
     private var localeStore: LocaleStore? = null
+    private var redisStore: RedisStore? = null
+    private var registry: ServerRegistry? = null
+    private var reporter: InstanceReporter? = null
+    private var agonesLifecycle: AgonesLifecycle? = null
+    private var identity: InstanceIdentity? = null
+    private var heartbeatSeconds: Long = 5
 
     override fun onEnable() {
         CryonPaper.init(this) // so Schedulers/Events can reach the plugin
 
         val messageService = MessageService()
         Messages.install(messageService)
-        registerAdminLang(messageService) // plugins/Cryon/lang/ overrides, highest priority
-        registerOwnLang(messageService)   // the core's own bundled lang/ (e.g. the /language command)
+        Mini.format("<off_white>")
+        registerAdminLang(messageService)
+        registerOwnLang(messageService)
 
         val services = ServiceRegistry(log).apply { register(MessageService::class, messageService) }
         setupInfrastructure(services)
 
         manager = ModuleManager(log)
         services.register(ModuleManager::class, manager) // so modules can query their own enabled-state
+
+        // The command registry must exist before any module onLoad runs, so registerCommands resolves it.
+        commandRegistry = CommandRegistry(server, log)
+        services.register(CommandService::class, commandRegistry)
+
         val context = CryonContext(this, server, log, services)
 
         val apiDir = File(dataFolder, "api").apply { mkdirs() }
@@ -80,8 +103,13 @@ class Cryon : JavaPlugin() {
         manager.loadAll(context)
         manager.enableAll()
 
-        registerCommands(messageService) // after modules so /cryon sees their state
+        bootstrapCommands(messageService) // after modules so the boot flush sees their contributions
         startWatchers(modulesDir, apiDir)
+        setupNetwork(services) // advertise this instance to the network once everything is wired
+
+        // Next tick: spark may enable after us, and the splice reads loaded modules either way.
+        val authors = pluginMeta.authors.joinToString(", ").ifEmpty { "Cryon" }
+        Schedulers.globalLater(1) { SparkSupport.install(server, loader, authors, log) }
     }
 
     /**
@@ -148,21 +176,28 @@ class Cryon : JavaPlugin() {
         LangScanner.fromJar(jar)?.let(messageService::addSource)
     }
 
-    /** Register the built-in `@Command` classes onto Paper's native Brigadier registrar. */
-    private fun registerCommands(messageService: MessageService) {
+    /**
+     * Contribute the core's own `@Command` classes to the [commandRegistry], then install the single
+     * COMMANDS lifecycle handler that flushes every queued contribution (core + modules) during the
+     * boot window. After this window the registry splices runtime contributions into the live
+     * dispatcher directly, so there is no second lifecycle handler anywhere.
+     */
+    private fun bootstrapCommands(messageService: MessageService) {
+        commandRegistry.register(
+            CORE_COMMAND_OWNER,
+            { true },
+            listOf(ModuleCommands(manager, loader, featureFlags, commandRegistry), LanguageCommands(messageService)),
+        )
         lifecycleManager.registerEventHandler(LifecycleEvents.COMMANDS) { event ->
-            // Guard each handler: this runs inside Paper's lifecycle dispatch, which rethrows fatally.
-            for (handler in arrayOf(ModuleCommands(manager, loader), LanguageCommands(messageService))) {
-                try {
-                    AnnotationCommands.register(event.registrar(), handler)
-                } catch (t: Throwable) {
-                    log.error("Failed to register core command \"{}\" skipping...", handler.javaClass.simpleName, t)
-                }
+            try {
+                commandRegistry.flushBoot(event.registrar())
+            } catch (t: Throwable) {
+                log.error("Failed to flush command registrations", t)
             }
         }
     }
 
-    /** Wire SQL + Redis if configured, then the cross-server locale store. Failures degrade gracefully. */
+    /** Wire SQL + Redis if configured, then flags and the cross-server locale store. Failures degrade gracefully. */
     private fun setupInfrastructure(services: ServiceRegistry) {
         saveDefaultConfig()
         val cfg = config
@@ -189,14 +224,26 @@ class Cryon : JavaPlugin() {
 
         if (cfg.getBoolean("redis.enabled")) {
             try {
-                val redis = RedisMessenger(RedisConfig(cfg.getString("redis.uri", "redis://localhost:6379/0")!!))
+                val config = RedisConfig(cfg.getString("redis.uri", "redis://localhost:6379/0")!!)
+                val redis = RedisMessenger(config)
                 messenger = redis
                 services.register(Messenger::class, redis)
+                val store = LettuceRedisStore(config)
+                redisStore = store
+                services.register(RedisStore::class, store)
                 log.info("Redis connected")
             } catch (e: Exception) {
                 log.error("Failed to initialize Redis... continuing without it", e)
             }
         }
+
+        val identity = resolveIdentity(cfg)
+        this.identity = identity
+        heartbeatSeconds = cfg.getLong("network.heartbeat-seconds", 5).coerceAtLeast(1)
+
+        featureFlags = FeatureFlags(identity.family, database, messenger, log)
+        featureFlags.init()
+        services.register(FeatureFlags::class, featureFlags)
 
         val db = database
         val redis = messenger
@@ -215,13 +262,80 @@ class Cryon : JavaPlugin() {
         Locales.install(store)
     }
 
+    /** Resolve this process's network identity, env-first, falling back to config and Paper's own values. */
+    private fun resolveIdentity(cfg: FileConfiguration): InstanceIdentity = InstanceIdentity.resolve(
+        configFamily = cfg.getString("network.family")?.takeIf { it.isNotBlank() } ?: cfg.getString("server-name"),
+        configInstanceId = cfg.getString("network.instance-id"),
+        configAddress = cfg.getString("network.address"),
+        configPort = cfg.getInt("network.port", 0),
+        fallbackPort = server.port,
+        configMaxPlayers = cfg.getInt("network.max-players", 0),
+        fallbackMaxPlayers = server.maxPlayers,
+    )
+
+    /**
+     * Register this instance in the shared [ServerRegistry] and start heartbeating. Requires Redis
+     * (liveness is TTL-based); without it the server runs standalone, exactly as before. Gated by
+     * `network.registry-enabled`.
+     */
+    private fun setupNetwork(services: ServiceRegistry) {
+        val store = redisStore
+        val redis = messenger
+        val id = identity
+        if (store == null || redis == null || id == null) {
+            log.info("Server registry off (needs redis), this server runs standalone")
+            return
+        }
+        if (!config.getBoolean("network.registry-enabled", true)) {
+            log.info("Server registry disabled by config (network.registry-enabled=false)")
+            return
+        }
+        val reg = RedisServerRegistry(store, redis, database, Duration.ofSeconds(heartbeatSeconds * 3), log)
+        reg.init()
+        registry = reg
+        services.register(ServerRegistry::class, reg)
+        services.register(PlayerRouter::class, RedisPlayerRouter(reg, redis))
+        val rep = InstanceReporter(reg, id, server, Duration.ofSeconds(heartbeatSeconds), log).also { it.start() }
+        reporter = rep
+        setupAgones(services, id.family, rep, reg)
+    }
+
+    /** Attach the Agones lifecycle when running under a sidecar; a no-op anywhere else. */
+    private fun setupAgones(
+        services: ServiceRegistry,
+        family: String,
+        reporter: InstanceReporter,
+        registry: ServerRegistry
+    ) {
+        val agones = AgonesClient.detect(log) ?: return
+        // shutdown-when-empty differs per family (persistent shards reclaim; ephemeral self-shutdown on
+        // match end), so it's env-first — one shared config file, per-Fleet env override.
+        val shutdownWhenEmpty = System.getenv("CRYON_AGONES_SHUTDOWN_WHEN_EMPTY")?.toBooleanStrictOrNull()
+            ?: config.getBoolean("network.agones.shutdown-when-empty", false)
+        val options = AgonesLifecycle.Options(
+            healthSeconds = config.getLong("network.agones.health-seconds", 5).coerceAtLeast(1),
+            shutdownWhenEmpty = shutdownWhenEmpty,
+            emptyGraceSeconds = config.getLong("network.agones.empty-grace-seconds", 60),
+            minInstances = config.getInt("network.agones.min-instances", 1),
+        )
+        val life = AgonesLifecycle(agones, reporter::currentPlayers, { registry.family(family).size }, options, log)
+        agonesLifecycle = life
+        services.register(AgonesLifecycle::class, life)
+        life.start()
+    }
+
     override fun onDisable() {
         watchers.forEach { runCatching { it.close() } }
         watchers.clear()
+        agonesLifecycle?.let { runCatching { it.stop() } }
+        reporter?.let { runCatching { it.drain(); it.stop() } } // deregister before the transport closes
+        registry?.let { runCatching { it.close() } }
         if (::manager.isInitialized) manager.disableAll()
         if (::loader.isInitialized) loader.close() // closes module loaders + the shared api/ parent
+        if (::featureFlags.isInitialized) featureFlags.close()
         localeStore?.close()
         messenger?.close()
+        redisStore?.close()
         database?.close()
     }
 
@@ -231,4 +345,9 @@ class Cryon : JavaPlugin() {
         override val logger: Logger,
         override val services: ServiceRegistry,
     ) : PaperModuleContext
+
+    private companion object {
+        /** Owner key the core's own commands register under in the [CommandRegistry]. */
+        const val CORE_COMMAND_OWNER = "cryon"
+    }
 }

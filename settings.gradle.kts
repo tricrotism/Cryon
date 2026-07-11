@@ -1,3 +1,3 @@
 rootProject.name = "Cryon"
 
-include("common", "paper-api", "paper")
+include("common", "paper-api", "paper", "velocity-api", "velocity")

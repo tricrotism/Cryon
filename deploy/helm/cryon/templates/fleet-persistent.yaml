@@ -1,0 +1,16 @@
+{ { - range .Values.persistentFamilies } }
+---
+apiVersion: agones.dev/v1
+kind: Fleet
+metadata:
+    name: { { .name } }
+    namespace: { { $.Values.namespace } }
+    labels:
+        app.kubernetes.io/name: cryon
+        cryon.dev/family: { { .name } }
+        cryon.dev/policy: persistent
+spec:
+    replicas: { { .replicas } }
+    template:
+  { { include "cryon.gameServerTemplate" (dict "root" $ "family" .name "resources" .resources "shutdownWhenEmpty" .shutdownWhenEmpty) | indent 4 } }
+  { { - end } }

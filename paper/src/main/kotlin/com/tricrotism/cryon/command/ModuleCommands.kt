@@ -1,30 +1,39 @@
 package com.tricrotism.cryon.command
 
+import com.tricrotism.cryon.common.flag.FeatureFlags
 import com.tricrotism.cryon.common.module.ModuleManager
 import com.tricrotism.cryon.common.module.ModuleState
 import com.tricrotism.cryon.common.text.CommonMessages
 import com.tricrotism.cryon.common.text.Mini
 import com.tricrotism.cryon.module.ModuleLoader
-import com.tricrotism.cryon.paper.api.command.Arg
-import com.tricrotism.cryon.paper.api.command.Command
-import com.tricrotism.cryon.paper.api.command.Permission
-import com.tricrotism.cryon.paper.api.command.Subcommand
+import com.tricrotism.cryon.paper.api.command.*
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.event.ClickEvent
 import net.kyori.adventure.text.event.HoverEvent
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder
+import org.bukkit.Bukkit
 import org.bukkit.command.CommandSender
+import org.bukkit.entity.Player
 import java.io.File
+import java.util.*
 
 /**
  * `/cryon modules | info <id> | enable <id> | disable <id> | reload <id>` — runtime *lifecycle*;
- * `load <jar> | unload <id> | scan` — jar-level *hot-swap*; and `reload-api` — cascade-reload the
- * shared `api/` contract layer plus every module. The built-in module manager, annotation-defined and
- * gated by `cryon.admin`. `<id>`/`<jar>` tab-complete from the live state. Admin-facing English output.
+ * `load <jar> | unload <id> | scan` — jar-level *hot-swap*; `reload-api` — cascade-reload the
+ * shared `api/` contract layer plus every module; and the feature kill switches:
+ * `flags [scope]`, `flag enable|disable|clear <feature> [scope]`, `flag status <feature> [player]`,
+ * `flag delete <feature>`, `flag reload` — where scope is `global` (default), a server name, or
+ * `player:<name>`. The built-in module manager, annotation-defined and gated by `cryon.admin`.
+ * `<id>`/`<jar>` tab-complete from the live state. Admin-facing English output.
  */
 @Command("cryon", "Cryon module manager")
 @Permission("cryon.admin")
-class ModuleCommands(private val modules: ModuleManager, private val loader: ModuleLoader) {
+class ModuleCommands(
+    private val modules: ModuleManager,
+    private val loader: ModuleLoader,
+    private val flags: FeatureFlags,
+    private val commands: CommandService,
+) {
 
     @Subcommand
     fun overview(sender: CommandSender) = list(sender)
@@ -54,6 +63,56 @@ class ModuleCommands(private val modules: ModuleManager, private val loader: Mod
                 actionButtons(id, state),
             )
         )
+        printCommands(sender, id)
+    }
+
+    /** List the module's registered commands: name, aliases, description, and per-subcommand usages. */
+    private fun printCommands(sender: CommandSender, id: String) {
+        val descriptors = commands.describe(id)
+        if (descriptors.isEmpty()) {
+            sender.sendMessage(Mini.format("  <slate_gray>No commands."))
+            return
+        }
+        sender.sendMessage(Mini.format("  <off_white>Commands:"))
+        for (descriptor in descriptors) {
+            sender.sendMessage(commandHeader(descriptor))
+            if (descriptor.description.isNotEmpty()) {
+                sender.sendMessage(
+                    Mini.format(
+                        "      <slate_gray><desc></slate_gray>",
+                        Placeholder.unparsed("desc", descriptor.description),
+                    )
+                )
+            }
+            for (usage in descriptor.usages) {
+                sender.sendMessage(
+                    Mini.format(
+                        "      <sky_blue><usage></sky_blue>",
+                        Placeholder.unparsed("usage", usage)
+                    )
+                )
+            }
+        }
+    }
+
+    /** `• /f (alias: faction) [cryon.admin]`: the command name, its aliases, and permission gate. */
+    private fun commandHeader(descriptor: CommandDescriptor): Component {
+        val parts = mutableListOf(
+            Mini.format(
+                "  <slate_gray>•</slate_gray> <highlight>/<name></highlight>",
+                Placeholder.unparsed("name", descriptor.name)
+            ),
+        )
+        if (descriptor.aliases.isNotEmpty()) {
+            parts += Mini.format(
+                " <slate_gray>(alias: <aliases>)</slate_gray>",
+                Placeholder.unparsed("aliases", descriptor.aliases.joinToString(", ")),
+            )
+        }
+        descriptor.permission?.let {
+            parts += Mini.format(" <gold>[<perm>]</gold>", Placeholder.unparsed("perm", it))
+        }
+        return Component.textOfChildren(*parts.toTypedArray())
     }
 
     @Subcommand("enable")
@@ -183,9 +242,143 @@ class ModuleCommands(private val modules: ModuleManager, private val loader: Mod
         resyncCommands(sender)
     }
 
+    @Subcommand("flags")
+    fun flagsAll(sender: CommandSender) {
+        val scopes = flags.scopes()
+        if (scopes.isEmpty()) {
+            sender.sendMessage(CommonMessages.info(Mini.format("<off_white>No feature flags registered.")))
+            return
+        }
+        sender.sendMessage(CommonMessages.info(Mini.format("<off_white>Feature flags by scope:")))
+        for ((scope, entries) in scopes) {
+            sender.sendMessage(
+                Mini.format(
+                    "  <u><slate_gray><scope></slate_gray></u>",
+                    Placeholder.unparsed("scope", scopeLabel(scope))
+                )
+            )
+            for ((feature, enabled) in entries) sender.sendMessage(flagLine(scope, feature, enabled))
+        }
+    }
+
+    @Subcommand("flags")
+    fun flagsScoped(sender: CommandSender, @Arg("scope", suggests = "flagScopes") @Greedy scope: String) {
+        val resolved = resolveScope(sender, scope) ?: return
+        val entries = flags.scopes()[resolved]
+        if (entries.isNullOrEmpty()) {
+            sender.sendMessage(
+                CommonMessages.info(
+                    line(
+                        "<off_white>No overrides for <highlight><id></highlight>.",
+                        scopeLabel(resolved)
+                    )
+                )
+            )
+            return
+        }
+        sender.sendMessage(
+            CommonMessages.info(
+                line(
+                    "<off_white>Overrides for <highlight><id></highlight>:",
+                    scopeLabel(resolved)
+                )
+            )
+        )
+        for ((feature, enabled) in entries) sender.sendMessage(flagLine(resolved, feature, enabled))
+    }
+
+    @Subcommand("flag", "enable")
+    fun flagEnable(sender: CommandSender, @Arg("feature", suggests = "flagIds") feature: String) =
+        setFlag(sender, feature, FeatureFlags.GLOBAL_SCOPE, enabled = true)
+
+    @Subcommand("flag", "enable")
+    fun flagEnableScoped(
+        sender: CommandSender,
+        @Arg("feature", suggests = "flagIds") feature: String,
+        @Arg("scope", suggests = "flagScopes") @Greedy scope: String,
+    ) = setFlag(sender, feature, scope, enabled = true)
+
+    @Subcommand("flag", "disable")
+    fun flagDisable(sender: CommandSender, @Arg("feature", suggests = "flagIds") feature: String) =
+        setFlag(sender, feature, FeatureFlags.GLOBAL_SCOPE, enabled = false)
+
+    @Subcommand("flag", "disable")
+    fun flagDisableScoped(
+        sender: CommandSender,
+        @Arg("feature", suggests = "flagIds") feature: String,
+        @Arg("scope", suggests = "flagScopes") @Greedy scope: String,
+    ) = setFlag(sender, feature, scope, enabled = false)
+
+    @Subcommand("flag", "clear")
+    fun flagClear(sender: CommandSender, @Arg("feature", suggests = "flagIds") feature: String) =
+        clearFlag(sender, feature, FeatureFlags.GLOBAL_SCOPE)
+
+    @Subcommand("flag", "clear")
+    fun flagClearScoped(
+        sender: CommandSender,
+        @Arg("feature", suggests = "flagIds") feature: String,
+        @Arg("scope", suggests = "flagScopes") @Greedy scope: String,
+    ) = clearFlag(sender, feature, scope)
+
+    @Subcommand("flag", "status")
+    fun flagStatus(sender: CommandSender, @Arg("feature", suggests = "flagIds") feature: String) =
+        printStatus(sender, feature, null, null)
+
+    @Subcommand("flag", "status")
+    fun flagStatusPlayer(
+        sender: CommandSender,
+        @Arg("feature", suggests = "flagIds") feature: String,
+        @Arg("player", suggests = "onlinePlayerNames") player: String,
+    ) {
+        val uuid = resolvePlayerId(sender, player) ?: return
+        printStatus(sender, feature, uuid, player)
+    }
+
+    @Subcommand("flag", "delete")
+    fun flagDelete(sender: CommandSender, @Arg("feature", suggests = "flagIds") feature: String) {
+        if ((sender as? Player)?.uniqueId != DELETE_AUTHORIZED) {
+            sender.sendMessage(CommonMessages.error(Mini.format("<off_white>You are not authorised to delete feature flags.")))
+            return
+        }
+        flags.delete(feature)
+        sender.sendMessage(
+            CommonMessages.success(
+                line(
+                    "<off_white>Permanently deleted <highlight><id></highlight> from every scope.",
+                    feature.uppercase()
+                )
+            )
+        )
+    }
+
+    @Subcommand("flag", "reload")
+    fun flagReload(sender: CommandSender) {
+        if (flags.reload()) {
+            sender.sendMessage(CommonMessages.success(Mini.format("<off_white>Reloading feature flags from the database.")))
+        } else {
+            sender.sendMessage(CommonMessages.warn(Mini.format("<off_white>No database configured — flags are in-memory only, nothing to reload.")))
+        }
+    }
+
     /** Suggester referenced by `@Arg(suggests = "moduleIds")`. */
     @Suppress("unused")
     fun moduleIds(): Collection<String> = modules.ids()
+
+    /** Suggester for flag features — every registered/overridden flag ID. */
+    @Suppress("unused")
+    fun flagIds(): Collection<String> = flags.features()
+
+    /** Suggester for flag scopes: global, this server, and `player:<name>` for everyone online. */
+    @Suppress("unused")
+    fun flagScopes(): Collection<String> = buildList {
+        add(FeatureFlags.GLOBAL_SCOPE)
+        add(flags.serverName)
+        Bukkit.getOnlinePlayers().forEach { add(FeatureFlags.PLAYER_SCOPE_PREFIX + it.name) }
+    }
+
+    /** Suggester for player arguments. */
+    @Suppress("unused")
+    fun onlinePlayerNames(): Collection<String> = Bukkit.getOnlinePlayers().map { it.name }
 
     /** Suggester for `/cryon load` — jars sitting in modules/ that aren't loaded yet. */
     @Suppress("unused")
@@ -263,6 +456,143 @@ class ModuleCommands(private val modules: ModuleManager, private val loader: Mod
         )
     }
 
+    /** Turn a flag on/off in a scope, ack with what happened where. */
+    private fun setFlag(sender: CommandSender, feature: String, rawScope: String, enabled: Boolean) {
+        val scope = resolveScope(sender, rawScope) ?: return
+        flags.set(scope, feature, enabled)
+        sender.sendMessage(
+            CommonMessages.success(
+                Mini.format(
+                    "<off_white>Turned <highlight><feature></highlight> <state> <off_white>for <highlight><label></highlight>.",
+                    Placeholder.unparsed("feature", feature.uppercase()),
+                    Placeholder.parsed("state", if (enabled) "<emerald>ON" else "<scarlet>OFF"),
+                    Placeholder.unparsed(
+                        "label",
+                        if (scope == FeatureFlags.GLOBAL_SCOPE) "everyone" else scopeLabel(scope)
+                    ),
+                )
+            )
+        )
+    }
+
+    private fun clearFlag(sender: CommandSender, feature: String, rawScope: String) {
+        val scope = resolveScope(sender, rawScope) ?: return
+        val template =
+            if (flags.remove(
+                    scope,
+                    feature
+                )
+            ) "<off_white>Cleared the <highlight><label></highlight> <off_white>entry for <highlight><feature></highlight><off_white> — it falls back to the next layer."
+            else "<off_white><highlight><feature></highlight> <off_white>has no entry for <highlight><label></highlight><off_white>."
+        sender.sendMessage(
+            CommonMessages.info(
+                Mini.format(
+                    template,
+                    Placeholder.unparsed("feature", feature.uppercase()),
+                    Placeholder.unparsed("label", scopeLabel(scope)),
+                )
+            )
+        )
+    }
+
+    /** The layered status breakdown: effective result, then each layer's entry (or its silence). */
+    private fun printStatus(sender: CommandSender, feature: String, player: UUID?, playerName: String?) {
+        sender.sendMessage(
+            CommonMessages.info(
+                line(
+                    "<off_white>Status for <highlight><id></highlight>:",
+                    feature.uppercase()
+                )
+            )
+        )
+        sender.sendMessage(layerLine("Result", flags.isEnabled(feature, player)))
+        if (player != null) {
+            sender.sendMessage(layerLine("Player ($playerName)", flags.override(flags.playerScope(player), feature)))
+        }
+        sender.sendMessage(layerLine("Server (${flags.serverName})", flags.override(flags.serverName, feature)))
+        sender.sendMessage(layerLine("Global", flags.override(FeatureFlags.GLOBAL_SCOPE, feature)))
+    }
+
+    private fun layerLine(label: String, value: Boolean?): Component = Mini.format(
+        "  <slate_gray><label>:</slate_gray> <state>",
+        Placeholder.unparsed("label", label),
+        Placeholder.parsed(
+            "state",
+            when (value) {
+                null -> "<slate_gray>no entry"
+                true -> "<emerald>ON"
+                false -> "<scarlet>OFF"
+            },
+        ),
+    )
+
+    /** One flag row with scope-targeted toggle/clear buttons. */
+    private fun flagLine(scope: String, feature: String, enabled: Boolean): Component {
+        val base = Mini.format(
+            "    <slate_gray>•</slate_gray> <off_white><feature></off_white> <state> ",
+            Placeholder.unparsed("feature", feature),
+            Placeholder.parsed("state", if (enabled) "<emerald>ON" else "<scarlet>OFF"),
+        )
+        val arg = commandScope(scope) ?: return base
+        val toggle = if (enabled) {
+            button(
+                "■",
+                "scarlet",
+                "/cryon flag disable $feature $arg",
+                actionHover("scarlet", "■ Disable", "turn off", feature)
+            )
+        } else {
+            button(
+                "▶",
+                "emerald",
+                "/cryon flag enable $feature $arg",
+                actionHover("emerald", "▶ Enable", "turn on", feature)
+            )
+        }
+        return Component.textOfChildren(
+            base,
+            toggle,
+            Component.space(),
+            button(
+                "↺",
+                "sky_blue",
+                "/cryon flag clear $feature $arg",
+                actionHover("sky_blue", "↺ Clear", "clear this entry for", feature)
+            ),
+        )
+    }
+
+    /** Resolve a typed scope — `global`, a server name, or `player:<name>` — to its storage key. */
+    private fun resolveScope(sender: CommandSender, raw: String): String? {
+        val trimmed = raw.trim()
+        if (!trimmed.lowercase().startsWith(FeatureFlags.PLAYER_SCOPE_PREFIX)) return trimmed
+        val name = trimmed.substring(FeatureFlags.PLAYER_SCOPE_PREFIX.length)
+        return resolvePlayerId(sender, name)?.let(flags::playerScope)
+    }
+
+    /** An online or previously-seen player's UUID, or ack the sender that they're unknown. */
+    private fun resolvePlayerId(sender: CommandSender, name: String): UUID? {
+        val uuid = Bukkit.getPlayerExact(name)?.uniqueId ?: Bukkit.getOfflinePlayerIfCached(name)?.uniqueId
+        if (uuid == null) sender.sendMessage(CommonMessages.errorPlayer(name))
+        return uuid
+    }
+
+    /** The scope argument that reaches [scope] from a command, or null for an unresolvable player scope. */
+    private fun commandScope(scope: String): String? {
+        if (!scope.startsWith(FeatureFlags.PLAYER_SCOPE_PREFIX)) return scope
+        val uuid = runCatching { UUID.fromString(scope.substring(FeatureFlags.PLAYER_SCOPE_PREFIX.length)) }.getOrNull()
+        val name = uuid?.let { Bukkit.getOfflinePlayer(it).name } ?: return null
+        return FeatureFlags.PLAYER_SCOPE_PREFIX + name
+    }
+
+    /** `player:<uuid>` scopes display as `player <name>`; other scopes as themselves. */
+    private fun scopeLabel(scope: String): String {
+        if (!scope.startsWith(FeatureFlags.PLAYER_SCOPE_PREFIX)) return scope
+        val raw = scope.substring(FeatureFlags.PLAYER_SCOPE_PREFIX.length)
+        val name = runCatching { UUID.fromString(raw) }.getOrNull()?.let { Bukkit.getOfflinePlayer(it).name }
+        return "player ${name ?: raw}"
+    }
+
     /** A bracketed, palette-coloured label that runs [command] on click and shows [hover] on mouse-over. */
     private fun button(label: String, tag: String, command: String, hover: Component): Component =
         Mini.format("<slate_gray>[</slate_gray><$tag>$label</$tag><slate_gray>]</slate_gray>")
@@ -294,5 +624,10 @@ class ModuleCommands(private val modules: ModuleManager, private val loader: Mod
             ModuleState.REGISTERED -> "<gold>"
         }
         return Mini.format("$color${state.name}")
+    }
+
+    private companion object {
+        /** The only account allowed to permanently delete a flag from every scope. Mainly debug */
+        private val DELETE_AUTHORIZED: UUID = UUID.fromString("9cce3a11-63e5-4ece-8ba6-cf6c8b5557c8")
     }
 }
