@@ -1,6 +1,15 @@
-# Cryon proxy config. This proxy reads the shared server registry over Redis to route players and
-# register backends as game servers come and go. Redis is required; the database is optional here
-# (only game servers write the family catalog). Values can be overridden per deployment via env.
+# Cryon proxy config.
+#
+# With redis on, this proxy reads the shared server registry to route players and register backends as
+# game servers come and go, and it holds each transfer open until the server being left has saved the
+# player. That is the instanced deployment.
+#
+# With redis off, none of that applies: configure your backend in velocity.toml as usual. That is the
+# single-server deployment, and it is a supported one — maintenance mode still works, because this
+# proxy is the only one there is.
+#
+# The database is optional here (only game servers write the family catalog); without it, maintenance
+# state resets when the proxy restarts.
 
 database:
     enabled: false
@@ -19,6 +28,10 @@ redis:
 network:
     registry-enabled: true
     heartbeat-seconds: 5
+    # How long a transfer waits for the source server to flush the player before moving them anyway.
+    # A player who moves beats a player stuck on a failed transfer, so this fails open; the flush then
+    # still happens on quit. Raise it only if your saves are genuinely slower than this.
+    handoff-timeout-seconds: 5
 
 # Network-wide maintenance mode. Toggle at runtime with /maintenance on|off [message] (permission
 # cryon.maintenance); the state syncs to every proxy over Redis. While on, the server list shows the
@@ -29,3 +42,22 @@ maintenance:
     # The protocol version reported in the ping while under maintenance. Any value clients won't match
     # (-1 renders as an incompatible version). Change only if you need a specific display.
     ping-protocol: -1
+    # /maintenance add|remove <player> manages a bypass allowlist (synced + persisted like the toggle),
+    # letting named players join while maintenance is on without the cryon.maintenance.bypass permission.
+
+# Server-list MOTD (shown when maintenance is off). Two lines, each built from three MiniMessage
+# segments anchored left / center / right. Segments are positioned by measuring their pixel width and
+# padding with spaces against `width`, so center sits centered and right ends at the edge. Reload at
+# runtime with /motd reload (permission cryon.motd) after editing this section.
+motd:
+    enabled: true
+    # Target line width in default-font pixels. The server-list MOTD clips near here; tune to taste.
+    width: 256
+    top:
+        left: "<gradient:#09add3:#5ce1e6><bold>Cryon Network"
+        center: ""
+        right: "<gray>1.21.x"
+    bottom:
+        left: "<off_white>Welcome back!"
+        center: ""
+        right: "<yellow>play.cryon.net"

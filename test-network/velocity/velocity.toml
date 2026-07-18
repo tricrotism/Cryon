@@ -1,0 +1,58 @@
+config-version = "2.8"
+bind = "0.0.0.0:25565"
+motd = "<#09add3>Cryon Dev Network"
+show-max-players = 100
+# Offline so any username can join for local testing. Flip to true if you want premium-only.
+online-mode = false
+force-key-authentication = false
+prevent-client-proxy-connections = false
+# Modern forwarding: the backends read the same secret from config/paper-global.yml.
+player-info-forwarding-mode = "MODERN"
+forwarding-secret-file = "forwarding.secret"
+announce-forge = false
+kick-existing-players = false
+ping-passthrough = "DISABLED"
+enable-player-address-logging = true
+forced-hosts = { }
+
+[servers]
+# Static seed matching the paper instance-ids. The Cryon plugin also registers these dynamically
+# off the shared registry; static + dynamic is idempotent since it keys by name.
+paper1 = "127.0.0.1:25566"
+paper2 = "127.0.0.1:25567"
+# Initial connect lands here; use /server paper2 to hop and exercise the handoff flush.
+try = ["paper1"]
+
+[advanced]
+compression-threshold = 256
+compression-level = -1
+login-ratelimit = 3000
+connection-timeout = 5000
+read-timeout = 30000
+haproxy-protocol = false
+tcp-fast-open = false
+bungee-plugin-message-channel = true
+show-ping-requests = false
+failover-on-unexpected-server-disconnect = true
+announce-proxy-commands = true
+log-command-executions = false
+log-player-connections = true
+
+[query]
+enabled = false
+port = 25565
+map = "Velocity"
+show-plugins = false
+
+[packet-limiter]
+#Size of the moving time window in seconds used to calculate average rates.
+#A larger window tolerates short bursts while still enforcing the configured limits over time.
+interval = 7
+#Maximum average number of packets per second a client may send. -1 disables this check.
+packets-per-second = -1
+#Maximum average number of compressed (on-wire) bytes per second a client may send. -1 disables this check.
+bytes-per-second = -1
+#Maximum average number of decompressed bytes per second a client may send.
+#Protects against compression bomb attacks where small packets expand to excessive sizes after decompression.
+#-1 disables this check.
+decompressed-bytes-per-second = 5242880

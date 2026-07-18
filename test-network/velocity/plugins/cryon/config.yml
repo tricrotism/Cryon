@@ -1,0 +1,33 @@
+database:
+    enabled: true
+    host: 127.0.0.1
+    port: 5433
+    database: cryon
+    username: cryon
+    password: ""
+    max-pool-size: 10
+
+redis:
+    enabled: true
+    uri: "redis://localhost:6379/0"
+
+network:
+    registry-enabled: true
+    heartbeat-seconds: 5
+    handoff-timeout-seconds: 5
+
+maintenance:
+    default-message: "<red>The network is under maintenance."
+    ping-protocol: -1
+
+motd:
+    enabled: true
+    width: 256
+    top:
+        left: "<gradient:#09add3:#5ce1e6><bold>Cryon Test Network"
+        center: ""
+        right: "<gray>1.21.x"
+    bottom:
+        left: "<off_white>paper1 + paper2"
+        center: "<aqua>localhost"
+        right: "<yellow>instanced"

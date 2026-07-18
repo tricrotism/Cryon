@@ -6,18 +6,21 @@ import java.time.Duration
 import java.util.concurrent.CompletableFuture
 
 /**
- * [RedisStore] over Lettuce. One connection, async commands throughout — every call runs off the
- * caller's thread. Constructed like [RedisMessenger] (its own [RedisClient]); kept independent so
- * enabling/disabling either is isolated.
+ * [KeyValueStore] over Lettuce — the transport that reaches every process in the network. One
+ * connection, async commands throughout, so every call runs off the caller's thread. Constructed like
+ * [RedisMessenger] (its own [RedisClient]); kept independent so enabling/disabling either is isolated.
+ *
+ * [tryHold] is the only place Lua lives: the interface exposes the capability, not the scripting
+ * engine, so [MemoryKeyValueStore] can honour the same contract in-process.
  */
-class LettuceRedisStore(config: RedisConfig) : RedisStore {
+class RedisKeyValueStore(config: RedisConfig) : KeyValueStore {
 
     private val client: RedisClient = RedisClient.create(config.uri)
     private val connection: StatefulRedisConnection<String, String> = client.connect()
     private val commands = connection.async()
 
     override fun set(key: String, value: String, ttl: Duration): CompletableFuture<Void> =
-        commands.set(key, value, SetArgs.Builder.ex(ttl.toSeconds())).toCompletableFuture().thenAccept { }
+        commands.set(key, value, SetArgs.Builder.px(ttl.toMillis())).toCompletableFuture().thenAccept { }
 
     override fun get(key: String): CompletableFuture<String?> =
         commands.get(key).toCompletableFuture().thenApply { it }
@@ -50,9 +53,27 @@ class LettuceRedisStore(config: RedisConfig) : RedisStore {
             .thenApply { values -> values.map { if (it.hasValue()) it.value else null } }
     }
 
-    override fun evalInt(script: String, keys: List<String>, args: List<String>): CompletableFuture<Long> =
-        commands.eval<Long>(script, ScriptOutputType.INTEGER, keys.toTypedArray(), *args.toTypedArray())
-            .toCompletableFuture()
+    override fun tryHold(
+        key: String,
+        member: String,
+        ttl: Duration,
+        limit: Int,
+        baseline: Int,
+    ): CompletableFuture<Boolean> {
+        val now = System.currentTimeMillis()
+        val holdMillis = ttl.toMillis()
+        return commands.eval<Long>(
+            HOLD_SCRIPT,
+            ScriptOutputType.INTEGER,
+            arrayOf(key),
+            now.toString(),
+            (now + holdMillis).toString(),
+            limit.toString(),
+            baseline.toString(),
+            member,
+            holdMillis.toString(),
+        ).toCompletableFuture().thenApply { it == 1L }
+    }
 
     override fun close() {
         connection.close()
@@ -61,5 +82,17 @@ class LettuceRedisStore(config: RedisConfig) : RedisStore {
 
     private companion object {
         private const val SCAN_BATCH = 256L
+
+        // Atomic capacity hold over a sorted set of {member -> expiry}. Prunes expired holds, rejects if
+        // the baseline plus live holds would meet the limit, else records the hold (score = expiry) and
+        // returns 1. KEYS[1]=hold set; ARGV=now, expiry, limit, baseline, member, ttlMillis.
+        private val HOLD_SCRIPT = """
+            redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, ARGV[1])
+            local held = redis.call('ZCARD', KEYS[1])
+            if (tonumber(ARGV[4]) + held) >= tonumber(ARGV[3]) then return 0 end
+            redis.call('ZADD', KEYS[1], ARGV[2], ARGV[5])
+            redis.call('PEXPIRE', KEYS[1], ARGV[6])
+            return 1
+        """.trimIndent()
     }
 }

@@ -16,11 +16,25 @@ modules:
 # legacy alias for network.family below; prefer setting network.family.
 server-name: local
 
-# Network / sharding. This server registers itself in the shared server registry and heartbeats its
-# live player count, so proxies can route to it and an orchestrator can scale the pool. Requires both
-# database and redis. All values are env-first (a Kubernetes pod needs no baked config): CRYON_SERVER_FAMILY,
+# Network / sharding. This server registers itself in the server registry and heartbeats its live
+# player count, so proxies can route to it and an orchestrator can scale the pool. All values are
+# env-first (a Kubernetes pod needs no baked config): CRYON_NETWORK_MODE, CRYON_SERVER_FAMILY,
 # CRYON_INSTANCE_ID (or HOSTNAME), CRYON_INSTANCE_ADDRESS, CRYON_INSTANCE_PORT.
 network:
+    # Which of the two deployment shapes this server is meant to be:
+    #
+    #   single    — this server is the whole family. Nothing needs to leave the process, so redis is
+    #               optional and everything below still works: the registry holds one instance (this
+    #               one) and a flag toggle reaches its only audience.
+    #   instanced — one of N interchangeable instances of `family` below, sharing players. Redis and
+    #               the database are then REQUIRED: without them each instance runs as its own island
+    #               and they will silently disagree.
+    #
+    # This declares intent; it does not switch behaviour. What actually decides whether state crosses
+    # processes is redis.enabled. Declaring the mode is what lets the core check the two against each
+    # other and complain loudly when they disagree — see /cryon network.
+    mode: single
+
     registry-enabled: true
     # The interchangeable pool. Blank falls back to server-name above, then "local".
     family: ""
@@ -45,9 +59,13 @@ network:
         empty-grace-seconds: 60
         min-instances: 1
 
-# Cross-server infrastructure. Both must be enabled for the persistent, cross-server player
-# language override; otherwise locale falls back to each client's own setting.
-
+# Storage and transport.
+#
+# database — where state is written down. Needed for anything that must survive a restart, or follow
+#            a player between instances: feature flag overrides, player language, module data.
+# redis    — how far a message travels. On, state is shared with every other process on the network.
+#            Off, it stays in this JVM, which is the whole network when network.mode is `single`.
+#            The API is identical either way, so features never branch on it.
 database:
     enabled: false
     host: localhost

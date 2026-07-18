@@ -1,23 +1,29 @@
 package com.tricrotism.cryon.common.server
 
 import com.tricrotism.cryon.common.data.Database
+import com.tricrotism.cryon.common.net.KeyValueStore
 import com.tricrotism.cryon.common.net.Messenger
 import com.tricrotism.cryon.common.net.MessengerSubscription
-import com.tricrotism.cryon.common.net.RedisStore
 import org.slf4j.Logger
 import java.time.Duration
 import java.util.*
 import java.util.concurrent.*
 
 /**
- * [ServerRegistry] backed by Redis for live state and, optionally, SQL for the durable family
- * catalog. Mirrors FeatureFlags' "broadcast the value, apply idempotently" pattern, but liveness is
- * TTL-based: each owned instance is written to a Redis key with an expiry ([ttl] = heartbeat × 3), so
- * a crashed pod's key simply expires. Every process keeps a [replica]; a graceful stop broadcasts an
- * explicit removal, while a crash is detected by the local [reap]er dropping entries older than [ttl].
+ * The one [ServerRegistry] implementation, over whatever [KeyValueStore] + [Messenger] transport the
+ * deployment provides and, optionally, SQL for the durable family catalog. Mirrors FeatureFlags'
+ * "broadcast the value, apply idempotently" pattern, but liveness is TTL-based: each owned instance is
+ * written to a key with an expiry ([ttl] = heartbeat × 3), so a crashed pod's entry simply lapses.
+ * Every process keeps a [replica]; a graceful stop broadcasts an explicit removal, while a crash is
+ * detected by the local [reap]er dropping entries older than [ttl].
+ *
+ * On a shared (Redis) transport this is the whole network's directory. On the in-process transport it
+ * degenerates to a directory whose only member is this server — which is not a special case but the
+ * literal truth of a single-server deployment, so callers need no second code path: `bestInstance` of
+ * your own family simply answers "you".
  */
-class RedisServerRegistry(
-    private val store: RedisStore,
+class SharedServerRegistry(
+    private val store: KeyValueStore,
     private val messenger: Messenger,
     private val database: Database?,
     private val ttl: Duration,
@@ -78,20 +84,15 @@ class RedisServerRegistry(
     override fun tryReserve(instanceId: String, player: UUID): CompletableFuture<Boolean> {
         val instance = replica[instanceId] ?: return CompletableFuture.completedFuture(false)
         if (instance.maxPlayers <= 0) return CompletableFuture.completedFuture(true)
-        val now = System.currentTimeMillis()
-        val holdMillis = ttl.toMillis()
-        return store.evalInt(
-            RESERVE_SCRIPT,
-            listOf(RESERVED_PREFIX + instanceId),
-            listOf(
-                now.toString(),
-                (now + holdMillis).toString(),
-                instance.maxPlayers.toString(),
-                instance.playerCount.toString(),
-                player.toString(),
-                holdMillis.toString(),
-            ),
-        ).thenApply { it == 1L }.exceptionally { false }
+        // The replica's playerCount is up to one heartbeat stale, so the hold only ever makes the
+        // in-flight reservations atomic against each other — never the count they are added to.
+        return store.tryHold(
+            key = RESERVED_PREFIX + instanceId,
+            member = player.toString(),
+            ttl = ttl,
+            limit = instance.maxPlayers,
+            baseline = instance.playerCount,
+        ).exceptionally { false }
     }
 
     override fun onChange(listener: (ServerRegistryEvent) -> Unit): AutoCloseable {
@@ -198,18 +199,5 @@ class RedisServerRegistry(
         private const val UPD = "UPD"
         private const val DEL = "DEL"
         private val ENVELOPE = Char(3)
-
-        // Atomic capacity reservation over a per-instance sorted set of {player -> expiry}. Prunes
-        // expired holds, rejects if current players + live holds would meet capacity, else records the
-        // hold (score = expiry) and returns 1. KEYS[1]=reserved set; ARGV=now, expiry, capacity,
-        // players, player, ttlMillis.
-        private val RESERVE_SCRIPT = """
-            redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, ARGV[1])
-            local held = redis.call('ZCARD', KEYS[1])
-            if (tonumber(ARGV[4]) + held) >= tonumber(ARGV[3]) then return 0 end
-            redis.call('ZADD', KEYS[1], ARGV[2], ARGV[5])
-            redis.call('PEXPIRE', KEYS[1], ARGV[6])
-            return 1
-        """.trimIndent()
     }
 }

@@ -19,3 +19,40 @@ hs_err_pid*
 
 # Common working directory
 run
+
+# Local dev test network: track the authored harness (scripts, README, hand-written configs),
+# ignore everything downloaded or generated (portable redis/postgres/velocity/paper binaries,
+# build-output plugin jars, feature-module jars, world data, logs, caches, the forwarding secret).
+test-network/*
+!test-network/*.ps1
+!test-network/README.md
+
+# paper1 / paper2 — keep only the hand-written config files
+!test-network/paper1/
+!test-network/paper2/
+test-network/paper1/*
+test-network/paper2/*
+!test-network/paper1/server.properties
+!test-network/paper2/server.properties
+!test-network/paper1/eula.txt
+!test-network/paper2/eula.txt
+!test-network/paper1/plugins/
+!test-network/paper2/plugins/
+test-network/paper1/plugins/*
+test-network/paper2/plugins/*
+!test-network/paper1/plugins/Cryon/
+!test-network/paper2/plugins/Cryon/
+test-network/paper1/plugins/Cryon/*
+test-network/paper2/plugins/Cryon/*
+!test-network/paper1/plugins/Cryon/config.yml
+!test-network/paper2/plugins/Cryon/config.yml
+
+# velocity — keep velocity.toml and the plugin config (not the proxy jar, secret, or generated state)
+!test-network/velocity/
+test-network/velocity/*
+!test-network/velocity/velocity.toml
+!test-network/velocity/plugins/
+test-network/velocity/plugins/*
+!test-network/velocity/plugins/cryon/
+test-network/velocity/plugins/cryon/*
+!test-network/velocity/plugins/cryon/config.yml

@@ -19,8 +19,13 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * Registers this Paper server in the [ServerRegistry] and keeps its live player count fresh. The
  * count rides an [AtomicInteger] fed by join/quit handlers, so the async heartbeat reads it without
- * ever touching the Bukkit API off the main thread. Started once on enable; drained then deregistered
- * on disable so proxies drop the backend immediately instead of waiting for its TTL to lapse.
+ * ever touching the Bukkit API off the main thread. Drained then deregistered on disable so proxies
+ * drop the backend immediately instead of waiting for its TTL to lapse.
+ *
+ * Starting is two steps on purpose. [register] publishes this instance as `STARTING` early, so the
+ * network knows it exists; [ready] flips it to `READY` and begins heartbeating only once the modules
+ * that serve players are enabled. Collapsing the two would advertise a half-loaded server and let
+ * proxies route real players into it.
  */
 class InstanceReporter(
     private val registry: ServerRegistry,
@@ -33,22 +38,27 @@ class InstanceReporter(
     private val subscriptions = ArrayList<Subscription>()
     private var task: ScheduledTask? = null
 
-    /** Call on the main thread once the server is up. */
-    fun start() {
+    /** Publish this instance as STARTING and begin tracking its player count. Main thread. */
+    fun register() {
         playerCount.set(server.onlinePlayers.size)
         registry.register(snapshot(InstanceState.STARTING))
-            .thenCompose { registry.heartbeat(identity.instanceId, playerCount.get(), InstanceState.READY) }
             .exceptionally { logger.error("Failed to register instance {}", identity.instanceId, it); null }
 
         subscriptions += Events.subscribe<PlayerJoinEvent>().handler { playerCount.incrementAndGet() }
         subscriptions += Events.subscribe<PlayerQuitEvent>().handler { playerCount.decrementAndGet() }
+    }
+
+    /** Flip this instance to READY and start heartbeating. Call once modules are enabled. */
+    fun ready() {
+        registry.heartbeat(identity.instanceId, playerCount.get(), InstanceState.READY)
+            .exceptionally { logger.error("Failed to ready instance {}", identity.instanceId, it); null }
 
         val seconds = heartbeat.toSeconds().coerceAtLeast(1)
         task = Schedulers.asyncTimer(seconds, seconds, TimeUnit.SECONDS) {
             registry.heartbeat(identity.instanceId, playerCount.get(), InstanceState.READY)
         }
         logger.info(
-            "Instance {} (family {}) reporting to the registry every {}s",
+            "Instance {} (family {}) is ready, reporting to the registry every {}s",
             identity.instanceId, identity.family, seconds,
         )
     }

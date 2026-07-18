@@ -16,14 +16,16 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * Where a flag applies — most specific wins:
  *  1. **Player override** — forced on/off for one player ([playerScope]).
- *  2. **Server override** — forced on/off for this server ([serverName], from `server-name` in config).
+ *  2. **Server override** — forced on/off for this server's family ([serverName], from `network.family`),
+ *     so it kills the feature across every instance of the pool at once.
  *  3. **Global override** — forced on/off everywhere ([GLOBAL_SCOPE]).
  *  4. **Default** — enabled.
  *
- * Backed by SQL (source of truth) when the core's `Database` is configured, and synced across
- * servers via a `Messenger` broadcast when Redis is. Both are optional: without them the flags are
- * in-memory only (per-server, reset on restart) and everything else works the same. Modules
- * [register] their flags on enable so `/cryon flags` lists every kill switch with its default.
+ * Every change is broadcast over the [Messenger] and applied idempotently, so a toggle reaches every
+ * instance of a pool at once — or just this process on a single server, which is the same code
+ * reaching the same audience. The `Database` is the source of truth when configured and optional
+ * otherwise: without it the flags are in-memory (reset on restart) and everything else is unchanged.
+ * Modules [register] their flags on enable so `/cryon flags` lists every kill switch with its default.
  *
  * Thread-safe; [isEnabled] is a few map reads, cheap enough for event handlers. Created once by
  * the core and shared through the `ServiceRegistry`.
@@ -31,7 +33,7 @@ import java.util.concurrent.ConcurrentHashMap
 class FeatureFlags(
     val serverName: String,
     private val database: Database?,
-    private val messenger: Messenger?,
+    private val messenger: Messenger,
     private val logger: Logger,
 ) {
 
@@ -56,7 +58,7 @@ class FeatureFlags(
             ).thenCompose { load() }
                 .exceptionally { logger.error("Failed to initialize the feature flag table", it); null }
         }
-        subscription = messenger?.subscribe(CHANNEL, ::onSync)
+        subscription = messenger.subscribe(CHANNEL, ::onSync)
     }
 
     fun close() {
@@ -104,7 +106,7 @@ class FeatureFlags(
                     "ON CONFLICT (scope, feature) DO UPDATE SET enabled = EXCLUDED.enabled",
             scopeId, id, enabled,
         )
-        messenger?.publish(CHANNEL, sync(scopeId, id, enabled.toString()))
+        messenger.publish(CHANNEL, sync(scopeId, id, enabled.toString()))
     }
 
     /**
@@ -115,7 +117,7 @@ class FeatureFlags(
         val scopeId = normalizeScope(scope)
         val removed = flags[scopeId]?.remove(id) != null
         database?.update("DELETE FROM $TABLE WHERE scope = ? AND feature = ?", scopeId, id)
-        messenger?.publish(CHANNEL, sync(scopeId, id, REMOVE_MARKER))
+        messenger.publish(CHANNEL, sync(scopeId, id, REMOVE_MARKER))
         return removed
     }
 
@@ -126,7 +128,7 @@ class FeatureFlags(
         val id = normalize(feature)
         flags.values.forEach { it.remove(id) }
         database?.update("DELETE FROM $TABLE WHERE feature = ?", id)
-        messenger?.publish(CHANNEL, sync(ALL_SCOPES_MARKER, id, REMOVE_MARKER))
+        messenger.publish(CHANNEL, sync(ALL_SCOPES_MARKER, id, REMOVE_MARKER))
     }
 
     /**
@@ -183,9 +185,9 @@ class FeatureFlags(
         val parts = message.split(SEPARATOR)
         if (parts.size != 3) return
         val (scope, feature, value) = parts
-        when {
-            value == REMOVE_MARKER && scope == ALL_SCOPES_MARKER -> flags.values.forEach { it.remove(feature) }
-            value == REMOVE_MARKER -> flags[scope]?.remove(feature)
+        when (value) {
+            REMOVE_MARKER if scope == ALL_SCOPES_MARKER -> flags.values.forEach { it.remove(feature) }
+            REMOVE_MARKER -> flags[scope]?.remove(feature)
             else -> scopeFlags(scope)[feature] = value.toBoolean()
         }
         logger.info("Feature flag sync: {}/{} = {}", scope, feature, value)

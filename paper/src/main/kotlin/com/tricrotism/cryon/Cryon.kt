@@ -1,5 +1,6 @@
 package com.tricrotism.cryon
 
+import com.tricrotism.cryon.Cryon.Companion.FLUSH_TIMEOUT_SECONDS
 import com.tricrotism.cryon.command.LanguageCommands
 import com.tricrotism.cryon.command.ModuleCommands
 import com.tricrotism.cryon.common.data.Database
@@ -17,6 +18,7 @@ import com.tricrotism.cryon.module.ModuleLoader
 import com.tricrotism.cryon.module.ModuleWatcher
 import com.tricrotism.cryon.module.SparkSupport
 import com.tricrotism.cryon.network.InstanceReporter
+import com.tricrotism.cryon.network.NetworkStatus
 import com.tricrotism.cryon.network.agones.AgonesClient
 import com.tricrotism.cryon.network.agones.AgonesLifecycle
 import com.tricrotism.cryon.paper.api.CryonPaper
@@ -27,6 +29,7 @@ import com.tricrotism.cryon.paper.api.scheduler.Schedulers
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents
 import org.bukkit.Server
 import org.bukkit.configuration.file.FileConfiguration
+import org.bukkit.event.EventPriority
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.plugin.Plugin
@@ -35,6 +38,8 @@ import org.slf4j.Logger
 import org.slf4j.LoggerFactory
 import java.io.File
 import java.time.Duration
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 
 /**
  * The bootstrap. On enable it scans `plugins/Cryon/modules/` for feature jars, loads each in its
@@ -52,14 +57,21 @@ class Cryon : JavaPlugin() {
 
     private lateinit var featureFlags: FeatureFlags
     private var database: Database? = null
-    private var messenger: Messenger? = null
     private var localeStore: LocaleStore? = null
-    private var redisStore: RedisStore? = null
     private var registry: ServerRegistry? = null
     private var reporter: InstanceReporter? = null
     private var agonesLifecycle: AgonesLifecycle? = null
-    private var identity: InstanceIdentity? = null
+    private var handoff: HandoffCoordinator? = null
     private var heartbeatSeconds: Long = 5
+
+    // The transport. Always installed — Redis when configured, in-process otherwise — so the services
+    // above it have one implementation each and features never branch on the deployment mode.
+    private lateinit var messenger: Messenger
+    private lateinit var store: KeyValueStore
+    private lateinit var identity: InstanceIdentity
+
+    /** Whether the transport reaches other processes. Cross-process-only services hang off this. */
+    private var sharedTransport = false
 
     override fun onEnable() {
         CryonPaper.init(this) // so Schedulers/Events can reach the plugin
@@ -72,6 +84,9 @@ class Cryon : JavaPlugin() {
 
         val services = ServiceRegistry(log).apply { register(MessageService::class, messageService) }
         setupInfrastructure(services)
+
+        setupNetwork(services)
+        val status = reportNetwork(services)
 
         manager = ModuleManager(log)
         services.register(ModuleManager::class, manager) // so modules can query their own enabled-state
@@ -103,9 +118,9 @@ class Cryon : JavaPlugin() {
         manager.loadAll(context)
         manager.enableAll()
 
-        bootstrapCommands(messageService) // after modules so the boot flush sees their contributions
+        bootstrapCommands(messageService, status) // after modules so the boot flush sees their contributions
         startWatchers(modulesDir, apiDir)
-        setupNetwork(services) // advertise this instance to the network once everything is wired
+        announceReady(services) // only now can this server actually serve the players routed to it
 
         // Next tick: spark may enable after us, and the splice reads loaded modules either way.
         val authors = pluginMeta.authors.joinToString(", ").ifEmpty { "Cryon" }
@@ -182,11 +197,14 @@ class Cryon : JavaPlugin() {
      * boot window. After this window the registry splices runtime contributions into the live
      * dispatcher directly, so there is no second lifecycle handler anywhere.
      */
-    private fun bootstrapCommands(messageService: MessageService) {
+    private fun bootstrapCommands(messageService: MessageService, status: NetworkStatus) {
         commandRegistry.register(
             CORE_COMMAND_OWNER,
             { true },
-            listOf(ModuleCommands(manager, loader, featureFlags, commandRegistry), LanguageCommands(messageService)),
+            listOf(
+                ModuleCommands(manager, loader, featureFlags, commandRegistry, status),
+                LanguageCommands(messageService),
+            ),
         )
         lifecycleManager.registerEventHandler(LifecycleEvents.COMMANDS) { event ->
             try {
@@ -197,7 +215,7 @@ class Cryon : JavaPlugin() {
         }
     }
 
-    /** Wire SQL + Redis if configured, then flags and the cross-server locale store. Failures degrade gracefully. */
+    /** Wire SQL and the transport, then flags and the player locale store. Failures degrade gracefully. */
     private fun setupInfrastructure(services: ServiceRegistry) {
         saveDefaultConfig()
         val cfg = config
@@ -222,23 +240,10 @@ class Cryon : JavaPlugin() {
             }
         }
 
-        if (cfg.getBoolean("redis.enabled")) {
-            try {
-                val config = RedisConfig(cfg.getString("redis.uri", "redis://localhost:6379/0")!!)
-                val redis = RedisMessenger(config)
-                messenger = redis
-                services.register(Messenger::class, redis)
-                val store = LettuceRedisStore(config)
-                redisStore = store
-                services.register(RedisStore::class, store)
-                log.info("Redis connected")
-            } catch (e: Exception) {
-                log.error("Failed to initialize Redis... continuing without it", e)
-            }
-        }
+        setupTransport(services, cfg)
 
-        val identity = resolveIdentity(cfg)
-        this.identity = identity
+        identity = resolveIdentity(cfg)
+        services.register(InstanceIdentity::class, identity) // so a feature can ask who it is
         heartbeatSeconds = cfg.getLong("network.heartbeat-seconds", 5).coerceAtLeast(1)
 
         featureFlags = FeatureFlags(identity.family, database, messenger, log)
@@ -246,20 +251,53 @@ class Cryon : JavaPlugin() {
         services.register(FeatureFlags::class, featureFlags)
 
         val db = database
-        val redis = messenger
-        val store: LocaleStore = if (db != null && redis != null) {
-            PlayerLocaleStore(db, redis).also { s ->
+        val locale: LocaleStore = if (db != null) {
+            PlayerLocaleStore(db, messenger).also { s ->
                 s.init().exceptionally { log.error("Failed to create locale table", it); null }
                 Events.subscribe(PlayerJoinEvent::class.java).handler { event -> s.load(event.player.uniqueId) }
                 Events.subscribe(PlayerQuitEvent::class.java).handler { event -> s.unload(event.player.uniqueId) }
-                log.info("Persistent cross-server player locale enabled")
+                log.info("Persistent player locale enabled")
             }
         } else {
-            log.info("Player locale overrides are in-memory only (no database + redis) — they reset on restart")
+            log.info("Player locale overrides are in-memory only (no database) — they reset on restart")
             MemoryLocaleStore()
         }
-        localeStore = store
-        Locales.install(store)
+        localeStore = locale
+        Locales.install(locale)
+    }
+
+    /**
+     * Install the [Messenger] + [KeyValueStore] every other service is built on. Redis when it is
+     * configured *and* reachable, this process otherwise — either way both are registered, so nothing
+     * downstream has to cope with their absence. A Redis that fails to connect falls back rather than
+     * half-installing: a live messenger beside a dead store is the one state no caller expects.
+     */
+    private fun setupTransport(services: ServiceRegistry, cfg: FileConfiguration) {
+        if (cfg.getBoolean("redis.enabled")) {
+            try {
+                val redisConfig = RedisConfig(cfg.getString("redis.uri", "redis://localhost:6379/0")!!)
+                messenger = RedisMessenger(redisConfig)
+                store = RedisKeyValueStore(redisConfig)
+                sharedTransport = true
+                log.info("Redis connected — state is shared across the network")
+            } catch (e: Exception) {
+                log.error("Failed to initialize Redis... falling back to in-process state", e)
+                closeQuietly()
+            }
+        }
+        if (!sharedTransport) {
+            messenger = LocalMessenger(log)
+            store = MemoryKeyValueStore()
+            log.info("State is in-process only (no redis) — correct for a single server, not for a pool")
+        }
+        services.register(Messenger::class, messenger)
+        services.register(KeyValueStore::class, store)
+    }
+
+    /** Drop whatever a half-finished Redis setup managed to open. */
+    private fun closeQuietly() {
+        if (::messenger.isInitialized) runCatching { messenger.close() }
+        if (::store.isInitialized) runCatching { store.close() }
     }
 
     /** Resolve this process's network identity, env-first, falling back to config and Paper's own values. */
@@ -271,33 +309,63 @@ class Cryon : JavaPlugin() {
         fallbackPort = server.port,
         configMaxPlayers = cfg.getInt("network.max-players", 0),
         fallbackMaxPlayers = server.maxPlayers,
+        configMode = cfg.getString("network.mode"),
+        onUnknownMode = { log.error("Unknown network.mode '{}' — falling back to single", it) },
     )
 
     /**
-     * Register this instance in the shared [ServerRegistry] and start heartbeating. Requires Redis
-     * (liveness is TTL-based); without it the server runs standalone, exactly as before. Gated by
-     * `network.registry-enabled`.
+     * Wire the services features resolve during load: the registry, the router, and player handoff.
+     * Runs **before** modules load, so a module can register its flush and read the registry in
+     * `onLoad`/`onEnable` — but deliberately stops short of announcing this server as ready, which is
+     * [announceReady]'s job once the modules that will actually serve players are enabled.
+     *
+     * The registry is installed on either transport: over the in-process one it simply contains this
+     * server alone, which is what a single-server deployment *is* rather than a degraded mode of a
+     * pool. Gated by `network.registry-enabled`.
      */
     private fun setupNetwork(services: ServiceRegistry) {
-        val store = redisStore
-        val redis = messenger
-        val id = identity
-        if (store == null || redis == null || id == null) {
-            log.info("Server registry off (needs redis), this server runs standalone")
-            return
-        }
+        setupHandoff(services)
         if (!config.getBoolean("network.registry-enabled", true)) {
             log.info("Server registry disabled by config (network.registry-enabled=false)")
             return
         }
-        val reg = RedisServerRegistry(store, redis, database, Duration.ofSeconds(heartbeatSeconds * 3), log)
+        val reg = SharedServerRegistry(store, messenger, database, Duration.ofSeconds(heartbeatSeconds * 3), log)
         reg.init()
         registry = reg
         services.register(ServerRegistry::class, reg)
-        services.register(PlayerRouter::class, RedisPlayerRouter(reg, redis))
-        val rep = InstanceReporter(reg, id, server, Duration.ofSeconds(heartbeatSeconds), log).also { it.start() }
-        reporter = rep
-        setupAgones(services, id.family, rep, reg)
+
+        if (sharedTransport) services.register(PlayerRouter::class, DefaultPlayerRouter(reg, messenger))
+        reporter = InstanceReporter(reg, identity, server, Duration.ofSeconds(heartbeatSeconds), log)
+            .also { it.register() }
+    }
+
+    /**
+     * Install the flush registry and drive it from quit. Handled at [EventPriority.MONITOR] so every
+     * module's own quit handler has finished updating its state before we write that state down.
+     */
+    private fun setupHandoff(services: ServiceRegistry) {
+        val coordinator = HandoffCoordinator(identity.instanceId, messenger, log)
+        coordinator.init()
+        handoff = coordinator
+        services.register(PlayerHandoff::class, coordinator)
+        Events.subscribe(PlayerQuitEvent::class.java, EventPriority.MONITOR)
+            .handler { event -> coordinator.flushOnQuit(event.player.uniqueId) }
+    }
+
+    /** Advertise this server as READY, now that the modules serving its players are enabled. */
+    private fun announceReady(services: ServiceRegistry) {
+        val rep = reporter ?: return
+        val reg = registry ?: return
+        rep.ready()
+        setupAgones(services, identity.family, rep, reg)
+    }
+
+    /** Say what this server is, and make any disagreement with `network.mode` impossible to miss. */
+    private fun reportNetwork(services: ServiceRegistry): NetworkStatus {
+        val status = NetworkStatus(identity, sharedTransport, database != null) { registry }
+        services.register(NetworkStatus::class, status)
+        status.report(log)
+        return status
     }
 
     /** Attach the Agones lifecycle when running under a sidecar; a no-op anywhere else. */
@@ -328,15 +396,34 @@ class Cryon : JavaPlugin() {
         watchers.forEach { runCatching { it.close() } }
         watchers.clear()
         agonesLifecycle?.let { runCatching { it.stop() } }
-        reporter?.let { runCatching { it.drain(); it.stop() } } // deregister before the transport closes
+        reporter?.let { runCatching { it.drain() } } // stop new arrivals before we start saving
+        flushOnlinePlayers()
+        reporter?.let { runCatching { it.stop() } } // deregister before the transport closes
         registry?.let { runCatching { it.close() } }
         if (::manager.isInitialized) manager.disableAll()
         if (::loader.isInitialized) loader.close() // closes module loaders + the shared api/ parent
+        handoff?.let { runCatching { it.close() } }
         if (::featureFlags.isInitialized) featureFlags.close()
         localeStore?.close()
-        messenger?.close()
-        redisStore?.close()
+        if (::messenger.isInitialized) messenger.close()
+        if (::store.isInitialized) store.close()
         database?.close()
+    }
+
+    /**
+     * Write every online player down before anything that could carry their state is torn down. Must
+     * run while modules are still enabled (their state is the thing being flushed) and before the
+     * database closes, which drops in-flight writes. Bounded: a stuck flush delays shutdown by
+     * [FLUSH_TIMEOUT_SECONDS] and no longer.
+     */
+    private fun flushOnlinePlayers() {
+        val coordinator = handoff ?: return
+        val online = server.onlinePlayers.map { it.uniqueId }
+        if (online.isEmpty()) return
+        log.info("Flushing {} online player(s) before shutdown", online.size)
+        val flushes = online.map { coordinator.flush(it) }.toTypedArray()
+        runCatching { CompletableFuture.allOf(*flushes).orTimeout(FLUSH_TIMEOUT_SECONDS, TimeUnit.SECONDS).join() }
+            .onFailure { log.error("Timed out flushing players on shutdown — some state may be lost", it) }
     }
 
     private class CryonContext(
@@ -349,5 +436,8 @@ class Cryon : JavaPlugin() {
     private companion object {
         /** Owner key the core's own commands register under in the [CommandRegistry]. */
         const val CORE_COMMAND_OWNER = "cryon"
+
+        /** How long shutdown waits for player flushes before giving up and saying so. */
+        const val FLUSH_TIMEOUT_SECONDS = 10L
     }
 }

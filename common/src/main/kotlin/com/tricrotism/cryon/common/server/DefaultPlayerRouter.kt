@@ -5,12 +5,18 @@ import java.util.*
 import java.util.concurrent.CompletableFuture
 
 /**
- * [PlayerRouter] that picks the target from the [ServerRegistry] and asks the proxies to move the
- * player by broadcasting on [TransferRequest.CHANNEL]. Needs only registry + messenger, so it runs
- * unchanged on Paper (feature modules requesting transfers) and Velocity (proxies also being senders).
- * Ephemeral families fall back to the [matchmaker] supplier, which is null until Phase 2.
+ * The one [PlayerRouter] implementation: picks the target from the [ServerRegistry] and asks the
+ * proxies to move the player by broadcasting on [TransferRequest.CHANNEL]. Needs only registry +
+ * messenger, so it runs unchanged on Paper (feature modules requesting transfers) and Velocity
+ * (proxies also being senders). Ephemeral families fall back to the [matchmaker] supplier, which is
+ * null until Phase 2.
+ *
+ * Registered **only when the transport is shared**. Routing is inherently cross-process — the request
+ * is consumed by a proxy in another JVM — so over the in-process transport this could only publish
+ * into a void and report success. A single server has nowhere to route to, and `find` returning null
+ * says so honestly; see the deployment-mode notes in CLAUDE.md.
  */
-class RedisPlayerRouter(
+class DefaultPlayerRouter(
     private val registry: ServerRegistry,
     private val messenger: Messenger,
     private val matchmaker: () -> Matchmaker? = { null },

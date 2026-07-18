@@ -9,9 +9,10 @@ Modules in this repo (core + published API):
 - **`:common`** — platform-neutral framework: module system (`Module`, `ModuleManager`,
   `ModuleContext`, `ServiceRegistry`), `number` (`PackedDecimal`, `LongUtils`, `BigDecimalUtils`,
   `NumberUtils`), `text` (`Mini`, `CryonPalette`, `MessageType`, `CommonMessages`), `locale`
-  (`MessageService` + sources), `data`/`net` (SQL + Redis + `RedisStore` KV), `server` (server
-  registry + player routing), primitive `extension`s. Adventure `compileOnly`; no Bukkit/Velocity
-  types (the `:velocity` loader reuses it). **Published.**
+  (`MessageService` + sources), `data`/`net` (SQL + the `Messenger`/`KeyValueStore` transport, Redis or
+  in-process), `server` (deployment mode, server registry, player routing, player handoff), primitive
+  `extension`s. Adventure `compileOnly`; no Bukkit/Velocity types (the `:velocity` loader reuses it).
+  **Published.**
 - **`:paper-api`** — what feature repos compile against: `PaperModule`/`PaperModuleContext`,
   `CryonPaper`, `item.ItemBuilder`, `scheduler.Schedulers` (Folia-aware), `event.Events`,
   `command` (annotation framework), Paper `extension`s. Bukkit `compileOnly`. **Published.**
@@ -421,10 +422,31 @@ system, with a `VelocityModuleLoader` mirroring the Paper one (isolated `URLClas
 shared `api/` parent, `ServiceLoader` discovery). Velocity's `@Inject` appears **only on the
 `CryonVelocityPlugin` entrypoint**; feature modules stay no-arg-ctor `ServiceLoader`-discovered exactly
 like Paper, so the DI and the module system don't collide. Config is read from `plugins/cryon/config.yml`
-via (relocated) SnakeYAML with the same keys as Paper. Runtime hot-swap parity (a Velocity watcher and
-`/cryon`-style commands) is the documented next step. Velocity feature repos `compileOnly` `:common` +
+via (relocated) SnakeYAML with the same keys as Paper. It also **bootstraps the shared i18n on the
+proxy** (`Messages.install` + a `plugins/cryon/lang/` override dir + the bundle in its own jar), so
+proxy commands localize by client locale exactly like Paper — never hardcode English in `:velocity`.
+Runtime hot-swap parity (a Velocity watcher and `/cryon`-style commands) is the documented next step.
+Velocity feature repos `compileOnly` `:common` +
 `:velocity-api`, `class Foo : VelocityModule()` no-arg ctor, add the `META-INF/services` entry, and
 drop the jar into the proxy's `plugins/cryon/modules/`.
+
+**Velocity commands — annotation framework over Velocity Brigadier (`…velocity.api.command`).** A
+proxy-side twin of the Paper `AnnotationCommands`: the **same** `@Command`/`@Subcommand`/`@Permission`/
+`@Arg`/`@Greedy` model, reflected onto Velocity's native Brigadier (`BrigadierCommand`, source
+`CommandSource`) instead of Paper's. Register with `AnnotationCommands.register(proxy.commandManager,
+handler)`. The annotations are **duplicated**, not shared, because each platform's Brigadier is a
+different type (`CommandSourceStack` vs `CommandSource`) and `:paper-api` must stay Bukkit-free for
+`:velocity` — keep the two models in step by hand. An optional trailing arg is two same-path methods
+(one with the `@Arg`, one without); Brigadier merges the same-named literals. Core proxy commands
+(`/maintenance`, `/motd`) use this; **don't hand-roll `SimpleCommand` `when(args)` parsing.**
+
+**MOTD (`…velocity.motd`).** The server-list MOTD, set on `ProxyPingEvent` when maintenance is off.
+Two lines (top/bottom), each three MiniMessage segments anchored **left/center/right**: `Motd` measures
+each segment's pixel width (`FontWidth`, the vanilla default-font table) and pads with spaces (4px
+granularity) so center is centered and right ends at `motd.width`. Config `motd.*` in the proxy
+`config.yml`; `/motd reload` (perm `cryon.motd`) re-reads it live. `MotdListener` runs at
+`PostOrder.EARLY` and skips when maintenance is on; the maintenance ping (LATE) overrides it. Bold text
+isn't width-counted, so keep segments mostly unbolded for tight alignment.
 
 ---
 
@@ -501,43 +523,88 @@ which flushes at boot and splices runtime-loaded modules into the live dispatche
 registration* above). Registering from `onEnable` instead of `onLoad` double-contributes on every
 reload, so always register in `onLoad`.
 
-**Cross-server infra (`…common.data`/`…common.net`): opt-in, config-gated.**
+**Storage + transport (`…common.data`/`…common.net`).**
 
 - `Database` (`PostgresDatabase`, HikariCP) — async SQL: `query`/`update` return `CompletableFuture`s
-  off-thread. No ORM. **Never `.get()` on the main thread.**
-- `Messenger` (`RedisMessenger`, Lettuce) — cross-server `publish`/`subscribe` + `request`/`handle`. String payloads.
-- `RedisStore` (`LettuceRedisStore`) — async Redis KV with TTL (`set`/`get`/`delete`/`keys`/`mget`),
-  for state that must expire on its own (server liveness). Registered when `redis.enabled`.
-- Both registered into `ServiceRegistry` when enabled (`services.find<Database>()`/`find<Messenger>()`
-  — use `find`, may be absent). Client libs load at runtime via `plugin.yml` `libraries:`. `config.yml`
-  holds `database.*`, `redis.*` (both `enabled: false` by default), plus `production` (default `true`)
-  and `modules.auto-reload` (defaults to `!production`).
+  off-thread. No ORM. **Never `.get()` on the main thread.** Genuinely optional — `find<Database>()`,
+  may be null. Client libs load at runtime via `plugin.yml` `libraries:`.
+- `Messenger` — `publish`/`subscribe` + `request`/`handle`. String payloads. **Always registered**
+  (`get<Messenger>()`): `RedisMessenger` when `redis.enabled`, else `LocalMessenger`.
+- `KeyValueStore` — async KV with TTL (`set`/`get`/`delete`/`keys`/`mget`/`tryHold`), for state that
+  must expire on its own (server liveness). **Always registered** (`get<KeyValueStore>()`):
+  `RedisKeyValueStore` when `redis.enabled`, else `MemoryKeyValueStore`.
+- `config.yml` holds `network.mode`, `database.*`, `redis.*` (both `enabled: false` by default),
+  `production` (default `true`) and `modules.auto-reload` (defaults to `!production`).
 
 **Player locale — persistent & cross-server.** `Player.resolvedLocale()` = stored override ?: client
 `locale()`; all helpers use it. A chosen override (`player.setLanguage(de)`) persists to SQL +
-broadcasts a Redis invalidation; `PlayerLocaleStore` caches it in memory for sync reads. The core
-installs `PlayerLocaleStore` when SQL+Redis are configured, else `MemoryLocaleStore` (overrides work
-but per-server, reset on restart). A store is always installed; falls back to client locale without an override.
+broadcasts an invalidation; `PlayerLocaleStore` caches it in memory for sync reads. The core installs
+`PlayerLocaleStore` whenever **SQL** is configured (the broadcast reaches whoever is listening, which
+on a single server is just this process), else `MemoryLocaleStore` (overrides work but reset on
+restart). A store is always installed; falls back to client locale without an override.
 
-**Network / sharding (`…common.server`): interchangeable server pools + dynamic routing.** Each
-running server resolves an `InstanceIdentity` (env-first: `CRYON_SERVER_FAMILY`,
-`CRYON_INSTANCE_ID`/`HOSTNAME`, `CRYON_INSTANCE_ADDRESS`, `CRYON_INSTANCE_PORT`, else `config.yml`
-`network.*`, else Paper's own values), generalizing the old static `server-name` into a `family` (the
-pool, and the FeatureFlags server-scope) plus a per-process `instanceId`.
+**Deployment modes — `single` and `instanced`.** A deployment is one of two shapes, declared in
+`network.mode` (or `CRYON_NETWORK_MODE`) and exposed as `InstanceIdentity.mode`:
 
-- `ServerRegistry` (`RedisServerRegistry`) — the shared directory of live instances. Liveness is
-  **Redis KV with a TTL** (a crashed pod's key expires; each node also runs a local reaper), synced
-  over `cryon:registry:events` pub/sub into an in-memory replica so queries are non-blocking; the
-  slow-changing family catalog lives in Postgres. `bestInstance(family)` = least-loaded READY,
-  non-full. Requires Redis (Postgres optional). Resolve via `services.find(ServerRegistry::class)`.
-- `InstanceReporter` (`:paper`) — registers this server and heartbeats its live player count
-  (`AtomicInteger` fed by join/quit, so the async heartbeat never touches Bukkit off-thread); sets
-  DRAINING then deregisters on disable. Proxies never register themselves; they only read.
-- `PlayerRouter` (`RedisPlayerRouter`, in `:common`, runs on Paper and Velocity) — `route(uuid, family)`
-  picks the least-loaded candidates and **reserves a slot atomically** (`ServerRegistry.tryReserve`, a
-  Redis Lua/zset hold via `RedisStore.evalInt`) before broadcasting on `cryon:routing:transfer`, so two
-  proxies can't overfill one shard. The owning proxy connects the player, others no-op. A Paper feature
-  never needs a proxy handle: `services.find(PlayerRouter::class)?.route(...)`.
+- **`single`** — this server is the whole family. A Velocity proxy still fronts it, with a static
+  backend in `velocity.toml`. Redis optional.
+- **`instanced`** — one of N interchangeable instances of `network.family` (10 prison shards), players
+  load-balanced onto the healthiest. Redis + Postgres **required**.
+
+**Mode and transport are orthogonal, and this is the load-bearing idea.** The mode declares *intent*;
+what actually decides whether state crosses processes is `redis.enabled`. **The mode never switches
+behaviour** — a second code path keyed on the mode is precisely what this design exists to delete.
+It exists so the core can check intent against reality and be loud when they disagree; without it,
+"I meant one server" and "I meant a pool and my Redis URI is wrong" look identical at boot.
+
+**So `Messenger` + `KeyValueStore` are always registered** (Redis impls, else in-process ones), and
+everything above them has **exactly one implementation, always present**: `ServerRegistry`,
+`FeatureFlags`, `MaintenanceService`, `PlayerHandoff`. Over the in-process transport the registry
+simply holds one instance — this one — which is what a single server *is*, not a degraded pool, so
+`bestInstance(family)` answering "you" needs no special case. **Write feature code once; never branch
+on the mode.** `LocalMessenger` echoes to the publisher and delivers on its own thread precisely so
+that code behaves identically on both transports (see its KDoc — both are load-bearing).
+
+**Two deliberate carve-outs**, both because they are *inherently* cross-process rather than merely
+usually so:
+
+- **`PlayerRouter`** — registered only with a shared transport. A transfer is performed by a proxy in
+  another JVM; over loopback it could only publish into a void and report `Sent`. `find` returning
+  null honestly means "there is nowhere to route", which is the truth of a single server.
+- **`MaintenanceService`** — **proxy-side only**, on either transport. It is enforced where logins
+  arrive, and a single-server deployment still has exactly one proxy, so its in-process state is
+  already network-wide truth. Nothing on Paper reads it.
+
+**The rule: more than one process that must share state ⇒ Redis.** Loopback does not bridge JVMs, so
+several *different* `single`-mode families behind one proxy is an instanced-transport deployment, not
+a single-mode one.
+
+Validation is **loud but non-fatal** (`NetworkStatus`, `:paper`): `instanced` without Redis or without
+a database, or `single` while >1 live instance shares your family, prints a banner at boot and shows
+in **`/cryon network`** (mode, family, instance, transport, database, live instances, warnings).
+
+**Network / sharding (`…common.server`).** Each running server resolves an `InstanceIdentity`
+(env-first: `CRYON_NETWORK_MODE`, `CRYON_SERVER_FAMILY`, `CRYON_INSTANCE_ID`/`HOSTNAME`,
+`CRYON_INSTANCE_ADDRESS`, `CRYON_INSTANCE_PORT`, else `config.yml` `network.*`, else Paper's own
+values), generalizing the old static `server-name` into a `family` (the pool, and the FeatureFlags
+server-scope) plus a per-process `instanceId`. Registered into the `ServiceRegistry`.
+
+- `ServerRegistry` (`SharedServerRegistry`) — the directory of live instances. Liveness is **KV with a
+  TTL** (a crashed pod's key expires; each node also runs a local reaper), synced over
+  `cryon:registry:events` pub/sub into an in-memory replica so queries are non-blocking; the
+  slow-changing family catalog lives in Postgres (optional). **Always registered** —
+  `services.get(ServerRegistry::class)`. Only ever populates its replica **from the pub/sub echo**, so
+  a `Messenger` that didn't echo to itself would leave it permanently empty.
+- `InstanceReporter` (`:paper`) — `register()` publishes this server as STARTING **before** modules
+  load; `ready()` flips it to READY and starts heartbeating **after** they enable, so proxies never
+  route into a half-loaded server. Player count rides an `AtomicInteger` fed by join/quit, so the async
+  heartbeat never touches Bukkit off-thread; sets DRAINING then deregisters on disable. Proxies never
+  register themselves; they only read.
+- `PlayerRouter` (`DefaultPlayerRouter`, in `:common`, runs on Paper and Velocity) — `route(uuid, family)`
+  picks the least-loaded candidates and **reserves a slot atomically** (`ServerRegistry.tryReserve` →
+  `KeyValueStore.tryHold`, a Lua/zset hold on Redis) before broadcasting on `cryon:routing:transfer`, so
+  two proxies can't overfill one shard. The owning proxy connects the player, others no-op. A Paper
+  feature never needs a proxy handle: `services.find(PlayerRouter::class)?.route(...)`.
 - On Velocity, `BackendSynchronizer` registers/unregisters proxy servers off registry events and
   `TransferListener` performs the connects. Ephemeral minigame families fall back to the `Matchmaker`
   seam (interface only until a matchmaker module ships). `config.yml` adds a `network.*` block;
@@ -548,10 +615,47 @@ pool, and the FeatureFlags server-scope) plus a per-process `instanceId`.
   optionally reclaims an empty **persistent** shard (`shutdown-when-empty`, env-first via
   `CRYON_AGONES_SHUTDOWN_WHEN_EMPTY`, guarded to never kill the last `min-instances`). Registered into
   the `ServiceRegistry` so a matchmaker/match-end handler can call `requestShutdown()`.
-- **Maintenance mode** (`…common.maintenance` `MaintenanceService`/`RedisMaintenanceService`, Redis-synced
-  like FeatureFlags). On Velocity, `/maintenance on|off [message]` (permission `cryon.maintenance`) flips
-  every proxy; `MaintenanceListener` shows the message with an unjoinable ping protocol and denies logins
-  without `cryon.maintenance.bypass`.
+- **Maintenance mode** (`…common.maintenance` `MaintenanceService`/`SharedMaintenanceService`, synced
+  like FeatureFlags). Proxy-side only. `/maintenance on|off [message]` (permission `cryon.maintenance`)
+  flips every proxy; `MaintenanceListener` shows the message with an unjoinable ping protocol and denies
+  logins without `cryon.maintenance.bypass`. The message is a **MiniMessage** template (rendered via
+  `Mini`), so it colours/formats. A command-managed **bypass allowlist** (`/maintenance add|remove|list`,
+  name-based, case-insensitive) lets named players in without the permission node — persisted to
+  `cryon_maintenance_allow` and synced over `cryon:maintenance:allow`, mirroring the toggle's
+  write-through + broadcast.
+
+**Player handoff — saving on quit is a bug in `instanced` (`PlayerHandoff`, `…common.server`).** A
+proxy moves a player A→B by connecting B **first** and dropping A **after**
+(`createConnectionRequest(…).connect()`). So B's login, and every feature load behind it, happens
+*before* A's `PlayerQuitEvent` runs. A feature that saves on quit is therefore always one step behind:
+B reads the previous save. **No amount of care inside the feature fixes this** — the ordering is
+imposed from outside — which is why the core owns it.
+
+The fix inverts the order: **flush before the transfer, not on quit.** Velocity's `HandoffListener`
+catches `ServerPreConnectEvent`, asks the source instance to flush over
+`messenger.request(HandoffCoordinator.channel(from), uuid)` — a channel named per instance, so only
+the one holding the player answers — and returns an `EventTask` so the connect resumes only once it
+acks. `HandoffCoordinator` (`:common`) then runs every registered flush, marks the player, and skips
+the quit flush that follows moments later (writing our now-stale copy again would undo what they did
+on B). The mark **expires** rather than clearing on quit, because a transfer can fail and the player's
+real quit must still save. Fails open: a timeout moves the player anyway and logs it.
+
+**Modules register a flush instead of saving on quit:**
+
+```kotlin
+override fun onEnable() {
+    onFlush("balances") { uuid -> repository.save(uuid, cache[uuid]) }   // PaperModule helper
+}
+```
+
+Auto-unregisters on disable. The callback **runs off the main thread, must not touch the Bukkit API**
+(it writes state you already hold; it does not go and collect it), and must be safe **while the player
+is still online** — during a handoff that is exactly the case. Return a future that completes when the
+write lands: the transfer waits on it, so one that never completes stalls the player and one that
+completes early defeats the point. The quit path runs at `MONITOR`, so your own quit handler has
+already updated your state before the core writes it down. The **same callback** runs on quit and on
+shutdown (`Cryon.flushOnlinePlayers`, before modules disable and the DB pool closes), so a single
+server — where no transfer ever happens — exercises the identical code.
 
 **Deployment** lives in `deploy/` (outside the Gradle build): per-family Paper / Velocity / Geyser
 Dockerfiles + entrypoints (`images/`), baked family jar sets (`families/`), and a Helm chart
@@ -566,32 +670,35 @@ of populated shards on node upgrades. Add infrastructure **and document it here 
 
 ## Summary — Do / Don't
 
-| Do                                                       | Don't                                                          |
-|----------------------------------------------------------|----------------------------------------------------------------|
-| `CommonMessages.error(…)` / `audience.sendError(…)`      | `player.sendMessage("§c§lError §7> …")`                        |
-| `Mini.format("…", Placeholder…)` / `"…".mm()`            | `MiniMessage.miniMessage()`; `"…$value…"`                      |
-| `MessageService` keys for multi-language copy            | Hardcoded English strings in features                          |
-| `<!i>` in lore (or `ItemBuilder`, which does it)         | Raw `§o` italic prefix in lore                                 |
-| `ItemBuilder` / `Material.toItem()`                      | Hand-rolled `editMeta` for every item                          |
-| `Schedulers.async/global/region/entity`                  | raw `Bukkit.getScheduler()`                                    |
-| `Events.subscribe(...).filter{}.handler{}`               | ad-hoc `Listener` plumbing for one handler                     |
-| `PackedDecimal` for values that grow past ~1e15          | `BigDecimal` on hot incremental-math paths                     |
-| `@Command`/`@Subcommand` + `AnnotationCommands.register` | `plugin.yml commands:` / `CommandMap` / Cloud (broken on 26.2) |
-| `player.resolvedLocale()` for messages                   | `player.locale()` directly (ignores overrides)                 |
-| `services.find<Database>()` / `find<Messenger>()`        | `get<…>()` assuming the infra is enabled                       |
-| `PlayerRouter.route(uuid, family)` to move players       | Hardcoding a backend server name to connect to                 |
-| `find<ServerRegistry>()`; `bestInstance(family)`         | Assuming a fixed server list; picking a full/STARTING instance |
-| Consume the DB/Redis `CompletableFuture` async           | `.get()` on a DB future on the main thread                     |
-| Play a `Sound.*` on player-facing actions                | Silent state changes / redeems                                 |
-| `inventory.addItem` + handle overflow deliberately       | `dropItemNaturally` as the "didn't fit" path                   |
-| Explicit types; `val` over `var`                         | Java-isms; needless `var`; gratuitous `!!`                     |
-| Typed lambda params (`{ event: PlayerInteractEvent ->`)  | Untyped params relying on inference where it hurts             |
-| `ConcurrentHashMap` for shared static state              | `HashMap`/`HashSet` for shared static state                    |
-| `merge()` for shared-map counter increments              | `getOrDefault + 1 + put`                                       |
-| `computeIfAbsent` / `putIfAbsent`                        | `containsKey` + `put`                                          |
-| Bukkit API only on the server thread                     | Bukkit API in `runTaskAsynchronously`                          |
-| Cache service/config lookups before hot loops            | Re-resolving them inside loops                                 |
-| `x shr 4` for block→chunk coords                         | `block.chunk.x` / `block.chunk.z`                              |
-| A guard/flag per distinct slice of behavior              | One umbrella guard covering many slices                        |
-| Bare flag IDs (`FISHING`)                                | Gamemode-prefixed flag IDs (`A_FISHING`)                       |
-| `[TICKET]` imperative commit titles                      | `Co-Authored-By:` trailers / emoji in commits                  |
+| Do                                                                | Don't                                                          |
+|-------------------------------------------------------------------|----------------------------------------------------------------|
+| `CommonMessages.error(…)` / `audience.sendError(…)`               | `player.sendMessage("§c§lError §7> …")`                        |
+| `Mini.format("…", Placeholder…)` / `"…".mm()`                     | `MiniMessage.miniMessage()`; `"…$value…"`                      |
+| `MessageService` keys for multi-language copy                     | Hardcoded English strings in features                          |
+| `<!i>` in lore (or `ItemBuilder`, which does it)                  | Raw `§o` italic prefix in lore                                 |
+| `ItemBuilder` / `Material.toItem()`                               | Hand-rolled `editMeta` for every item                          |
+| `Schedulers.async/global/region/entity`                           | raw `Bukkit.getScheduler()`                                    |
+| `Events.subscribe(...).filter{}.handler{}`                        | ad-hoc `Listener` plumbing for one handler                     |
+| `PackedDecimal` for values that grow past ~1e15                   | `BigDecimal` on hot incremental-math paths                     |
+| `@Command`/`@Subcommand` + `AnnotationCommands.register`          | `plugin.yml commands:` / `CommandMap` / Cloud (broken on 26.2) |
+| `player.resolvedLocale()` for messages                            | `player.locale()` directly (ignores overrides)                 |
+| `services.find<Database>()` (genuinely optional)                  | `get<Database>()` assuming SQL is enabled                      |
+| `get<Messenger>()`/`get<KeyValueStore>()`/`get<ServerRegistry>()` | Null-checking them, or branching on the deployment mode        |
+| `onFlush("…") { uuid -> … }` for player state                     | Saving player state in a quit handler (too late on a transfer) |
+| `PlayerRouter.route(uuid, family)` to move players                | Hardcoding a backend server name to connect to                 |
+| `find<PlayerRouter>()` — null means nowhere to route              | Assuming a route is always possible                            |
+| `bestInstance(family)`                                            | Assuming a fixed server list; picking a full/STARTING instance |
+| Consume the DB/Redis `CompletableFuture` async                    | `.get()` on a DB future on the main thread                     |
+| Play a `Sound.*` on player-facing actions                         | Silent state changes / redeems                                 |
+| `inventory.addItem` + handle overflow deliberately                | `dropItemNaturally` as the "didn't fit" path                   |
+| Explicit types; `val` over `var`                                  | Java-isms; needless `var`; gratuitous `!!`                     |
+| Typed lambda params (`{ event: PlayerInteractEvent ->`)           | Untyped params relying on inference where it hurts             |
+| `ConcurrentHashMap` for shared static state                       | `HashMap`/`HashSet` for shared static state                    |
+| `merge()` for shared-map counter increments                       | `getOrDefault + 1 + put`                                       |
+| `computeIfAbsent` / `putIfAbsent`                                 | `containsKey` + `put`                                          |
+| Bukkit API only on the server thread                              | Bukkit API in `runTaskAsynchronously`                          |
+| Cache service/config lookups before hot loops                     | Re-resolving them inside loops                                 |
+| `x shr 4` for block→chunk coords                                  | `block.chunk.x` / `block.chunk.z`                              |
+| A guard/flag per distinct slice of behavior                       | One umbrella guard covering many slices                        |
+| Bare flag IDs (`FISHING`)                                         | Gamemode-prefixed flag IDs (`A_FISHING`)                       |
+| `[TICKET]` imperative commit titles                               | `Co-Authored-By:` trailers / emoji in commits                  |

@@ -6,6 +6,7 @@ import com.tricrotism.cryon.common.module.ModuleState
 import com.tricrotism.cryon.common.text.CommonMessages
 import com.tricrotism.cryon.common.text.Mini
 import com.tricrotism.cryon.module.ModuleLoader
+import com.tricrotism.cryon.network.NetworkStatus
 import com.tricrotism.cryon.paper.api.command.*
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.event.ClickEvent
@@ -20,7 +21,8 @@ import java.util.*
 /**
  * `/cryon modules | info <id> | enable <id> | disable <id> | reload <id>` — runtime *lifecycle*;
  * `load <jar> | unload <id> | scan` — jar-level *hot-swap*; `reload-api` — cascade-reload the
- * shared `api/` contract layer plus every module; and the feature kill switches:
+ * shared `api/` contract layer plus every module; `network` — this server's deployment shape; and
+ * the feature kill switches:
  * `flags [scope]`, `flag enable|disable|clear <feature> [scope]`, `flag status <feature> [player]`,
  * `flag delete <feature>`, `flag reload` — where scope is `global` (default), a server name, or
  * `player:<name>`. The built-in module manager, annotation-defined and gated by `cryon.admin`.
@@ -33,10 +35,45 @@ class ModuleCommands(
     private val loader: ModuleLoader,
     private val flags: FeatureFlags,
     private val commands: CommandService,
+    private val network: NetworkStatus,
 ) {
 
     @Subcommand
     fun overview(sender: CommandSender) = list(sender)
+
+    /** What this server was told to be, what it actually is, and any way the two disagree. */
+    @Subcommand("network")
+    fun network(sender: CommandSender) {
+        val identity = network.identity
+        sender.sendMessage(Mini.format("<off_white>Network"))
+        line(sender, "Mode", identity.mode.name.lowercase())
+        line(sender, "Family", identity.family)
+        line(sender, "Instance", identity.instanceId)
+        line(sender, "Transport", network.transport)
+        line(sender, "Database", if (network.persistent) "on" else "off")
+        line(sender, "Live in family", network.familySize().toString())
+
+        val warnings = network.warnings()
+        if (warnings.isEmpty()) {
+            sender.sendMessage(Mini.format("  <success>Deployment matches the declared mode."))
+            return
+        }
+        for (warning in warnings) {
+            sender.sendMessage(
+                Mini.format("  <error>! <text>", Placeholder.unparsed("text", warning))
+            )
+        }
+    }
+
+    private fun line(sender: CommandSender, label: String, value: String) {
+        sender.sendMessage(
+            Mini.format(
+                "  <slate_gray><label>:</slate_gray> <highlight><value>",
+                Placeholder.unparsed("label", label),
+                Placeholder.unparsed("value", value),
+            )
+        )
+    }
 
     @Subcommand("modules")
     fun modulesList(sender: CommandSender) = list(sender)
