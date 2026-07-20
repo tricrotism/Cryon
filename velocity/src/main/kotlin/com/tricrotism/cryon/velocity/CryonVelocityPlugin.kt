@@ -3,7 +3,8 @@ package com.tricrotism.cryon.velocity
 import com.google.inject.Inject
 import com.tricrotism.cryon.common.data.Database
 import com.tricrotism.cryon.common.data.DatabaseConfig
-import com.tricrotism.cryon.common.data.PostgresDatabase
+import com.tricrotism.cryon.common.data.SqlDatabase
+import com.tricrotism.cryon.common.data.SqlDialect
 import com.tricrotism.cryon.common.locale.DirectoryMessageSource
 import com.tricrotism.cryon.common.locale.LangScanner
 import com.tricrotism.cryon.common.locale.MessageService
@@ -119,21 +120,23 @@ class CryonVelocityPlugin @Inject constructor(
     private fun setupInfrastructure(services: ServiceRegistry, cfg: VelocityConfig) {
         if (cfg.boolean("database.enabled", false)) {
             try {
-                val db = PostgresDatabase(
+                val dialect = SqlDialect.of(cfg.string("database.type", "postgresql"))
+                val db = SqlDatabase(
                     DatabaseConfig(
                         host = cfg.string("database.host", "localhost"),
-                        port = cfg.int("database.port", 5432),
+                        port = cfg.int("database.port", dialect.defaultPort),
                         database = cfg.string("database.database", "cryon"),
                         username = cfg.string("database.username", "cryon"),
                         password = cfg.string("database.password", ""),
                         maxPoolSize = cfg.int("database.max-pool-size", 10),
+                        dialect = dialect,
                     )
                 )
                 database = db
                 services.register(Database::class, db)
-                logger.info("PostgreSQL connected")
+                logger.info("Database connected (${dialect.id})")
             } catch (e: Exception) {
-                logger.error("Failed to initialize PostgreSQL... continuing without it", e)
+                logger.error("Failed to initialize the database... continuing without it", e)
             }
         }
         setupTransport(services, cfg)

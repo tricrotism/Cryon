@@ -478,6 +478,17 @@ not these.
   language-neutral). Canned bodies localized via `Messages` by `cryon.common.*` key; Paper extensions
   (`player.sendNoPermission()`, …) pass `resolvedLocale()`.
 
+**Collections & randomness (`…common.bucket`/`…common.random`):**
+
+- `Bucket<E>` (`Buckets.concurrent`/`hashSet`, `PartitioningStrategies.lowestSize`/`random`) — a
+  `MutableSet` that also splits its elements across a fixed number of partitions, so per-element work
+  can be spread over ticks: `bucket.cycle().next()` each tick walks one partition (`Cycle` is an
+  atomic rotating cursor). Used by `DefaultInventorySearch` to sweep online inventories a slice per
+  tick, each read on the player's own entity scheduler (Folia-safe).
+- `RandomSelector<E>` (`RandomSelector.uniform`/`weighted`, `Weighted`/`Weigher`/`WeightedObject`) —
+  uniform or weighted picks; weighted builds Vose's alias table (O(n) setup, O(1) `pick`). Immutable
+  and thread-safe once built; `pick()` uses `ThreadLocalRandom`, `stream()` is an infinite sequence.
+
 **i18n (`…common.locale`): everything user-facing is localizable.** `MessageService` resolves
 `(locale, key) → Component` across `MessageSource`s with a fallback chain, `renderPlural`, hot
 `reload()`. `Messages` is the static facade. **Auto-scanned — don't register by hand:** a jar's
@@ -525,9 +536,11 @@ reload, so always register in `onLoad`.
 
 **Storage + transport (`…common.data`/`…common.net`).**
 
-- `Database` (`PostgresDatabase`, HikariCP) — async SQL: `query`/`update` return `CompletableFuture`s
+- `Database` (`SqlDatabase`, HikariCP) — async SQL: `query`/`update` return `CompletableFuture`s
   off-thread. No ORM. **Never `.get()` on the main thread.** Genuinely optional — `find<Database>()`,
-  may be null. Client libs load at runtime via `plugin.yml` `libraries:`.
+  may be null. Client libs load at runtime via `plugin.yml` `libraries:` (Velocity shades them). Backend
+  is `database.type` = `postgresql` (default), `mysql`, or embedded `h2` (a local file, host/port ignored
+  — zero-setup but not shared across processes), keyed by the `SqlDialect` enum.
 - `Messenger` — `publish`/`subscribe` + `request`/`handle`. String payloads. **Always registered**
   (`get<Messenger>()`): `RedisMessenger` when `redis.enabled`, else `LocalMessenger`.
 - `KeyValueStore` — async KV with TTL (`set`/`get`/`delete`/`keys`/`mget`/`tryHold`), for state that

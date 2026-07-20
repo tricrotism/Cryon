@@ -13,8 +13,12 @@
 
 database:
     enabled: false
+    # Backend: postgresql, mysql, or h2. With h2 the DB is an embedded local file (`database` below is
+    # its path, host/port ignored) — zero-setup, but local to this process, not shared across servers.
+    type: mysql
     host: localhost
-    port: 5432
+    # Leave the port at the backend default (postgresql 5432, mysql 3306) or set your own.
+    port: 3306
     database: cryon
     username: cryon
     password: ""

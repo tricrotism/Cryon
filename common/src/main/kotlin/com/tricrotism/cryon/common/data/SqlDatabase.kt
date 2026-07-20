@@ -9,19 +9,21 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * [Database] over a HikariCP pool to PostgreSQL. Blocking JDBC work runs on a daemon pool sized to
- * the connection pool, exposed through [CompletableFuture]s. Construct from [DatabaseConfig]; throws
- * if the pool can't initialize (the core catches and degrades gracefully).
+ * [Database] over a HikariCP pool, for any backend in [SqlDialect] (PostgreSQL, MySQL, or embedded
+ * H2). The backend only changes the JDBC URL and driver; all query/update work is plain JDBC.
+ * Blocking JDBC runs on a daemon pool sized to the connection pool, exposed through
+ * [CompletableFuture]s. Construct from [DatabaseConfig]; throws if the pool can't initialize (the
+ * core catches and degrades gracefully).
  */
-class PostgresDatabase(config: DatabaseConfig) : Database {
+class SqlDatabase(config: DatabaseConfig) : Database {
 
     private val dataSource = HikariDataSource(HikariConfig().apply {
-        jdbcUrl = "jdbc:postgresql://${config.host}:${config.port}/${config.database}"
+        jdbcUrl = config.dialect.jdbcUrl(config)
         username = config.username
         password = config.password
         maximumPoolSize = config.maxPoolSize
         poolName = "cryon-db"
-        driverClassName = "org.postgresql.Driver"
+        driverClassName = config.dialect.driverClass
     })
 
     private val threadId = AtomicInteger()

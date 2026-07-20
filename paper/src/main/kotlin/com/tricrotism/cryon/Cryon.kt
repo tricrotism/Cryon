@@ -5,7 +5,8 @@ import com.tricrotism.cryon.command.LanguageCommands
 import com.tricrotism.cryon.command.ModuleCommands
 import com.tricrotism.cryon.common.data.Database
 import com.tricrotism.cryon.common.data.DatabaseConfig
-import com.tricrotism.cryon.common.data.PostgresDatabase
+import com.tricrotism.cryon.common.data.SqlDatabase
+import com.tricrotism.cryon.common.data.SqlDialect
 import com.tricrotism.cryon.common.flag.FeatureFlags
 import com.tricrotism.cryon.common.locale.*
 import com.tricrotism.cryon.common.module.ModuleManager
@@ -13,6 +14,7 @@ import com.tricrotism.cryon.common.module.ServiceRegistry
 import com.tricrotism.cryon.common.net.*
 import com.tricrotism.cryon.common.server.*
 import com.tricrotism.cryon.common.text.Mini
+import com.tricrotism.cryon.inventory.DefaultInventorySearch
 import com.tricrotism.cryon.module.CommandRegistry
 import com.tricrotism.cryon.module.ModuleLoader
 import com.tricrotism.cryon.module.ModuleWatcher
@@ -25,6 +27,7 @@ import com.tricrotism.cryon.paper.api.CryonPaper
 import com.tricrotism.cryon.paper.api.PaperModuleContext
 import com.tricrotism.cryon.paper.api.command.CommandService
 import com.tricrotism.cryon.paper.api.event.Events
+import com.tricrotism.cryon.paper.api.inventory.InventorySearch
 import com.tricrotism.cryon.paper.api.scheduler.Schedulers
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents
 import org.bukkit.Server
@@ -222,21 +225,23 @@ class Cryon : JavaPlugin() {
 
         if (cfg.getBoolean("database.enabled")) {
             try {
-                val db = PostgresDatabase(
+                val dialect = SqlDialect.of(cfg.getString("database.type", "postgresql")!!)
+                val db = SqlDatabase(
                     DatabaseConfig(
                         host = cfg.getString("database.host", "localhost")!!,
-                        port = cfg.getInt("database.port", 5432),
+                        port = cfg.getInt("database.port", dialect.defaultPort),
                         database = cfg.getString("database.database", "cryon")!!,
                         username = cfg.getString("database.username", "cryon")!!,
                         password = cfg.getString("database.password", "")!!,
                         maxPoolSize = cfg.getInt("database.max-pool-size", 10),
+                        dialect = dialect,
                     )
                 )
                 database = db
                 services.register(Database::class, db)
-                log.info("PostgreSQL connected")
+                log.info("Database connected (${dialect.id})")
             } catch (e: Exception) {
-                log.error("Failed to initialize PostgreSQL... continuing without it", e)
+                log.error("Failed to initialize the database... continuing without it", e)
             }
         }
 
@@ -249,6 +254,8 @@ class Cryon : JavaPlugin() {
         featureFlags = FeatureFlags(identity.family, database, messenger, log)
         featureFlags.init()
         services.register(FeatureFlags::class, featureFlags)
+
+        services.register(InventorySearch::class, DefaultInventorySearch())
 
         val db = database
         val locale: LocaleStore = if (db != null) {

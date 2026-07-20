@@ -15,8 +15,10 @@ dependencies {
     compileOnly("com.velocitypowered:velocity-api:3.3.0-SNAPSHOT")
 
     implementation("com.zaxxer:HikariCP:5.1.0")
-    implementation("org.postgresql:postgresql:42.7.4")
-    implementation("io.lettuce:lettuce-core:6.4.0.RELEASE")
+    implementation("org.postgresql:postgresql:42.7.13")
+    implementation("com.mysql:mysql-connector-j:9.7.0")
+    implementation("com.h2database:h2:2.3.232")
+    implementation("io.lettuce:lettuce-core:6.7.1.RELEASE")
     implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
     implementation("org.yaml:snakeyaml:2.2")
 }
