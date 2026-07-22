@@ -10,6 +10,7 @@ import com.tricrotism.cryon.common.module.ModuleState
 import com.tricrotism.cryon.paper.api.command.CommandService
 import org.slf4j.Logger
 import java.io.File
+import java.net.URL
 import java.net.URLClassLoader
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
@@ -46,6 +47,14 @@ class ModuleLoader(
         val moduleIds: List<String>,
         val lang: MessageSource?,
     )
+
+    /**
+     * A feature jar's [URLClassLoader], exposing `findLoadedClass` so [SparkSupport] can attribute an
+     * already-loaded module class without triggering a fresh (parent-delegating, lock-contending) load.
+     */
+    private class ModuleClassLoader(urls: Array<URL>, parent: ClassLoader) : URLClassLoader(urls, parent) {
+        fun loadedClass(name: String): Class<*>? = findLoadedClass(name)
+    }
 
     /** A module jar as the profiler should present it: display [name] (its module ids) + [version]. */
     data class ModuleSource(val name: String, val version: String)
@@ -163,11 +172,19 @@ class ModuleLoader(
     fun sourceName(loader: ClassLoader?): String? = loader?.let { loaderSources[it]?.name }
 
     /**
-     * Live view of every module classloader — [SparkSupport]'s class-finder fallback. spark can only
-     * attribute a sampled class it can *find*, and Paper's own lookup can't see into these isolated
-     * loaders. Safe to iterate off-thread (concurrent map view).
+     * [name] if any live module loader has already *defined* it, else null — [SparkSupport]'s
+     * class-finder fallback. spark can only attribute a sampled class it can find, and Paper's own
+     * lookup can't see into these isolated loaders. Uses `findLoadedClass` (a native class-table read:
+     * no parent delegation, no fresh load) so it never blocks on Paper's classloader-group lock the way
+     * a delegating `Class.forName` would; a sampled stack frame's class is always already loaded, so
+     * this suffices. Safe to call off the profiler's export thread (concurrent map view).
      */
-    fun moduleClassLoaders(): Collection<ClassLoader> = loaderSources.keys
+    fun findLoadedModuleClass(name: String): Class<*>? {
+        for (loader in loaderSources.keys) {
+            (loader as? ModuleClassLoader)?.loadedClass(name)?.let { return it }
+        }
+        return null
+    }
 
     /** Snapshot of every loaded jar's source info — spark's "known sources" metadata. */
     fun sources(): Collection<ModuleSource> = loaderSources.values.toList()
@@ -196,7 +213,7 @@ class ModuleLoader(
         val sourceKey = key(source)
         try {
             source.copyTo(cache, overwrite = true)
-            loader = URLClassLoader(arrayOf(cache.toURI().toURL()), moduleParent)
+            loader = ModuleClassLoader(arrayOf(cache.toURI().toURL()), moduleParent)
 
             val modules = ServiceLoader.load(Module::class.java, loader).toList()
             if (modules.isEmpty()) {

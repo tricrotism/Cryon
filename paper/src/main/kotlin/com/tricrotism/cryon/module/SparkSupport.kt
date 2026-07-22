@@ -119,29 +119,20 @@ object SparkSupport {
         }
 
     /**
-     * A [Proxy] over spark's `ClassFinder`: the real finder first, then each module classloader.
-     * Without this, module classes are unfindable (Paper only searches the server and plugin
-     * loaders), and spark drops the frame before ever consulting the source lookup.
+     * A [Proxy] over spark's `ClassFinder`: the real finder first, then the module loaders. Without
+     * this, module classes are unfindable (Paper only searches the server and plugin loaders), and
+     * spark drops the frame before ever consulting the source lookup. The module fallback resolves via
+     * `findLoadedClass` (see [ModuleLoader.findLoadedModuleClass]) rather than a delegating
+     * `Class.forName`, so it never blocks on Paper's classloader-group lock while a profile exports.
      */
     private fun wrapFinder(finderType: Class<*>, realFinder: Any, loader: ModuleLoader): Any =
         Proxy.newProxyInstance(finderType.classLoader, arrayOf(finderType)) { _, method, args ->
             if (method.name == "findClass" && args?.size == 1 && args[0] is String) {
-                delegate(method, realFinder, args) ?: findInModules(args[0] as String, loader)
+                delegate(method, realFinder, args) ?: loader.findLoadedModuleClass(args[0] as String)
             } else {
                 delegate(method, realFinder, args)
             }
         }
-
-    /** [name] as loaded by any live module classloader, or null. Isolation means trying each in turn. */
-    private fun findInModules(name: String, loader: ModuleLoader): Class<*>? {
-        for (moduleLoader in loader.moduleClassLoaders()) {
-            try {
-                return Class.forName(name, false, moduleLoader)
-            } catch (_: Throwable) { // not in this jar, or its loader closed mid-hot-swap — try the next
-            }
-        }
-        return null
-    }
 
     /** spark's real known sources plus a `SourceMetadata(name, version, author, description)` per jar. */
     private fun appendModuleSources(
