@@ -121,6 +121,8 @@ class Cryon : JavaPlugin() {
         manager.loadAll(context)
         manager.enableAll()
 
+        seedAdminLang(messageService) // after modules so their keys land in the reference file too
+
         bootstrapCommands(messageService, status) // after modules so the boot flush sees their contributions
         startWatchers(modulesDir, apiDir)
         announceReady(services) // only now can this server actually serve the players routed to it
@@ -192,6 +194,27 @@ class Cryon : JavaPlugin() {
     private fun registerOwnLang(messageService: MessageService) {
         val jar = runCatching { File(javaClass.protectionDomain.codeSource.location.toURI()) }.getOrNull() ?: return
         LangScanner.fromJar(jar)?.let(messageService::addSource)
+    }
+
+    /**
+     * Mirror the default locale's keys (core + every module bundle) into the on-disk
+     * `plugins/Cryon/lang/<default>.properties`, so admins get a complete, editable reference instead
+     * of an empty folder. Only missing keys are added — existing overrides are preserved — then the
+     * directory source is reloaded so the file is authoritative. Best-effort: a write failure logs and
+     * never blocks boot.
+     */
+    private fun seedAdminLang(messageService: MessageService) {
+        val locale = messageService.defaultLocale
+        val file = File(File(dataFolder, "lang"), "$locale.properties")
+        try {
+            val added = messageService.exportMissing(locale, file)
+            if (added > 0) {
+                messageService.reload()
+                log.info("Seeded {} missing message(s) into {}", added, file.name)
+            }
+        } catch (e: Exception) {
+            log.warn("Could not seed the admin lang file {}", file.name, e)
+        }
     }
 
     /**

@@ -59,10 +59,27 @@ abstract class PaperModule : Module {
     protected fun registerCommands(vararg handlers: Any) {
         val commands = services.find(CommandService::class)
         if (commands == null) {
-            logger.error("CommandService unavailable — commands for module $id will not register")
+            logger.error("CommandService unavailable! Commands for module '$id' will not register")
             return
         }
         commands.register(id, ::isEnabled, handlers.toList())
+    }
+
+    /**
+     * Register `@Command` [handlers] as branches of a **shared** root — see
+     * [CommandService.registerBranch]. **Call from [onLoad]**, like [registerCommands].
+     *
+     * Use this, not [registerCommands], when the root literal is a namespace several modules live
+     * under (`/int <module> …`). [registerCommands] would have this module take sole title to the
+     * root and evict every other contributor.
+     */
+    protected fun registerBranchCommands(vararg handlers: Any) {
+        val commands = services.find(CommandService::class)
+        if (commands == null) {
+            logger.error("CommandService unavailable! Branch commands for module '$id' will not register")
+            return
+        }
+        commands.registerBranch(id, ::isEnabled, handlers.toList())
     }
 
     /**
@@ -76,7 +93,7 @@ abstract class PaperModule : Module {
     protected fun onFlush(name: String, flush: (UUID) -> CompletableFuture<Void>) {
         val handoff = services.find(PlayerHandoff::class)
         if (handoff == null) {
-            logger.error("PlayerHandoff unavailable, '$name' for module $id will never flush")
+            logger.error("PlayerHandoff unavailable! '$name' for module $id will never flush")
             return
         }
         flushes += handoff.onFlush("$id/$name", flush) // scoped, so two modules may both flush "balances"

@@ -30,6 +30,25 @@ fun PackedDecimal.formatBalance(isLong: Boolean = false): String = NumberUtils.f
 
 fun Int.roman(): String = NumberUtils.roman(this)
 
+/**
+ * Compact duration from a whole number of seconds — `90L.formatDuration()` -> "1m 30s". The two
+ * most-significant units only: a countdown is glanced at, and `1h 2m 5s` is three numbers where two
+ * would do. Non-positive input renders `"0s"`.
+ */
+fun Long.formatDuration(): String {
+    if (this <= 0L) return "0s"
+    val days = this / 86_400
+    val hours = this % 86_400 / 3_600
+    val minutes = this % 3_600 / 60
+    val secs = this % 60
+    return when {
+        days > 0L -> if (hours > 0L) "${days}d ${hours}h" else "${days}d"
+        hours > 0L -> if (minutes > 0L) "${hours}h ${minutes}m" else "${hours}h"
+        minutes > 0L -> if (secs > 0L) "${minutes}m ${secs}s" else "${minutes}m"
+        else -> "${secs}s"
+    }
+}
+
 // Parsing.
 fun String.parseLongShorthand(): LongUtils.LongParseResult = LongUtils.parseLongShorthand(this)
 fun String.parseBalance(): BigDecimal = NumberUtils.parseBalance(this)

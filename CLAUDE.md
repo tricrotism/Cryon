@@ -465,7 +465,7 @@ not these.
   (not `BigDecimal`) for anything past `~1e15` on a hot path.
 - `LongUtils`, `BigDecimalUtils` (`magnitude`/`log10` past `Double` range), `NumberUtils`
   (`formatBalance`/`formatCommas`/`roman`/`parseBalance`, thread-safe), primitive extensions (`1500L.formatBalance()`,
-  `5.pd`).
+  `5.pd`, `90L.formatDuration()` → compact `"1m 30s"` from seconds).
 
 **Text (`…common.text`):**
 
@@ -494,7 +494,11 @@ not these.
 `reload()`. `Messages` is the static facade. **Auto-scanned — don't register by hand:** a jar's
 `lang/<locale>.properties` registers on load; `plugins/Cryon/lang/` (admin override) registers first
 and wins. Send via `messages.send(player, key, …)` or `messages.send(player, MessageType.ERROR, key, …)`. Missing keys
-render `⟨key⟩`.
+render `⟨key⟩`. **On boot the core seeds the admin override file** for the default locale
+(`exportMissing`, after every module loads): keys the core + module bundles define but
+`plugins/Cryon/lang/en_US.properties` lacks are appended to it, so admins get a complete editable
+reference and new keys surface there automatically. **Existing entries are never rewritten** — an
+admin override always survives a restart.
 
 **Items (`…paper.api.item`/`…extension`):** `ItemBuilder` — name/lore (auto `<!i>`, palette-parsed),
 flags, glow, `enchant`, attributes, PDC `tag`s, `meta {}`. Extensions: `Material.toItem()`,
@@ -533,6 +537,18 @@ the core contributes its own commands the same way. Both go through the core-own
 which flushes at boot and splices runtime-loaded modules into the live dispatcher (see *Command
 registration* above). Registering from `onEnable` instead of `onLoad` double-contributes on every
 reload, so always register in `onLoad`.
+
+**Shared command roots — `registerBranchCommands`.** `registerCommands` gives an owner *exclusive*
+title to a root literal: the registry drops whatever held that name, and `unregister` takes the whole
+root back. Right for a module's own command, wrong for a namespace several modules share — the second
+module to claim it silently evicts the first, with no error and no log line. For those, use
+**`PaperModule.registerBranchCommands(…)`** (→ `CommandService.registerBranch`): the `@Command` name
+picks a *shared* root, the `@Subcommand` methods become branches of it, and the root is created on
+first use and dropped with its last branch. `/int` is the standing example — `@Command("int")` +
+`@Subcommand("drills", "give")` in Cryon-Drills contributes `/int drills give <ign> <type>` without
+touching anyone else's branch. Two consequences of the root being co-owned: a **root `@Subcommand`
+(empty path) and any aliases are ignored**, since neither belongs to a single contributor. Permission
+still comes from each handler's own `@Permission`. Same `onLoad` rule as `registerCommands`.
 
 **Storage + transport (`…common.data`/`…common.net`).**
 

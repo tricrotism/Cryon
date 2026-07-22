@@ -21,6 +21,8 @@ class DirectoryMessageSource(private val dir: File) : MessageSource {
 
     override fun template(locale: Locale, key: String): String? = cache[locale]?.get(key)
 
+    override fun keys(locale: Locale): Set<String> = cache[locale]?.keys ?: emptySet()
+
     override fun reload() {
         val loaded = HashMap<Locale, Map<String, String>>()
         dir.listFiles { f -> f.isFile && f.name.endsWith(".properties") }?.forEach { file ->

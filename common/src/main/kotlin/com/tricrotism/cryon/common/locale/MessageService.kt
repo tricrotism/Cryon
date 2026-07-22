@@ -3,6 +3,11 @@ package com.tricrotism.cryon.common.locale
 import com.tricrotism.cryon.common.text.Mini
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver
+import java.io.File
+import java.io.FileOutputStream
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.nio.charset.StandardCharsets
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
@@ -41,6 +46,34 @@ class MessageService(defaultLocale: Locale = Locale.US) {
         return null
     }
 
+    /** Every key any source can enumerate for [locale] (exact locale, no fallback), sorted for stable output. */
+    fun keys(locale: Locale): Set<String> = sources.flatMapTo(sortedSetOf()) { it.keys(locale) }
+
+    /**
+     * Append every enumerable [locale] key not already in [file] — valued by the resolved default
+     * template — so admins get a complete, editable bundle without hand-copying it out of the jars.
+     * Existing entries are **never** rewritten (a deliberate override must survive), so the file's
+     * comments and order stay intact and new keys are appended in sorted order. Read and written UTF-8
+     * to match [DirectoryMessageSource]. Returns how many keys were written.
+     */
+    fun exportMissing(locale: Locale, file: File): Int {
+        val existing = Properties()
+        if (file.isFile) file.inputStream().use { InputStreamReader(it, StandardCharsets.UTF_8).use(existing::load) }
+        val missing = keys(locale).filter { !existing.containsKey(it) }
+        if (missing.isEmpty()) return 0
+
+        file.parentFile?.mkdirs()
+        OutputStreamWriter(FileOutputStream(file, true), StandardCharsets.UTF_8).use { out ->
+            if (file.length() > 0L) out.write("\n")
+            out.write("# Added automatically; edit freely — existing keys are never overwritten.\n")
+            for (key in missing) {
+                val value = template(locale, key) ?: continue
+                out.write("$key=${escapeValue(value)}\n")
+            }
+        }
+        return missing.size
+    }
+
     /** Render [key] for [locale]; missing keys render as `⟨key⟩` so gaps are visible, not silent. */
     fun render(locale: Locale, key: String, vararg resolvers: TagResolver): Component {
         val template = template(locale, key) ?: return missing(key)
@@ -64,4 +97,19 @@ class MessageService(defaultLocale: Locale = Locale.US) {
     }
 
     private fun missing(key: String): Component = Component.text("⟨$key⟩")
+
+    // Property-file escaping for values. Files are UTF-8 (not latin1), so non-ASCII is written as-is;
+    // only backslash, control chars, and a leading space need escaping. Keys here are dotted ids, safe.
+    private fun escapeValue(value: String): String = buildString(value.length) {
+        value.forEachIndexed { i, c ->
+            when (c) {
+                '\\' -> append("\\\\")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                ' ' -> append(if (i == 0) "\\ " else " ")
+                else -> append(c)
+            }
+        }
+    }
 }
