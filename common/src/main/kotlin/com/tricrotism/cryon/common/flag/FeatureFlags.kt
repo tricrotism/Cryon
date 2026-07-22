@@ -199,7 +199,16 @@ class FeatureFlags(
     private fun sync(scope: String, feature: String, value: String): String =
         "$scope$SEPARATOR$feature$SEPARATOR$value"
 
-    private fun normalize(feature: String): String = feature.trim().uppercase()
+    private fun normalize(feature: String): String =
+        if (isCanonical(feature)) feature else feature.trim().uppercase()
+
+    private fun isCanonical(feature: String): Boolean {
+        if (feature.isEmpty()) return false
+        for (c in feature) {
+            if (c !in 'A'..'Z' && c !in '0'..'9' && c != '_') return false
+        }
+        return true
+    }
 
     private fun normalizeScope(scope: String): String =
         scope.trim().let { if (it.startsWith(PLAYER_SCOPE_PREFIX)) it else it.lowercase() }
