@@ -7,6 +7,7 @@ import com.mojang.brigadier.tree.RootCommandNode
 import com.tricrotism.cryon.paper.api.command.AnnotationCommands
 import com.tricrotism.cryon.paper.api.command.CommandDescriptor
 import com.tricrotism.cryon.paper.api.command.CommandService
+import com.tricrotism.cryon.paper.api.scheduler.Schedulers
 import io.papermc.paper.command.brigadier.CommandSourceStack
 import io.papermc.paper.command.brigadier.Commands
 import org.bukkit.Server
@@ -40,6 +41,7 @@ class CommandRegistry(private val server: Server, private val log: Logger) : Com
     // these roots are co-owned: dropping this owner must take its branches and leave the root standing.
     private val liveBranches = LinkedHashMap<String, MutableSet<Pair<String, String>>>()
     private var booted = false
+    private var refreshScheduled = false
 
     override fun register(owner: String, available: () -> Boolean, handlers: List<Any>) {
         handlers.forEach { entries.add(Entry(owner, available, it)) }
@@ -76,7 +78,12 @@ class CommandRegistry(private val server: Server, private val log: Logger) : Com
     }
 
     override fun refresh() {
-        server.onlinePlayers.forEach { runCatching { it.updateCommands() } }
+        if (refreshScheduled) return
+        refreshScheduled = true
+        Schedulers.global {
+            refreshScheduled = false
+            server.onlinePlayers.forEach { runCatching { it.updateCommands() } }
+        }
     }
 
     override fun describe(owner: String): List<CommandDescriptor> =
