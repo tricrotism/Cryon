@@ -465,7 +465,8 @@ not these.
   (not `BigDecimal`) for anything past `~1e15` on a hot path.
 - `LongUtils`, `BigDecimalUtils` (`magnitude`/`log10` past `Double` range), `NumberUtils`
   (`formatBalance`/`formatCommas`/`roman`/`parseBalance`, thread-safe), primitive extensions (`1500L.formatBalance()`,
-  `5.pd`, `90L.formatDuration()` → compact `"1m 30s"` from seconds).
+  `5.pd`, `90L.formatDuration()` → compact two-unit `"1m 30s"`, `90L.formatDurationFull()` → all units
+  `"1m 30s"`/`"1d 2h 3m 4s"` like `%statistic_time_played%`, both from seconds).
 
 **Text (`…common.text`):**
 

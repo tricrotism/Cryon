@@ -49,6 +49,27 @@ fun Long.formatDuration(): String {
     }
 }
 
+/**
+ * Full duration from a whole number of seconds — every non-zero unit down to seconds, matching
+ * vanilla's `%statistic_time_played%`: `90L.formatDurationFull()` -> "1m 30s",
+ * `93_784L.formatDurationFull()` -> "1d 2h 3m 4s". Zero units are dropped (`3_600L` -> "1h"), and
+ * non-positive input renders `"0s"`. Use [formatDuration] instead for the two-unit compact form a
+ * countdown wants.
+ */
+fun Long.formatDurationFull(): String {
+    if (this <= 0L) return "0s"
+    val days = this / 86_400
+    val hours = this % 86_400 / 3_600
+    val minutes = this % 3_600 / 60
+    val secs = this % 60
+    return buildList {
+        if (days > 0L) add("${days}d")
+        if (hours > 0L) add("${hours}h")
+        if (minutes > 0L) add("${minutes}m")
+        if (secs > 0L) add("${secs}s")
+    }.joinToString(" ")
+}
+
 // Parsing.
 fun String.parseLongShorthand(): LongUtils.LongParseResult = LongUtils.parseLongShorthand(this)
 fun String.parseBalance(): BigDecimal = NumberUtils.parseBalance(this)
