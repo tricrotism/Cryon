@@ -53,7 +53,7 @@ class SubscriptionBuilder<T : Event> internal constructor(
         val active = AtomicBoolean(true)
         val subscription = Subscription(listener, active)
         val count = AtomicLong(0)
-        val filters = this.filters.toList() // snapshot
+        val filters = this.filters.toTypedArray() // snapshot; array so the per-event loop needs no iterator
         val expiry = this.expiry
 
         val executor = EventExecutor { _, event ->

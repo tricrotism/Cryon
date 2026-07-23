@@ -41,6 +41,9 @@ class FeatureFlags(
     private val flags = ConcurrentHashMap<String, ConcurrentHashMap<String, Boolean>>()
     private var subscription: MessengerSubscription? = null
 
+    @Volatile
+    private var hasPlayerOverrides = false
+
     fun init() {
         val db = database
         if (db == null) {
@@ -73,7 +76,7 @@ class FeatureFlags(
      */
     fun isEnabled(feature: String, player: UUID? = null): Boolean {
         val id = normalize(feature)
-        if (player != null) flags[playerScope(player)]?.get(id)?.let { return it }
+        if (player != null && hasPlayerOverrides) flags[playerScope(player)]?.get(id)?.let { return it }
         flags[serverName]?.get(id)?.let { return it }
         flags[GLOBAL_SCOPE]?.get(id)?.let { return it }
         return true
@@ -193,8 +196,10 @@ class FeatureFlags(
         logger.info("Feature flag sync: {}/{} = {}", scope, feature, value)
     }
 
-    private fun scopeFlags(scope: String): ConcurrentHashMap<String, Boolean> =
-        flags.computeIfAbsent(scope) { ConcurrentHashMap() }
+    private fun scopeFlags(scope: String): ConcurrentHashMap<String, Boolean> {
+        if (scope.startsWith(PLAYER_SCOPE_PREFIX)) hasPlayerOverrides = true
+        return flags.computeIfAbsent(scope) { ConcurrentHashMap() }
+    }
 
     private fun sync(scope: String, feature: String, value: String): String =
         "$scope$SEPARATOR$feature$SEPARATOR$value"

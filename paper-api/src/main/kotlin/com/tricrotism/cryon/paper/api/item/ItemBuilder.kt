@@ -35,6 +35,8 @@ class ItemBuilder(item: ItemStack) {
 
     private val item: ItemStack = item.clone()
 
+    private val workingMeta: ItemMeta? = this.item.itemMeta
+
     constructor(material: Material, amount: Int = 1) : this(ItemStack(material, amount))
 
     fun amount(amount: Int): ItemBuilder = apply { item.amount = amount }
@@ -74,9 +76,9 @@ class ItemBuilder(item: ItemStack) {
         meta { persistentDataContainer.set(key, type, value) }
 
     /** Escape hatch for anything not covered above. */
-    fun meta(block: ItemMeta.() -> Unit): ItemBuilder = apply { item.editMeta { it.block() } }
+    fun meta(block: ItemMeta.() -> Unit): ItemBuilder = apply { workingMeta?.block() }
 
-    fun build(): ItemStack = item.clone()
+    fun build(): ItemStack = item.clone().also { clone -> workingMeta?.let { clone.itemMeta = it } }
 }
 
 /** Disable lore/name italics unless the component already set the decoration explicitly. */

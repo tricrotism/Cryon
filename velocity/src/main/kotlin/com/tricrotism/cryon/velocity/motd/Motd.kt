@@ -1,5 +1,6 @@
 package com.tricrotism.cryon.velocity.motd
 
+import com.tricrotism.cryon.common.text.FontWidth
 import com.tricrotism.cryon.common.text.Mini
 import com.tricrotism.cryon.velocity.config.VelocityConfig
 import net.kyori.adventure.text.Component
@@ -19,20 +20,23 @@ class Motd(private val configFile: Path) {
     @Volatile
     private var settings = MotdSettings.EMPTY
 
+    @Volatile
+    private var rendered: Component? = null
+
     fun reload() {
-        settings = MotdSettings.from(VelocityConfig.load(configFile))
+        val s = MotdSettings.from(VelocityConfig.load(configFile))
+        settings = s
+        rendered = if (!s.enabled) null else {
+            val top = renderLine(s.topLeft, s.topCenter, s.topRight, s.width)
+            val bottom = renderLine(s.bottomLeft, s.bottomCenter, s.bottomRight, s.width)
+            Component.text().append(top).append(Component.newline()).append(bottom).build()
+        }
     }
 
     fun isEnabled(): Boolean = settings.enabled
 
     /** The two-line description, or `null` when disabled (so the caller leaves the ping untouched). */
-    fun render(): Component? {
-        val s = settings
-        if (!s.enabled) return null
-        val top = renderLine(s.topLeft, s.topCenter, s.topRight, s.width)
-        val bottom = renderLine(s.bottomLeft, s.bottomCenter, s.bottomRight, s.width)
-        return Component.text().append(top).append(Component.newline()).append(bottom).build()
-    }
+    fun render(): Component? = rendered
 
     private fun renderLine(left: String, center: String, right: String, width: Int): Component {
         val segments = buildList {

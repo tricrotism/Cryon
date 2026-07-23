@@ -15,7 +15,6 @@ import java.util.*
  */
 object NumberUtils {
 
-    // index 0 is the no-suffix slot (values < 1000 never reach it); index n applies 10^(3n).
     private const val SUFFIX_CHARS = " kMBTqQsSONDUdt"
     private val LONG_SUFFIXES = arrayOf(
         "", " Thousand", " Million", " Billion", " Trillion", " Quadrillion", " Quintillion",
@@ -23,6 +22,8 @@ object NumberUtils {
         " Duodecillion", " Tredecillion",
     )
     private val THOUSAND = BigDecimal.valueOf(1000)
+
+    private val POW1000 = Array(SUFFIX_CHARS.length) { BigDecimal.TEN.pow(it * 3) }
 
     private fun symbols() = DecimalFormatSymbols(Locale.US)
     private val grouped = ThreadLocal.withInitial { NumberFormat.getNumberInstance(Locale.US) }
@@ -66,7 +67,7 @@ object NumberUtils {
         if (power >= SUFFIX_CHARS.length) {
             return sign + abs.round(MathContext(4)).toEngineeringString()
         }
-        val scaled = abs.divide(BigDecimal.TEN.pow(power * 3), 2, RoundingMode.DOWN)
+        val scaled = abs.divide(POW1000[power], 2, RoundingMode.DOWN)
         val body = scaled.stripTrailingZeros().toPlainString()
         return sign + body + (if (isLong) LONG_SUFFIXES[power] else SUFFIX_CHARS[power].toString())
     }
