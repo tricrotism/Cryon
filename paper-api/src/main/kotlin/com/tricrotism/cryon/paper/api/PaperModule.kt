@@ -113,7 +113,7 @@ abstract class PaperModule : Module {
             logger.warn("PlaceholderService unavailable! Placeholders for module '$id' will not register")
             return
         }
-        placeholders += placeholderService.register(provider)
+        placeholders += placeholderService.register(id, provider)
     }
 
     override fun onDisable() {

@@ -104,7 +104,7 @@ class Cryon : JavaPlugin() {
 
         val papi = PapiBridge(this, log)
         services.register(PlaceholderService::class, papi)
-        corePlaceholders = papi.register(CorePlaceholders(identity))
+        corePlaceholders = papi.register(CORE_COMMAND_OWNER, CorePlaceholders(identity))
 
         val context = CryonContext(this, server, log, services)
 
@@ -131,7 +131,7 @@ class Cryon : JavaPlugin() {
 
         seedAdminLang(messageService) // after modules so their keys land in the reference file too
 
-        bootstrapCommands(messageService, status) // after modules so the boot flush sees their contributions
+        bootstrapCommands(messageService, status, papi) // after modules so the boot flush sees their contributions
         startWatchers(modulesDir, apiDir)
         announceReady(services) // only now can this server actually serve the players routed to it
 
@@ -231,12 +231,16 @@ class Cryon : JavaPlugin() {
      * boot window. After this window the registry splices runtime contributions into the live
      * dispatcher directly, so there is no second lifecycle handler anywhere.
      */
-    private fun bootstrapCommands(messageService: MessageService, status: NetworkStatus) {
+    private fun bootstrapCommands(
+        messageService: MessageService,
+        status: NetworkStatus,
+        placeholders: PlaceholderService,
+    ) {
         commandRegistry.register(
             CORE_COMMAND_OWNER,
             { true },
             listOf(
-                ModuleCommands(manager, loader, featureFlags, commandRegistry, status, messageService),
+                ModuleCommands(manager, loader, featureFlags, commandRegistry, status, messageService, placeholders),
                 LanguageCommands(messageService),
             ),
         )

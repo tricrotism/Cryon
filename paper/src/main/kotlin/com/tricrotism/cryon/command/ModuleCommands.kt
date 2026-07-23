@@ -9,6 +9,7 @@ import com.tricrotism.cryon.common.text.Mini
 import com.tricrotism.cryon.module.ModuleLoader
 import com.tricrotism.cryon.network.NetworkStatus
 import com.tricrotism.cryon.paper.api.command.*
+import com.tricrotism.cryon.paper.api.placeholder.PlaceholderService
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.event.ClickEvent
 import net.kyori.adventure.text.event.HoverEvent
@@ -39,6 +40,7 @@ class ModuleCommands(
     private val commands: CommandService,
     private val network: NetworkStatus,
     private val messages: MessageService,
+    private val placeholders: PlaceholderService,
 ) {
 
     @Subcommand
@@ -104,6 +106,22 @@ class ModuleCommands(
             )
         )
         printCommands(sender, id)
+        printPlaceholders(sender, id)
+    }
+
+    /** List the PlaceholderAPI namespaces the module owns, e.g. `%afkarea_…%`. Omitted when it has none. */
+    private fun printPlaceholders(sender: CommandSender, id: String) {
+        val namespaces = placeholders.identifiers(id)
+        if (namespaces.isEmpty()) return
+        sender.sendMessage(Mini.format("  <off_white>Placeholders:"))
+        for (namespace in namespaces) {
+            sender.sendMessage(
+                Mini.format(
+                    "      <sky_blue>%<namespace>_…%</sky_blue>",
+                    Placeholder.unparsed("namespace", namespace),
+                )
+            )
+        }
     }
 
     /** List the module's registered commands: name, aliases, description, and per-subcommand usages. */

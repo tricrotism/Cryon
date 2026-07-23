@@ -523,10 +523,12 @@ classloaders). A module implements `PlaceholderProvider` (`identifier` + `onRequ
 and publishes it with **`PaperModule.registerPlaceholders(provider)`** in `onEnable` (auto-unregistered
 on disable). The core `PlaceholderService` impl (`PapiBridge`) wraps each provider in a `CryonExpansion`
 (`PlaceholderExpansion`, `persist()=true`, provider throws → swallowed so a feature bug can't break PAPI
-server-wide) and registers it. **Best-effort like spark:** PAPI is a `softdepend` + `compileOnly`; absent
-→ `register` is a no-op and features never branch on it. `onRequest` runs on PAPI's thread (maybe async,
-maybe hot) — keep it cheap, thread-safe, no Bukkit API off-main. Built-in namespace `%cryon_…%`
-(`CorePlaceholders`): `family`/`instance`/`mode`/`max_players` off the immutable `InstanceIdentity`.
+server-wide) and registers it, keyed by the owning module id so **`/cryon info <id>` lists that module's
+`%<namespace>_…%`** alongside its commands. **Best-effort like spark:** PAPI is a `softdepend` +
+`compileOnly`; absent → the namespace is still recorded (so info stays honest) but no expansion installs,
+and features never branch on it. `onRequest` runs on PAPI's thread (maybe async, maybe hot) — keep it
+cheap, thread-safe, no Bukkit API off-main. Built-in namespace `%cryon_…%` (`CorePlaceholders`):
+`family`/`instance`/`mode`/`max_players` off the immutable `InstanceIdentity`.
 
 **Commands — annotation framework over Paper Brigadier (`…paper.api.command`).** **Cloud is broken on
 26.2** (cloud-bukkit's `ItemStackParser` reflects a missing method). Use the `@Command` layer
