@@ -28,7 +28,10 @@ import com.tricrotism.cryon.paper.api.PaperModuleContext
 import com.tricrotism.cryon.paper.api.command.CommandService
 import com.tricrotism.cryon.paper.api.event.Events
 import com.tricrotism.cryon.paper.api.inventory.InventorySearch
+import com.tricrotism.cryon.paper.api.placeholder.PlaceholderService
 import com.tricrotism.cryon.paper.api.scheduler.Schedulers
+import com.tricrotism.cryon.papi.CorePlaceholders
+import com.tricrotism.cryon.papi.PapiBridge
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents
 import org.bukkit.Server
 import org.bukkit.configuration.file.FileConfiguration
@@ -65,6 +68,7 @@ class Cryon : JavaPlugin() {
     private var reporter: InstanceReporter? = null
     private var agonesLifecycle: AgonesLifecycle? = null
     private var handoff: HandoffCoordinator? = null
+    private var corePlaceholders: AutoCloseable? = null
     private var heartbeatSeconds: Long = 5
 
     // The transport. Always installed — Redis when configured, in-process otherwise — so the services
@@ -97,6 +101,10 @@ class Cryon : JavaPlugin() {
         // The command registry must exist before any module onLoad runs, so registerCommands resolves it.
         commandRegistry = CommandRegistry(server, log)
         services.register(CommandService::class, commandRegistry)
+
+        val papi = PapiBridge(this, log)
+        services.register(PlaceholderService::class, papi)
+        corePlaceholders = papi.register(CorePlaceholders(identity))
 
         val context = CryonContext(this, server, log, services)
 
@@ -228,7 +236,7 @@ class Cryon : JavaPlugin() {
             CORE_COMMAND_OWNER,
             { true },
             listOf(
-                ModuleCommands(manager, loader, featureFlags, commandRegistry, status),
+                ModuleCommands(manager, loader, featureFlags, commandRegistry, status, messageService),
                 LanguageCommands(messageService),
             ),
         )
@@ -431,6 +439,7 @@ class Cryon : JavaPlugin() {
         reporter?.let { runCatching { it.stop() } } // deregister before the transport closes
         registry?.let { runCatching { it.close() } }
         if (::manager.isInitialized) manager.disableAll()
+        corePlaceholders?.let { runCatching { it.close() } } // module providers close via their own disable
         if (::loader.isInitialized) loader.close() // closes module loaders + the shared api/ parent
         handoff?.let { runCatching { it.close() } }
         if (::featureFlags.isInitialized) featureFlags.close()

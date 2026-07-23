@@ -1,6 +1,7 @@
 package com.tricrotism.cryon.command
 
 import com.tricrotism.cryon.common.flag.FeatureFlags
+import com.tricrotism.cryon.common.locale.MessageService
 import com.tricrotism.cryon.common.module.ModuleManager
 import com.tricrotism.cryon.common.module.ModuleState
 import com.tricrotism.cryon.common.text.CommonMessages
@@ -25,7 +26,8 @@ import java.util.*
  * the feature kill switches:
  * `flags [scope]`, `flag enable|disable|clear <feature> [scope]`, `flag status <feature> [player]`,
  * `flag delete <feature>`, `flag reload` — where scope is `global` (default), a server name, or
- * `player:<name>`. The built-in module manager, annotation-defined and gated by `cryon.admin`.
+ * `player:<name>`; `lang reload` — re-read the message files from disk. The built-in module manager,
+ * annotation-defined and gated by `cryon.admin`.
  * `<id>`/`<jar>` tab-complete from the live state. Admin-facing English output.
  */
 @Command("cryon", "Cryon module manager")
@@ -36,6 +38,7 @@ class ModuleCommands(
     private val flags: FeatureFlags,
     private val commands: CommandService,
     private val network: NetworkStatus,
+    private val messages: MessageService,
 ) {
 
     @Subcommand
@@ -395,6 +398,13 @@ class ModuleCommands(
         } else {
             sender.sendMessage(CommonMessages.warn(Mini.format("<off_white>No database configured — flags are in-memory only, nothing to reload.")))
         }
+    }
+
+    /** Re-read every message source from disk — the admin `lang/` override and every module's bundle. */
+    @Subcommand("lang", "reload")
+    fun langReload(sender: CommandSender) {
+        messages.reload()
+        sender.sendMessage(CommonMessages.success(Mini.format("<off_white>Reloaded language files from disk.")))
     }
 
     /** Suggester referenced by `@Arg(suggests = "moduleIds")`. */

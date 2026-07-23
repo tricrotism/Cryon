@@ -7,6 +7,7 @@ plugins {
 
 repositories {
     mavenCentral()
+    maven("https://repo.extendedclip.com/releases/") // PlaceholderAPI
 }
 
 dependencies {
@@ -15,6 +16,7 @@ dependencies {
     implementation(project(":common"))
     implementation(project(":paper-api"))
     compileOnly("org.slf4j:slf4j-api:2.0.16")
+    compileOnly("me.clip:placeholderapi:2.11.6")
 }
 
 kotlin {

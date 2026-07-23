@@ -7,9 +7,9 @@ import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver
 import java.util.*
 
 /**
- * Static facade over the installed [MessageService], so stateless helpers ([com.tricrotism.cryon
- * .common.text.CommonMessages], `MessageType`) can localize without threading the service through
- * every call. The core calls [install] once on enable. If nothing is installed (or a key is
+ * Static facade over the installed [MessageService], so stateless helpers
+ * ([com.tricrotism.cryon.common.text.CommonMessages]) can localize without threading the service
+ * through every call. The core calls [install] once on enable. If nothing is installed (or a key is
  * missing), the `…Or` helpers fall back to the supplied default, so callers always work.
  */
 object Messages {

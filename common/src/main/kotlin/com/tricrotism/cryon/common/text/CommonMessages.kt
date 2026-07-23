@@ -1,20 +1,26 @@
 package com.tricrotism.cryon.common.text
 
 import com.tricrotism.cryon.common.locale.Messages
+import com.tricrotism.cryon.common.text.CommonMessages.KEY_PREFIX
 import com.tricrotism.cryon.common.text.CommonMessages.alert
 import com.tricrotism.cryon.common.text.CommonMessages.basic
 import com.tricrotism.cryon.common.text.CommonMessages.defaultLocale
+import com.tricrotism.cryon.common.text.CommonMessages.error
+import com.tricrotism.cryon.common.text.CommonMessages.info
+import com.tricrotism.cryon.common.text.CommonMessages.success
+import com.tricrotism.cryon.common.text.CommonMessages.warn
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.TextDecoration
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder
 import java.util.*
 
 /**
- * Prefixed message builder: a coloured [MessageType] **icon** + a palette-aware body. Bodies stay
- * **localized** — the canned phrases resolve through [Messages] by `cryon.common.*` key, English
- * inline as fallback (overridable via any `lang/<locale>.properties`). Prefix icons are
- * language-neutral, so only the canned phrases take a [Locale] (default [defaultLocale]); the paper
- * send extensions pass the player's locale.
+ * Message builder: a single optional prefix + a palette-aware body. Bodies stay **localized** — the
+ * canned phrases resolve through [Messages] by `cryon.common.*` key, English inline as fallback
+ * (overridable via any `lang/<locale>.properties`). The prefix is one shared, lang-driven base
+ * (`cryon.common.prefix`, resolved in [defaultLocale], blank by default so there is no glyph); it is
+ * not per-message-type. The canned phrases take a [Locale] (default [defaultLocale]); the paper send
+ * extensions pass the player's locale.
  */
 object CommonMessages {
 
@@ -23,6 +29,7 @@ object CommonMessages {
     /** Soft separator for [basic]/[alert]. */
     val ARROWS: Component = Component.text("»").color(CryonPalette.SLATE_GRAY)
 
+    const val KEY_PREFIX = "cryon.common.prefix"
     const val KEY_NO_PERMISSION = "cryon.common.no_permission"
     const val KEY_NEVER_JOINED = "cryon.common.never_joined"
     const val KEY_NOT_ONLINE = "cryon.common.not_online"
@@ -30,23 +37,30 @@ object CommonMessages {
     const val KEY_NOT_ENOUGH = "cryon.common.not_enough"
     const val KEY_FEATURE_DISABLED = "cryon.common.feature_disabled"
 
-    fun message(type: MessageType, content: Component): Component =
-        Component.empty().append(type.prefix).appendSpace().append(content)
+    /**
+     * Prepend the shared, lang-driven base prefix ([KEY_PREFIX], resolved in [defaultLocale]) to
+     * [content]. A blank prefix (the default) drops it, so the message is just its body. There is no
+     * per-type styling: [error]/[success]/[info]/[warn] are call-site sugar that all render identically.
+     */
+    fun message(content: Component): Component {
+        val prefix = Messages.rawOr(defaultLocale, KEY_PREFIX, "")
+        if (prefix.isBlank()) return content
+        return Component.empty().append(Mini.format(prefix)).appendSpace().append(content)
+    }
 
-    fun message(type: MessageType, content: String): Component =
-        message(type, Mini.format("<off_white>$content"))
+    fun message(content: String): Component = message(Mini.format("<off_white>$content"))
 
-    fun error(content: Component): Component = message(MessageType.ERROR, content)
-    fun error(content: String): Component = message(MessageType.ERROR, content)
-    fun success(content: Component): Component = message(MessageType.SUCCESS, content)
-    fun success(content: String): Component = message(MessageType.SUCCESS, content)
-    fun info(content: Component): Component = message(MessageType.INFO, content)
-    fun info(content: String): Component = message(MessageType.INFO, content)
-    fun warn(content: Component): Component = message(MessageType.WARN, content)
-    fun warn(content: String): Component = message(MessageType.WARN, content)
+    fun error(content: Component): Component = message(content)
+    fun error(content: String): Component = message(content)
+    fun success(content: Component): Component = message(content)
+    fun success(content: String): Component = message(content)
+    fun info(content: Component): Component = message(content)
+    fun info(content: String): Component = message(content)
+    fun warn(content: Component): Component = message(content)
+    fun warn(content: String): Component = message(content)
 
     fun errorWithId(content: Component, id: String): Component =
-        message(MessageType.ERROR, content).append(Mini.format(" <slate_gray>(<id>)", Placeholder.unparsed("id", id)))
+        message(content).append(Mini.format(" <slate_gray>(<id>)", Placeholder.unparsed("id", id)))
 
     fun errorWithId(content: String, id: String): Component =
         errorWithId(Mini.format("<off_white>$content"), id)

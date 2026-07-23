@@ -3,6 +3,8 @@ package com.tricrotism.cryon.paper.api
 import com.tricrotism.cryon.common.module.*
 import com.tricrotism.cryon.common.server.PlayerHandoff
 import com.tricrotism.cryon.paper.api.command.CommandService
+import com.tricrotism.cryon.paper.api.placeholder.PlaceholderProvider
+import com.tricrotism.cryon.paper.api.placeholder.PlaceholderService
 import org.bukkit.Server
 import org.bukkit.event.HandlerList
 import org.bukkit.event.Listener
@@ -25,6 +27,7 @@ abstract class PaperModule : Module {
     private lateinit var moduleContext: PaperModuleContext
     private val listeners = ArrayList<Listener>()
     private val flushes = ArrayList<AutoCloseable>()
+    private val placeholders = ArrayList<AutoCloseable>()
 
     protected val context: PaperModuleContext get() = moduleContext
     protected val plugin: Plugin get() = moduleContext.plugin
@@ -99,10 +102,26 @@ abstract class PaperModule : Module {
         flushes += handoff.onFlush("$id/$name", flush) // scoped, so two modules may both flush "balances"
     }
 
+    /**
+     * Publish a [PlaceholderProvider] — a `%<identifier>_…%` PlaceholderAPI namespace — through the core
+     * bridge. A no-op when PlaceholderAPI is absent. Automatically unregistered on disable. Register from
+     * [onEnable]; the callback runs on PlaceholderAPI's thread, so keep it cheap and thread-safe.
+     */
+    protected fun registerPlaceholders(provider: PlaceholderProvider) {
+        val placeholderService = services.find(PlaceholderService::class)
+        if (placeholderService == null) {
+            logger.warn("PlaceholderService unavailable! Placeholders for module '$id' will not register")
+            return
+        }
+        placeholders += placeholderService.register(provider)
+    }
+
     override fun onDisable() {
         listeners.forEach(HandlerList::unregisterAll)
         listeners.clear()
         flushes.forEach { it.close() }
         flushes.clear()
+        placeholders.forEach { it.close() }
+        placeholders.clear()
     }
 }

@@ -8,6 +8,10 @@ load: POSTWORLD
 authors: [ tricrotism ]
 website: https://tricrotism.com/
 
+# Optional integration: if PlaceholderAPI is installed it loads first, so its classes are visible and
+# the PapiBridge can register expansions. Absent → placeholder providers are inert.
+softdepend: [ PlaceholderAPI ]
+
 # Resolved by Paper's runtime library loader into the plugin classloader (visible to feature jars).
 # Commands use Paper's native Brigadier API (no extra library).
 libraries:

@@ -8,7 +8,7 @@ Modules in this repo (core + published API):
 
 - **`:common`** — platform-neutral framework: module system (`Module`, `ModuleManager`,
   `ModuleContext`, `ServiceRegistry`), `number` (`PackedDecimal`, `LongUtils`, `BigDecimalUtils`,
-  `NumberUtils`), `text` (`Mini`, `CryonPalette`, `MessageType`, `CommonMessages`), `locale`
+  `NumberUtils`), `text` (`Mini`, `CryonPalette`, `CommonMessages`), `locale`
   (`MessageService` + sources), `data`/`net` (SQL + the `Messenger`/`KeyValueStore` transport, Redis or
   in-process), `server` (deployment mode, server registry, player routing, player handoff), primitive
   `extension`s. Adventure `compileOnly`; no Bukkit/Velocity types (the `:velocity` loader reuses it).
@@ -163,7 +163,7 @@ player.sendMessage(
 
 `Placeholder.unparsed`/`.component`/`.parsed`. Palette tags (`<off_white>`, `<scarlet>`, semantic
 `<error>`/`<success>`/…) resolve through `Mini`. Multi-language copy pulls from `MessageService` by
-key (never hardcode English); localized + prefixed ack → `messages.send(player, MessageType.ERROR, "key", …)`.
+key (never hardcode English); localized + prefixed ack → `messages.send(player, "key", …)`.
 
 ---
 
@@ -473,10 +473,13 @@ not these.
   `Mini.format(...)`/`"…".mm()`, **never `MiniMessage.miniMessage()`**.
 - `CryonPalette` — named colours as `TextColor`s **and** tags (`<off_white>`, semantic `<error>`/`<success>`/…). Tune
   hexes / extend `RESOLVER` here.
-- `CommonMessages` — prefixed acks (`error`/`success`/`info`/`warn`, `notOnline`, `notEnoughCurrency`,
-  `noPermission`, …) returning `Component`s. Prefix is a bold icon per `MessageType` (`✖`/`✔`/`✦`/`⚠`,
-  language-neutral). Canned bodies localized via `Messages` by `cryon.common.*` key; Paper extensions
-  (`player.sendNoPermission()`, …) pass `resolvedLocale()`.
+- `CommonMessages` — acks (`error`/`success`/`info`/`warn`, `notOnline`, `notEnoughCurrency`,
+  `noPermission`, …) returning `Component`s. All share **one** lang-driven base prefix
+  (`cryon.common.prefix`, resolved in the default locale, **blank by default** so there is no glyph);
+  it is not per-type, and `error`/`success`/… are untyped aliases that render identically. Set `cryon.common.prefix` in
+  a
+  `lang/<locale>.properties` to give every ack a shared prefix. Canned bodies localized via `Messages`
+  by `cryon.common.*` key; Paper extensions (`player.sendNoPermission()`, …) pass `resolvedLocale()`.
 
 **Collections & randomness (`…common.bucket`/`…common.random`):**
 
@@ -493,8 +496,9 @@ not these.
 `(locale, key) → Component` across `MessageSource`s with a fallback chain, `renderPlural`, hot
 `reload()`. `Messages` is the static facade. **Auto-scanned — don't register by hand:** a jar's
 `lang/<locale>.properties` registers on load; `plugins/Cryon/lang/` (admin override) registers first
-and wins. Send via `messages.send(player, key, …)` or `messages.send(player, MessageType.ERROR, key, …)`. Missing keys
-render `⟨key⟩`. **On boot the core seeds the admin override file** for the default locale
+and wins. Send via `messages.send(player, key, …)` (localized, wrapped in the shared base prefix) or
+`messages.render(player, key, …)` for a raw `Component`. Missing keys render `⟨key⟩`. **On boot the core seeds the admin
+override file** for the default locale
 (`exportMissing`, after every module loads): keys the core + module bundles define but
 `plugins/Cryon/lang/en_US.properties` lacks are appended to it, so admins get a complete editable
 reference and new keys surface there automatically. **Existing entries are never rewritten** — an
@@ -510,6 +514,18 @@ each with `*Later`/`*Timer`. Pick the scope owning the data; no Bukkit API in `a
 **Events (`…paper.api.event`):** `Events.subscribe(Type::class.java, priority)` (or reified
 `subscribe<Type>()`)`.filter{…}.handler{…}` → cancellable `Subscription`; `expireAfter(n)` self-unregisters. Handler
 exceptions logged, not propagated.
+
+**PlaceholderAPI (`…paper.api.placeholder`, bridge in `…cryon.papi`).** Optional integration, structured
+like the module system itself: the **core** owns the single PAPI dependency and each module gets its
+**own** `%<identifier>_…%` namespace without ever touching PAPI classes (they can't — isolated
+classloaders). A module implements `PlaceholderProvider` (`identifier` + `onRequest(player, params)`)
+and publishes it with **`PaperModule.registerPlaceholders(provider)`** in `onEnable` (auto-unregistered
+on disable). The core `PlaceholderService` impl (`PapiBridge`) wraps each provider in a `CryonExpansion`
+(`PlaceholderExpansion`, `persist()=true`, provider throws → swallowed so a feature bug can't break PAPI
+server-wide) and registers it. **Best-effort like spark:** PAPI is a `softdepend` + `compileOnly`; absent
+→ `register` is a no-op and features never branch on it. `onRequest` runs on PAPI's thread (maybe async,
+maybe hot) — keep it cheap, thread-safe, no Bukkit API off-main. Built-in namespace `%cryon_…%`
+(`CorePlaceholders`): `family`/`instance`/`mode`/`max_players` off the immutable `InstanceIdentity`.
 
 **Commands — annotation framework over Paper Brigadier (`…paper.api.command`).** **Cloud is broken on
 26.2** (cloud-bukkit's `ItemStackParser` reflects a missing method). Use the `@Command` layer
@@ -710,6 +726,7 @@ of populated shards on node upgrades. Add infrastructure **and document it here 
 | `Events.subscribe(...).filter{}.handler{}`                        | ad-hoc `Listener` plumbing for one handler                     |
 | `PackedDecimal` for values that grow past ~1e15                   | `BigDecimal` on hot incremental-math paths                     |
 | `@Command`/`@Subcommand` + `AnnotationCommands.register`          | `plugin.yml commands:` / `CommandMap` / Cloud (broken on 26.2) |
+| `PlaceholderProvider` + `registerPlaceholders(...)`               | Extending `PlaceholderExpansion` in a module (can't see PAPI)  |
 | `player.resolvedLocale()` for messages                            | `player.locale()` directly (ignores overrides)                 |
 | `services.find<Database>()` (genuinely optional)                  | `get<Database>()` assuming SQL is enabled                      |
 | `get<Messenger>()`/`get<KeyValueStore>()`/`get<ServerRegistry>()` | Null-checking them, or branching on the deployment mode        |

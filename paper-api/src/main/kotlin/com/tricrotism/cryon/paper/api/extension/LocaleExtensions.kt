@@ -2,7 +2,6 @@ package com.tricrotism.cryon.paper.api.extension
 
 import com.tricrotism.cryon.common.locale.MessageService
 import com.tricrotism.cryon.common.text.CommonMessages
-import com.tricrotism.cryon.common.text.MessageType
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver
 import org.bukkit.entity.Player
@@ -11,13 +10,9 @@ import org.bukkit.entity.Player
 fun MessageService.render(player: Player, key: String, vararg resolvers: TagResolver): Component =
     render(player.resolvedLocale(), key, *resolvers)
 
-/** Render [key] in [player]'s resolved locale and send it to them. */
-fun MessageService.send(player: Player, key: String, vararg resolvers: TagResolver) =
-    player.sendMessage(render(player.resolvedLocale(), key, *resolvers))
-
 /**
- * Render [key] in [player]'s locale and send it wrapped in a [CommonMessages] prefix — the
- * localized + styled path. `messages.send(player, MessageType.ERROR, "shop.too_poor", …)`.
+ * Render [key] in [player]'s locale and send it wrapped in the shared [CommonMessages] base prefix —
+ * the localized ack path. `messages.send(player, "shop.too_poor", …)`.
  */
-fun MessageService.send(player: Player, type: MessageType, key: String, vararg resolvers: TagResolver) =
-    player.sendMessage(CommonMessages.message(type, render(player.resolvedLocale(), key, *resolvers)))
+fun MessageService.send(player: Player, key: String, vararg resolvers: TagResolver) =
+    player.sendMessage(CommonMessages.message(render(player.resolvedLocale(), key, *resolvers)))
