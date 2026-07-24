@@ -39,6 +39,7 @@ class FeatureFlags(
 
     // scope -> (feature -> enabled)
     private val flags = ConcurrentHashMap<String, ConcurrentHashMap<String, Boolean>>()
+    private val serverScope = normalizeScope(serverName)
     private var subscription: MessengerSubscription? = null
 
     @Volatile
@@ -77,7 +78,7 @@ class FeatureFlags(
     fun isEnabled(feature: String, player: UUID? = null): Boolean {
         val id = normalize(feature)
         if (player != null && hasPlayerOverrides) flags[playerScope(player)]?.get(id)?.let { return it }
-        flags[serverName]?.get(id)?.let { return it }
+        flags[serverScope]?.get(id)?.let { return it }
         flags[GLOBAL_SCOPE]?.get(id)?.let { return it }
         return true
     }

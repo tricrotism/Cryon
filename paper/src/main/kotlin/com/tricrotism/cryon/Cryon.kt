@@ -261,7 +261,7 @@ class Cryon : JavaPlugin() {
         if (cfg.getBoolean("database.enabled")) {
             try {
                 val dialect = SqlDialect.of(cfg.getString("database.type", "postgresql")!!)
-                val db = SqlDatabase(
+                val db = SqlDatabase.connect(
                     DatabaseConfig(
                         host = cfg.getString("database.host", "localhost")!!,
                         port = cfg.getInt("database.port", dialect.defaultPort),
@@ -270,7 +270,8 @@ class Cryon : JavaPlugin() {
                         password = cfg.getString("database.password", "")!!,
                         maxPoolSize = cfg.getInt("database.max-pool-size", 10),
                         dialect = dialect,
-                    )
+                    ),
+                    log,
                 )
                 database = db
                 services.register(Database::class, db)

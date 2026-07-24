@@ -576,6 +576,15 @@ still comes from each handler's own `@Permission`. Same `onLoad` rule as `regist
   may be null. Client libs load at runtime via `plugin.yml` `libraries:` (Velocity shades them). Backend
   is `database.type` = `postgresql` (default), `mysql`, or embedded `h2` (a local file, host/port ignored
   — zero-setup but not shared across processes), keyed by the `SqlDialect` enum.
+  **Build one with `SqlDatabase.connect(config, logger)`, never the constructor:** it creates the
+  database when that is the only thing wrong, so a fresh deployment does not come up with no flags,
+  no locale store and no metrics over a missing `CREATE DATABASE`. Postgres connects to its
+  `postgres` database to issue the DDL (it has no `IF NOT EXISTS` here); MySQL uses
+  `CREATE DATABASE IF NOT EXISTS`; H2 needs nothing, its file is made on first connect. Narrow by
+  design — `SqlDialect.isMissingDatabase` matches only Postgres `3D000` and MySQL `1049`, so a
+  refused connection, a bad password or a missing `CREATEDB` grant still fail with their own error
+  instead of being papered over. One retry, then the original exception. The name is validated by
+  `SqlDialect.identifier` before it is concatenated into DDL, because DDL takes no bind parameters.
 - `Messenger` — `publish`/`subscribe` + `request`/`handle`. String payloads. **Always registered**
   (`get<Messenger>()`): `RedisMessenger` when `redis.enabled`, else `LocalMessenger`.
 - `KeyValueStore` — async KV with TTL (`set`/`get`/`delete`/`keys`/`mget`/`tryHold`), for state that

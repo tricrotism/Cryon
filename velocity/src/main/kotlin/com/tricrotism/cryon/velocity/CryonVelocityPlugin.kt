@@ -121,7 +121,7 @@ class CryonVelocityPlugin @Inject constructor(
         if (cfg.boolean("database.enabled", false)) {
             try {
                 val dialect = SqlDialect.of(cfg.string("database.type", "postgresql"))
-                val db = SqlDatabase(
+                val db = SqlDatabase.connect(
                     DatabaseConfig(
                         host = cfg.string("database.host", "localhost"),
                         port = cfg.int("database.port", dialect.defaultPort),
@@ -130,7 +130,8 @@ class CryonVelocityPlugin @Inject constructor(
                         password = cfg.string("database.password", ""),
                         maxPoolSize = cfg.int("database.max-pool-size", 10),
                         dialect = dialect,
-                    )
+                    ),
+                    logger,
                 )
                 database = db
                 services.register(Database::class, db)
