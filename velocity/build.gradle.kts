@@ -1,30 +1,21 @@
 plugins {
-    kotlin("jvm")
+    id("cryon.kotlin")
     id("com.gradleup.shadow")
 }
 
 repositories {
-    mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
+    compileOnly(libs.velocity.api)
+
+    implementation(libs.lettuce)
+    implementation(libs.caffeine)
+    implementation(libs.snakeyaml)
+    implementation(libs.bundles.sql)
     implementation(project(":common"))
     implementation(project(":velocity-api"))
-    compileOnly("com.velocitypowered:velocity-api:3.3.0-SNAPSHOT")
-
-    implementation("com.zaxxer:HikariCP:5.1.0")
-    implementation("org.postgresql:postgresql:42.7.13")
-    implementation("com.mysql:mysql-connector-j:9.7.0")
-    implementation("com.h2database:h2:2.3.232")
-    implementation("io.lettuce:lettuce-core:6.7.1.RELEASE")
-    implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
-    implementation("org.yaml:snakeyaml:2.2")
-}
-
-kotlin {
-    jvmToolchain(25)
 }
 
 tasks {

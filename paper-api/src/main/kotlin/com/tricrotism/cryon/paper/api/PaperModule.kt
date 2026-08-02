@@ -2,6 +2,7 @@ package com.tricrotism.cryon.paper.api
 
 import com.tricrotism.cryon.common.module.*
 import com.tricrotism.cryon.common.server.PlayerHandoff
+import com.tricrotism.cryon.paper.api.bedrock.BedrockService
 import com.tricrotism.cryon.paper.api.command.CommandService
 import com.tricrotism.cryon.paper.api.placeholder.PlaceholderProvider
 import com.tricrotism.cryon.paper.api.placeholder.PlaceholderService
@@ -20,7 +21,8 @@ import java.util.concurrent.CompletableFuture
  *
  * Override [onLoad] to publish services (call `super.onLoad(context)` first), [onEnable] to wire
  * listeners/tasks and resolve peer services via [services], and [onDisable] for extra teardown
- * (call `super.onDisable()` to keep listener cleanup).
+ * (call `super.onDisable()` to keep listener cleanup). [Module.postLoad] is there for the rarer case
+ * of needing peers *enabled* rather than merely loaded; it takes no super call.
  */
 abstract class PaperModule : Module {
 
@@ -34,6 +36,12 @@ abstract class PaperModule : Module {
     protected val server: Server get() = moduleContext.server
     protected val services: ServiceRegistry get() = moduleContext.services
     protected val logger: Logger get() = moduleContext.logger
+
+    /**
+     * Bedrock-client support. Always present, with no Floodgate it reports every player as Java and
+     * sends nothing, so menus can ask without branching on whether Geyser is installed.
+     */
+    protected val bedrock: BedrockService get() = services.get(BedrockService::class)
 
     override fun onLoad(context: ModuleContext) {
         moduleContext = context as PaperModuleContext

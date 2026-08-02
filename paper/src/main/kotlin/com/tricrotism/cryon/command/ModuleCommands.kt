@@ -490,6 +490,7 @@ class ModuleCommands(
         }
         val verb = if (enable) "enabled" else "disabled"
         val changed = if (enable) modules.enable(id) else modules.disable(id)
+        if (changed && enable) modules.postLoad(id)
         if (changed) {
             sender.sendMessage(CommonMessages.success(line("<off_white>Module <highlight><id></highlight> $verb.", id)))
             resyncCommands(sender)

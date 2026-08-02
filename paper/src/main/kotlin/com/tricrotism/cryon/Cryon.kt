@@ -1,6 +1,7 @@
 package com.tricrotism.cryon
 
 import com.tricrotism.cryon.Cryon.Companion.FLUSH_TIMEOUT_SECONDS
+import com.tricrotism.cryon.bedrock.BedrockBridge
 import com.tricrotism.cryon.command.LanguageCommands
 import com.tricrotism.cryon.command.ModuleCommands
 import com.tricrotism.cryon.common.data.Database
@@ -25,9 +26,11 @@ import com.tricrotism.cryon.network.agones.AgonesClient
 import com.tricrotism.cryon.network.agones.AgonesLifecycle
 import com.tricrotism.cryon.paper.api.CryonPaper
 import com.tricrotism.cryon.paper.api.PaperModuleContext
+import com.tricrotism.cryon.paper.api.bedrock.BedrockService
 import com.tricrotism.cryon.paper.api.command.CommandService
 import com.tricrotism.cryon.paper.api.event.Events
 import com.tricrotism.cryon.paper.api.inventory.InventorySearch
+import com.tricrotism.cryon.paper.api.menu.MenuPalette
 import com.tricrotism.cryon.paper.api.placeholder.PlaceholderService
 import com.tricrotism.cryon.paper.api.scheduler.Schedulers
 import com.tricrotism.cryon.papi.CorePlaceholders
@@ -42,16 +45,18 @@ import org.bukkit.plugin.Plugin
 import org.bukkit.plugin.java.JavaPlugin
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import xyz.xenondevs.invui.InvUI
 import java.io.File
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 
 /**
- * The bootstrap. On enable it scans `plugins/Cryon/modules/` for feature jars, loads each in its
+ * The bootstrap. On load it scans `plugins/Cryon/modules/` for feature jars and loads each in its
  * own isolated classloader (parent exposes the shared API + Paper + kotlin-stdlib bundled here),
- * discovers its [Module]s via [ServiceLoader], then drives the load → enable lifecycle. Features
- * intertwine through the [ServiceRegistry], never by referencing each other's classes.
+ * discovering its [Module]s via [ServiceLoader]; on enable it stands up the infrastructure and
+ * drives the load → enable lifecycle. Features intertwine through the [ServiceRegistry], never by
+ * referencing each other's classes.
  */
 class Cryon : JavaPlugin() {
 
@@ -60,6 +65,12 @@ class Cryon : JavaPlugin() {
     private lateinit var loader: ModuleLoader
     private lateinit var commandRegistry: CommandRegistry
     private val watchers = ArrayList<ModuleWatcher>()
+
+    private lateinit var messageService: MessageService
+    private lateinit var services: ServiceRegistry
+    private lateinit var context: PaperModuleContext
+    private lateinit var apiDir: File
+    private lateinit var modulesDir: File
 
     private lateinit var featureFlags: FeatureFlags
     private var database: Database? = null
@@ -80,36 +91,34 @@ class Cryon : JavaPlugin() {
     /** Whether the transport reaches other processes. Cross-process-only services hang off this. */
     private var sharedTransport = false
 
-    override fun onEnable() {
+    /**
+     * Discover the feature jars and give them their one shot at the pre-enable world. Bukkit calls
+     * `onLoad` on every plugin before it enables any, so this is the only phase from which a module
+     * can reach a third-party registry that seals itself on enable — WorldGuard's flag registry
+     * being the case this exists for. See `Module.preLoad`.
+     *
+     * Only jar discovery lives here. Everything that depends on Cryon's own infrastructure — the
+     * database, the transport, commands, placeholders, menus — stays in [onEnable], and so does the
+     * `onLoad` → `onEnable` drive that modules actually build on.
+     */
+    override fun onLoad() {
         CryonPaper.init(this) // so Schedulers/Events can reach the plugin
 
-        val messageService = MessageService()
+        messageService = MessageService()
         Messages.install(messageService)
         Mini.format("<off_white>")
         registerAdminLang(messageService)
         registerOwnLang(messageService)
 
-        val services = ServiceRegistry(log).apply { register(MessageService::class, messageService) }
-        setupInfrastructure(services)
-
-        setupNetwork(services)
-        val status = reportNetwork(services)
+        services = ServiceRegistry(log).apply { register(MessageService::class, messageService) }
 
         manager = ModuleManager(log)
         services.register(ModuleManager::class, manager) // so modules can query their own enabled-state
 
-        // The command registry must exist before any module onLoad runs, so registerCommands resolves it.
-        commandRegistry = CommandRegistry(server, log)
-        services.register(CommandService::class, commandRegistry)
+        context = CryonContext(this, server, log, services)
 
-        val papi = PapiBridge(this, log)
-        services.register(PlaceholderService::class, papi)
-        corePlaceholders = papi.register(CORE_COMMAND_OWNER, CorePlaceholders(identity))
-
-        val context = CryonContext(this, server, log, services)
-
-        val apiDir = File(dataFolder, "api").apply { mkdirs() }
-        val modulesDir = File(dataFolder, "modules").apply { mkdirs() }
+        apiDir = File(dataFolder, "api").apply { mkdirs() }
+        modulesDir = File(dataFolder, "modules").apply { mkdirs() }
         loader = ModuleLoader(
             manager,
             messageService,
@@ -121,13 +130,34 @@ class Cryon : JavaPlugin() {
         )
 
         // Shared cross-module contract layer (api/) parents every feature loader, then register the
-        // feature jars in modules/ before driving the global two-phase load → enable.
+        // feature jars in modules/ so their classes exist before the rest of the server enables.
         loader.loadSharedApi(apiDir)
         loader.prepareCache()
         loader.registerAll()
 
+        manager.preLoadAll(context)
+    }
+
+    override fun onEnable() {
+        initMenus()
+
+        setupInfrastructure(services)
+
+        setupNetwork(services)
+        val status = reportNetwork(services)
+
+        commandRegistry = CommandRegistry(server, log)
+        services.register(CommandService::class, commandRegistry)
+
+        val papi = PapiBridge(this, log)
+        services.register(PlaceholderService::class, papi)
+
+        services.register(BedrockService::class, BedrockBridge.create(log))
+        corePlaceholders = papi.register(CORE_COMMAND_OWNER, CorePlaceholders(identity))
+
         manager.loadAll(context)
         manager.enableAll()
+        manager.postLoadAll()
 
         seedAdminLang(messageService) // after modules so their keys land in the reference file too
 
@@ -190,6 +220,22 @@ class Cryon : JavaPlugin() {
         } catch (e: Exception) {
             log.error("Failed to start the {} watcher; falling back to manual hot-swap", label, e)
         }
+    }
+
+    /**
+     * Bind InvUI to this plugin and install the shared menu ingredients.
+     *
+     * Menus are core infrastructure: InvUI is shaded here, so it binds once and feature modules only
+     * build `Gui`s. [InvUI.setPlugin] throws if called twice, so a module must never call it — and it
+     * has to run before any module can open a window, hence its position at the top of `onEnable`.
+     * Not `onLoad`, even though that phase now exists: it belongs to `Module.preLoad`, which is
+     * forbidden from touching anything but the third-party registry it came for.
+     */
+    private fun initMenus() {
+        val invui = InvUI.getInstance()
+        invui.setPlugin(this)
+        invui.setExceptionHandler { message, error -> log.error("InvUI: {}", message, error) }
+        MenuPalette.installGlobalIngredients()
     }
 
     /** Register a disk `plugins/Cryon/lang/` folder so admins can override/add translations. */

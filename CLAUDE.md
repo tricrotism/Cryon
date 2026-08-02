@@ -28,9 +28,10 @@ Modules in this repo (core + published API):
 Features live in **separate repos** (e.g. `Cryon-Modules/cryon-example-feature/`), `compileOnly` the
 API, and ship a thin jar dropped into `plugins/Cryon/modules/`.
 
-**No** DI container, codegen, menu framework, or coroutine bridge yet. **When you add infrastructure
-(DI, KSP, InvUI, Folia), document it here in the same pass** — keep this
-guide and the code in lockstep.
+**No** DI container, codegen, or coroutine bridge yet. Menus are **InvUI**, shaded into `:paper`, with
+Bedrock clients served native Cumulus forms (see *Menus* and *Bedrock* under Utilities). **When you add
+infrastructure (DI, KSP, Folia), document it here in the same pass** — keep this guide and the code in
+lockstep.
 
 ---
 
@@ -275,11 +276,31 @@ verify on a local server.
   shaded jar bundles `:common` + `:paper-api` + kotlin-stdlib — **don't relocate kotlin-stdlib**
   (features resolve `kotlin.*` through it).
 - `./gradlew :paper:runServer` — local Paper 26.2 with the core loaded; drop feature jars into `plugins/Cryon/modules/`.
-- `./gradlew :common:publishToMavenLocal :paper-api:publishToMavenLocal` — publish the API locally
-  (production: `repo.striveservices.org`).
-- Versions declared once in root `build.gradle.kts` (`apply false`); subprojects apply without
-  versions. `group`/`version` from `gradle.properties`. `plugin.yml` `${version}` filled by `processResources` — don't
-  hardcode.
+- `./gradlew :common:publishToMavenLocal :paper-api:publishToMavenLocal` — publish the API locally, which
+  is how feature repos resolve it. No remote repository is configured, so this is the only publish
+  target that does anything.
+- **Every version lives in `gradle/libs.versions.toml`** — dependencies use `module=` + `version.ref`,
+  never inline coordinates; `bundles` group the adventure and SQL-driver sets. Three separate Paper
+  coordinates, because they are three different artifacts: `paperDevBundle` (`26.2.build.+`, what
+  `:paper` compiles against), `minecraft` (`26.2`, what `runServer` starts) and `paper`
+  (`26.2.build.+`, the plain `paper-api` artifact `:paper-api` compiles against, and through which
+  every Bukkit *and* Adventure type in that module arrives — break it and the whole module resolves to
+  nothing). **Paper dropped the `-R0.1-SNAPSHOT` scheme at 26.x**; only `26.2.build.NN-{alpha,beta,stable}`
+  is published, so the two build coordinates now share a range even though the artifacts differ.
+  `paper/plugin.yml` `libraries:` is plain YAML and can't reference the catalog — keep its versions in
+  step by hand.
+- **Shared build config is convention plugins in `build-logic/`** (an included build):
+  `cryon.kotlin` (Kotlin JVM, toolchain 25, mavenCentral, kotlin-stdlib) and `cryon.publish`
+  (`cryon.kotlin` + `maven-publish`, local only). Modules apply `id("cryon.kotlin")` or
+  `id("cryon.publish")` and add only what is theirs. `build-logic/settings.gradle.kts` re-creates the
+  `libs` catalog from `../gradle/libs.versions.toml`; the catalog reaches precompiled scripts via
+  `implementation(files(libs.javaClass.superclass.protectionDomain.codeSource.location))` plus
+  `the<LibrariesForLibs>()`.
+- Plugins that aren't in a convention plugin (shadow, run-paper, paperweight) are declared once in
+  root `build.gradle.kts` via `alias(libs.plugins.…) apply false`; subprojects apply them without
+  versions. In `:paper` the order matters — **paperweight before run-paper**, or run-paper's
+  `afterEvaluate` dev-bundle resolution fails. `group`/`version` from `gradle.properties`.
+  `plugin.yml` `${version}` filled by `processResources` — don't hardcode.
 
 ---
 
@@ -288,11 +309,12 @@ verify on a local server.
 Features are **modules**, each a jar (own repo) loaded by the core. Framework types in `:common`
 (`…common.module`); Paper base in `:paper-api`.
 
-**Loader (`Cryon.kt` → `ModuleLoader`, `…cryon.module`):** on enable, loads every jar in
+**Loader (`Cryon.kt` → `ModuleLoader`, `…cryon.module`):** on **load**, loads every jar in
 `plugins/Cryon/api/` into **one shared `URLClassLoader`** (the contract layer), then loads each
 `modules/*.jar` in its **own isolated `URLClassLoader`** parented to that shared loader (→ core →
-Paper + `:common`/`:paper-api` + kotlin-stdlib). Discovers `Module`s via `ServiceLoader`, then
-`loadAll(context)` → `enableAll()`. Broken jar logged and skipped (caught as `Throwable` —
+Paper + `:common`/`:paper-api` + kotlin-stdlib). Discovers `Module`s via `ServiceLoader` and runs
+`preLoadAll(context)`; then on **enable**, after the infrastructure is up, `loadAll(context)` →
+`enableAll()` → `postLoadAll()`. Broken jar logged and skipped (caught as `Throwable` —
 `ServiceConfigurationError` is an `Error`). Loaders closed on disable (modules before parent). Empty `api/` → shared
 layer skipped.
 
@@ -306,7 +328,9 @@ Cache wiped on boot and disable.
 
 - **`Module`** (`:common`) — `id` + two-phase lifecycle: `onLoad(context)` (publish services),
   `onEnable()` (consume peers), `onDisable()`. `ServiceLoader`-discovered → needs **no-arg ctor** +
-  `META-INF/services/com.tricrotism.cryon.common.module.Module` entry.
+  `META-INF/services/com.tricrotism.cryon.common.module.Module` entry. Plus `preLoad(context)` and
+  `postLoad()` — see **Pre-enable phase** and **Post-enable phase** below; almost nothing should
+  override either.
 - **`ModuleContext`** (`:common`) — `logger` + `services`; Paper's `PaperModuleContext` adds `plugin`/`server`.
 - **`ServiceRegistry`** (`:common`) — intertwine seam. `register(Api::class, impl)` / `get<Api>()` /
   `find<Api>()` (reified variants exist), keyed by interface.
@@ -329,6 +353,44 @@ consumed by `cryon-visibility`. Reserve `api/` for genuinely cross-repo contract
 **Order-independence:** every module's `onLoad` runs before any `onEnable`, so peer services are always available in
 `onEnable`. No declared load order.
 
+**Pre-enable phase (`preLoad`).** Both `onLoad` and `onEnable` run from the core's **`onEnable`**, so
+by then every other plugin on the server has already enabled. That is too late for a third-party
+registry that seals itself on enable — WorldGuard's flag registry is the motivating case: it locks at
+the end of `WorldGuardPlugin.onEnable` and has no unregister at all. So `Module.preLoad(context)` runs
+from the core's **`onLoad`**, before *any* plugin has enabled, and that is the only thing it is for.
+Constraints, all deliberate:
+
+- `context.services` is **empty** — Cryon's own infrastructure does not exist yet. Touch nothing but
+  the platform and the registry you came for. Add a `softdepend` on that plugin in the core's
+  `plugin.yml` so its classes are reachable, and guard on `Bukkit.getPluginManager().getPlugin(...)`
+  so a missing soft dependency logs instead of throwing `NoClassDefFoundError`.
+- It does **not** run on a runtime jar load (`/cryon load`, `scan`, `reload-api`, the watchers) — by
+  then the same registries are shut. A module that needs this phase must be present at boot to work at
+  all, and should fail loudly rather than half-enforce when it is not.
+- It does not touch `ModuleState`; a module that throws here is marked `FAILED` and never reaches
+  `onLoad`.
+- Whatever you register in a foreign registry, **do not subclass its types** — a module hot-swap would
+  strand your classloader behind a reference you can never remove. Register instances of the *host
+  plugin's* own classes, and re-fetch them by name in `onEnable`.
+
+Reference implementation: `Cryon-WorldGuardAddon`.
+
+**Post-enable phase (`postLoad`).** The mirror at the far end: `Module.postLoad()` runs once **every**
+module has finished `onEnable`, so it can rely on peers being *live* — listeners registered, tasks
+running — where `onEnable` can only rely on them having published services. No context parameter,
+like `onEnable()`: `onLoad` has already run, so a module holds its own. Differences from `preLoad`,
+also deliberate:
+
+- It **does** run on the runtime paths (`/cryon load|enable|reload`, `reload-api`, the watchers) — its
+  precondition is trivially met there, so a hot-swapped module reaches the same state a booted one
+  does. Callers enable a whole jar's modules *before* any of their `postLoad`s, via
+  `ModuleManager.postLoad(id)` kept separate from `enable(id)`.
+- A module that throws is logged and left **`ENABLED`**, not `FAILED` — `onEnable` already succeeded
+  and its listeners are live, so `FAILED` ("left out of the live set") would be a lie.
+- At boot `postLoadAll()` runs immediately after `enableAll()`, deliberately *ahead* of the lang seed,
+  the boot command flush and `announceReady` — so postLoad contributions still reach the reference
+  lang file and the command tree, and nothing is announced ready early.
+
 **Runtime lifecycle.** `ModuleManager` tracks `ModuleState` (`REGISTERED`/`LOADED`/`ENABLED`/`DISABLED`/`FAILED`)
 and supports `enable`/`disable`/`reload(id)` (re-enable reuses the load-time context), plus
 `load(id, context)` and `unregister(id)` for single-module hot-swap churn. Surfaced via `/cryon
@@ -337,8 +399,9 @@ state via `PaperModule.isEnabled()`. **Main-thread only.**
 
 **Failure isolation — a feature must never crash the server.** Every seam where the framework invokes
 feature code catches **`Throwable`** (not just `Exception` — a stale/mislinked jar throws `Error`s
-like `NoSuchMethodError`): module `onLoad`/`onEnable`/`onDisable` (failure → `FAILED`, server
-continues), jar reads, command registration (the core's single COMMANDS lifecycle handler flushes
+like `NoSuchMethodError`): module `preLoad`/`onLoad`/`onEnable`/`onDisable` (failure → `FAILED`, server
+continues) and `postLoad` (failure → logged, module stays `ENABLED`), jar reads, command registration (the core's single
+COMMANDS lifecycle handler flushes
 every contribution and guards each one, since Paper rethrows lifecycle exceptions fatally; the live
 runtime path in `CommandRegistry` is likewise guarded), `Events` handlers, and the watcher thread. A `FAILED` module is
 in-memory only and
@@ -508,6 +571,69 @@ admin override always survives a restart.
 **Items (`…paper.api.item`/`…extension`):** `ItemBuilder` — name/lore (auto `<!i>`, palette-parsed),
 flags, glow, `enchant`, attributes, PDC `tag`s, `meta {}`. Extensions: `Material.toItem()`,
 `ItemStack.toBuilder()`/`modify {}`, `get/set/has/removeTag` (PDC), `isEmpty()`, `withAmount()`.
+
+**Menus — InvUI (`xyz.xenondevs.invui`, shaded into `:paper`).** `:paper` bundles `invui:2.2.0`
+**unrelocated**, exactly like kotlin-stdlib, so module classloaders resolve `xyz.xenondevs.invui.*`
+through the core. `InvUI.setPlugin` runs **once**, in `Cryon.initMenus` — it throws if called twice, so
+a module must never call it. The core also routes InvUI's exception handler into the Cryon logger, so a
+module's broken menu doesn't read as a core fault.
+
+Features `compileOnly("xyz.xenondevs.invui:invui:2.2.0")` (repo `https://repo.xenondevs.xyz/releases`)
+and **never shade it** — two copies across the loader boundary is the usual `ClassCastException`.
+
+- **Build stacks with Cryon's `ItemBuilder`**, then `Item.builder().setItemProvider(stack)`. InvUI 2.x
+  takes Adventure `Component`s directly (`Window.Builder.setTitle(Component)`), so nothing needs
+  wrapping.
+- **`MenuPalette` registers global ingredients**, so a `Structure` string reads as the menu's picture
+  without per-menu boilerplate: a legacy colour code (`0`–`f`) is a hidden-tooltip filler pane of that
+  colour and `.` is an empty slot. Only characters carrying real content need `addIngredient`.
+- **`ConfirmMenu.open(player, bedrock, …)`** is the shared yes/no dialog. It picks a Cumulus modal for
+  Bedrock and an InvUI window for Java, and treats *closing* as declining, so its callback always fires
+  exactly once. **Callable from any thread** — it hops to the player, and the callback comes back on the
+  player's own scheduler a tick later rather than in the caller's frame. That deferral is load-bearing,
+  not cosmetic: the decline path answers from inside InvUI's close handler, and `AbstractWindow.open()`
+  hard-throws if you open a window there, so a "cancel goes back to the previous menu" callback would
+  otherwise blow up.
+- **A module must close its own windows in `onDisable`.** InvUI holds strong references to your `Item`s,
+  so a hot-unload with a menu open leaks the module classloader and leaves clicks dispatching into
+  unloaded code. Track them and close them all.
+
+InvUI 2.x is a single mojang-mapped jar with no per-version NMS bridge, so — unlike the 1.x line — it
+needs no relocation and no bridge selection. It does track the Minecraft version closely: verify after
+any Paper bump that the shaded jar still has zero `craftbukkit/v1*` references and that InvUI's NMS
+members still resolve against the new dev bundle.
+
+**Bedrock (`…paper.api.bedrock`).** `BedrockService` — `isBedrock`, `inputMode`, and `sendSimpleForm`/
+`sendModalForm`/`sendCustomForm`. **Always registered** (`services.get(BedrockService::class)`, or
+`PaperModule.bedrock`): with Floodgate installed it is the real bridge, without it every player reports
+as Java and every send is a no-op, so features never branch on whether Geyser exists. All Floodgate and
+Cumulus types are confined to `:paper`'s `FloodgateBedrockService`, which is only classloaded after the
+plugin-presence check — the same discipline `PapiBridge` uses for PlaceholderAPI.
+
+**Why forms rather than the translated container:** Geyser *will* render an InvUI window, but everything
+the layout leans on — filler panes, control rows, hover lore — is meaningless on a touchscreen. A form
+is the native idiom and scrolls, so it needs no paging. A menu worth building is worth giving a form
+fallback; `ConfirmMenu` is the reference. Three behaviours the bridge handles for you: a form sent while
+the player has a real container open is silently dropped, so it closes and delays first; Floodgate
+delivers responses on its own thread, so callbacks are hopped to the player's scheduler and may touch
+the Bukkit API directly; and **exactly one callback fires per send**.
+
+That last one is not free, and it is why every send goes through a private `FormSession`. Floodgate
+reports a tap and a dismissal, but says nothing when the send never lands (the player leaves inside the
+5-tick close-and-delay), when the connection dies with the form on screen, or when a later form replaces
+this one — and `player.openInventory` cannot see a Cumulus form, so nothing else can notice either. The
+session supplies the missing outcomes (a `PlayerQuitEvent` at `MONITOR` is the only reliable
+death signal) behind an `AtomicBoolean` latch, so duplicates collapse and anything escrowed behind a
+callback can't hang. `sendSimpleForm`/`sendCustomForm` therefore take an `onClose`, and **a send returns
+true for any Bedrock player** — delivery is reported through the callback, never the boolean, so a
+caller can't fall back to a Java menu for a client that can't read one.
+
+**A second form replaces the first and resolves it as dismissed**, deliberately matching what InvUI does
+on Java, where `WindowManager` is one-window-per-player and a new window evicts the old (firing its close
+handler). One rule on both platforms. Note the consequence on Java: opening any menu over a pending
+`ConfirmMenu` answers it `false`. Nothing tracks menu state beyond that — there is no per-player UI
+registry, and a menu opening over a *foreign* container (a chest, another plugin's GUI) is unguarded on
+both sides.
 
 **Scheduling (`…paper.api.scheduler`):** `Schedulers` — `global`/`region(loc)`/`entity(e)`/`async`,
 each with `*Later`/`*Timer`. Pick the scope owning the data; no Bukkit API in `async`.
@@ -719,7 +845,7 @@ Dockerfiles + entrypoints (`images/`), baked family jar sets (`families/`), and 
 (`helm/cryon/`) of Agones Fleets + Buffer FleetAutoscalers, the proxy Deployment/Service, standalone
 Geyser (UDP) + Floodgate, ConfigMaps, and allocator RBAC. See `deploy/README.md`.
 
-**Not yet:** DI container, codegen, menu framework, coroutine bridge; the ephemeral `Matchmaker`
+**Not yet:** DI container, codegen, coroutine bridge; the ephemeral `Matchmaker`
 implementation + a k8s allocator, the Agones Counter (player-count) autoscaler, and safe drain/transfer
 of populated shards on node upgrades. Add infrastructure **and document it here in the same pass.**
 
@@ -734,6 +860,9 @@ of populated shards on node upgrades. Add infrastructure **and document it here 
 | `MessageService` keys for multi-language copy                     | Hardcoded English strings in features                          |
 | `<!i>` in lore (or `ItemBuilder`, which does it)                  | Raw `§o` italic prefix in lore                                 |
 | `ItemBuilder` / `Material.toItem()`                               | Hand-rolled `editMeta` for every item                          |
+| Colour-code chars in a `Structure` (see `MenuPalette`)            | Declaring a filler-pane ingredient in every menu               |
+| `bedrock.sendSimpleForm(...)` first, InvUI window as the fallback | Assuming a Bedrock player can read a chest menu's layout       |
+| Close your module's windows in `onDisable`                        | Leaving them open (leaks the module classloader on hot-unload) |
 | `Schedulers.async/global/region/entity`                           | raw `Bukkit.getScheduler()`                                    |
 | `Events.subscribe(...).filter{}.handler{}`                        | ad-hoc `Listener` plumbing for one handler                     |
 | `PackedDecimal` for values that grow past ~1e15                   | `BigDecimal` on hot incremental-math paths                     |

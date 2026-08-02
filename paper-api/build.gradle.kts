@@ -1,27 +1,16 @@
 plugins {
-    kotlin("jvm")
-    `maven-publish`
+    id("cryon.publish")
 }
 
 repositories {
-    mavenCentral()
     maven("https://repo.papermc.io/repository/maven-public/")
+    maven("https://repo.xenondevs.xyz/releases") // InvUI
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
+    compileOnly(libs.paper.api)
+    // InvUI — the menu layer builds on it, and :paper ships it at runtime, so compileOnly here.
+    compileOnly(libs.invui)
+
     implementation(project(":common"))
-    compileOnly("io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT")
-}
-
-kotlin {
-    jvmToolchain(25)
-}
-
-publishing {
-    publications {
-        create<MavenPublication>("maven") {
-            from(components["java"])
-        }
-    }
 }

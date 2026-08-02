@@ -8,19 +8,21 @@ load: POSTWORLD
 authors: [ tricrotism ]
 website: https://tricrotism.com/
 
-# Optional integration: if PlaceholderAPI is installed it loads first, so its classes are visible and
-# the PapiBridge can register expansions. Absent → placeholder providers are inert.
-softdepend: [ PlaceholderAPI ]
+# Optional integrations, loaded first so their classes are visible to whatever uses them:
+# PlaceholderAPI (PapiBridge registers expansions), floodgate (BedrockService sends Cumulus forms) and
+# WorldGuard (a module's preLoad can reach its flag registry, which seals itself on enable).
+# Any of them absent → that bridge installs nothing and features never branch on it.
+softdepend: [ PlaceholderAPI, floodgate, WorldGuard ]
 
 # Resolved by Paper's runtime library loader into the plugin classloader (visible to feature jars).
 # Commands use Paper's native Brigadier API (no extra library).
 libraries:
     - com.github.ben-manes.caffeine:caffeine:3.1.8
     - com.zaxxer:HikariCP:5.1.0
-    - org.postgresql:postgresql:42.7.4
-    - com.mysql:mysql-connector-j:9.1.0
+    - org.postgresql:postgresql:42.7.13
+    - com.mysql:mysql-connector-j:9.7.0
     - com.h2database:h2:2.3.232
-    - io.lettuce:lettuce-core:6.4.0.RELEASE
+    - io.lettuce:lettuce-core:6.7.1.RELEASE
 
 permissions:
     cryon.admin:

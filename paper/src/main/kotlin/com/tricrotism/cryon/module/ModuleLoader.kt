@@ -108,6 +108,7 @@ class ModuleLoader(
         val ids = sources.flatMap { readJar(it) ?: emptyList() }
         val loaded = ids.filter { manager.load(it, context) }
         loaded.forEach(manager::enable)
+        loaded.forEach(manager::postLoad)
         context.services.find(CommandService::class)?.refresh() // reveal re-enabled commands
         val enabled = loaded.filter { manager.state(it) == ModuleState.ENABLED }
         log.info("Reloaded api/ and {} module(s) ({} re-enabled)", sources.size, enabled.size)
@@ -145,6 +146,7 @@ class ModuleLoader(
         val ids = readJar(source) ?: return emptyList()
         val loaded = ids.filter { manager.load(it, context) }
         loaded.forEach(manager::enable)
+        loaded.forEach(manager::postLoad)
         context.services.find(CommandService::class)?.refresh() // reveal now-enabled commands
         return loaded.filter { manager.state(it) == ModuleState.ENABLED }
     }
