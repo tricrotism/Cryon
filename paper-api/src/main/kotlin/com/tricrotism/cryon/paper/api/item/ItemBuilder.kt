@@ -67,7 +67,11 @@ class ItemBuilder(item: ItemStack) {
 
     fun unbreakable(unbreakable: Boolean = true): ItemBuilder = meta { isUnbreakable = unbreakable }
 
-    fun customModelData(data: Int): ItemBuilder = meta { setCustomModelData(data) }
+    fun customModelData(vararg values: Float): ItemBuilder =
+        meta { setCustomModelDataComponent(customModelDataComponent.apply { floats = values.toList() }) }
+
+    /** 1.21.5 folded the single integer into the component's float list; kept for existing callers. */
+    fun customModelData(data: Int): ItemBuilder = customModelData(data.toFloat())
 
     fun attribute(attribute: Attribute, modifier: AttributeModifier): ItemBuilder =
         meta { addAttributeModifier(attribute, modifier) }
