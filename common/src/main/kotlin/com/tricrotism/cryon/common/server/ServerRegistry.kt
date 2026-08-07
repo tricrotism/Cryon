@@ -9,7 +9,7 @@ import java.util.concurrent.CompletableFuture
  * network, updated over Redis pub/sub, so queries are in-memory and non-blocking. Lives in `:common`
  * so both the Paper and Velocity loaders share one implementation.
  *
- * **Always registered** — resolve via `services.get(ServerRegistry::class)`. On a single server it
+ * **Always registered** — resolve via `services.get<ServerRegistry>()`. On a single server it
  * contains exactly one instance (this one), which is the truth rather than a degraded mode, so the
  * same query code works on one server and on ten. The SQL `Database`, when present, holds only the
  * slow-changing family catalog.

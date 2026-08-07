@@ -8,7 +8,7 @@ import java.util.concurrent.CompletableFuture
  * Selection is platform-neutral (it only reads the [ServerRegistry]), so the same implementation runs
  * on both Paper and Velocity; the actual connection is performed by whichever proxy owns the player.
  *
- * Registered **only when the transport is shared** — resolve via `services.find(PlayerRouter::class)`
+ * Registered **only when the transport is shared** — resolve via `services.find<PlayerRouter>()`
  * and treat null as "there is nowhere to route to", which is the literal truth of a single-server
  * deployment. Unlike [ServerRegistry], routing cannot degrade to this process: the request is carried
  * out by a proxy in another JVM.

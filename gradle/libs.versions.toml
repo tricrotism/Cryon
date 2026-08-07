@@ -29,6 +29,7 @@ velocity = "3.3.0-SNAPSHOT"
 
 invui = "2.2.0"
 floodgate = "2.2.4-SNAPSHOT"
+packetevents = "2.13.0"
 
 [libraries]
 h2 = { module = "com.h2database:h2", version.ref = "h2" }
@@ -42,6 +43,7 @@ velocity-api = { module = "com.velocitypowered:velocity-api", version.ref = "vel
 
 invui = { module = "xyz.xenondevs.invui:invui", version.ref = "invui" }
 floodgate = { module = "org.geysermc.floodgate:api", version.ref = "floodgate" }
+packetevents = { module = "com.github.retrooper:packetevents-spigot", version.ref = "packetevents" }
 
 slf4j = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 snakeyaml = { module = "org.yaml:snakeyaml", version.ref = "snakeyaml" }

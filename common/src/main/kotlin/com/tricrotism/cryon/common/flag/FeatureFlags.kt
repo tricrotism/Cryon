@@ -1,7 +1,6 @@
 package com.tricrotism.cryon.common.flag
 
 import com.tricrotism.cryon.common.data.Database
-import com.tricrotism.cryon.common.flag.FeatureFlags.Companion.GLOBAL_SCOPE
 import com.tricrotism.cryon.common.net.Messenger
 import com.tricrotism.cryon.common.net.MessengerSubscription
 import org.slf4j.Logger
@@ -39,6 +38,7 @@ class FeatureFlags(
 
     // scope -> (feature -> enabled)
     private val flags = ConcurrentHashMap<String, ConcurrentHashMap<String, Boolean>>()
+    private val playerOverrides = ConcurrentHashMap<UUID, ConcurrentHashMap<String, Boolean>>()
     private val serverScope = normalizeScope(serverName)
     private var subscription: MessengerSubscription? = null
 
@@ -77,7 +77,7 @@ class FeatureFlags(
      */
     fun isEnabled(feature: String, player: UUID? = null): Boolean {
         val id = normalize(feature)
-        if (player != null && hasPlayerOverrides) flags[playerScope(player)]?.get(id)?.let { return it }
+        if (player != null && hasPlayerOverrides) playerOverrides[player]?.get(id)?.let { return it }
         flags[serverScope]?.get(id)?.let { return it }
         flags[GLOBAL_SCOPE]?.get(id)?.let { return it }
         return true
@@ -92,10 +92,7 @@ class FeatureFlags(
         val id = normalize(feature)
         val scopeId = normalizeScope(scope)
         if (scopeFlags(scopeId).putIfAbsent(id, defaultEnabled) != null) return
-        database?.update(
-            "INSERT INTO $TABLE (scope, feature, enabled) VALUES (?, ?, ?) ON CONFLICT (scope, feature) DO NOTHING",
-            scopeId, id, defaultEnabled,
-        )
+        database?.insertIfAbsent(TABLE, KEYS, COLUMNS, scopeId, id, defaultEnabled)
     }
 
     /**
@@ -105,11 +102,7 @@ class FeatureFlags(
         val id = normalize(feature)
         val scopeId = normalizeScope(scope)
         scopeFlags(scopeId)[id] = enabled
-        database?.update(
-            "INSERT INTO $TABLE (scope, feature, enabled) VALUES (?, ?, ?) " +
-                    "ON CONFLICT (scope, feature) DO UPDATE SET enabled = EXCLUDED.enabled",
-            scopeId, id, enabled,
-        )
+        database?.upsert(TABLE, KEYS, COLUMNS, scopeId, id, enabled)
         messenger.publish(CHANNEL, sync(scopeId, id, enabled.toString()))
     }
 
@@ -140,7 +133,6 @@ class FeatureFlags(
      */
     fun reload(): Boolean {
         if (database == null) return false
-        flags.clear()
         load()
         return true
     }
@@ -177,7 +169,17 @@ class FeatureFlags(
             Triple(it.getString(1), it.getString(2), it.getBoolean(3))
         }
         .thenAccept { rows ->
-            rows.forEach { (scope, feature, enabled) -> scopeFlags(scope)[feature] = enabled }
+            val fresh = ConcurrentHashMap<String, ConcurrentHashMap<String, Boolean>>()
+            for ((scope, feature, enabled) in rows) {
+                fresh.computeIfAbsent(scope) { ConcurrentHashMap() }[feature] = enabled
+            }
+            val freshPlayers = HashMap<UUID, ConcurrentHashMap<String, Boolean>>()
+            fresh.forEach { (scope, entries) -> playerUuidOf(scope)?.let { freshPlayers[it] = entries } }
+            if (freshPlayers.isNotEmpty()) hasPlayerOverrides = true
+            flags.keys.retainAll(fresh.keys)
+            flags.putAll(fresh)
+            playerOverrides.keys.retainAll(freshPlayers.keys)
+            playerOverrides.putAll(freshPlayers)
             logger.info("Loaded {} feature flags", rows.size)
         }
         .exceptionally { logger.error("Failed to load feature flags", it); null }
@@ -198,8 +200,20 @@ class FeatureFlags(
     }
 
     private fun scopeFlags(scope: String): ConcurrentHashMap<String, Boolean> {
-        if (scope.startsWith(PLAYER_SCOPE_PREFIX)) hasPlayerOverrides = true
-        return flags.computeIfAbsent(scope) { ConcurrentHashMap() }
+        val entries = flags.computeIfAbsent(scope) { ConcurrentHashMap() }
+        playerUuidOf(scope)?.let {
+            playerOverrides[it] = entries
+            hasPlayerOverrides = true
+        }
+        return entries
+    }
+
+    /**
+     * The UUID a `player:<uuid>` scope names, or null for any other scope (or a malformed one).
+     */
+    private fun playerUuidOf(scope: String): UUID? {
+        if (!scope.startsWith(PLAYER_SCOPE_PREFIX)) return null
+        return runCatching { UUID.fromString(scope.substring(PLAYER_SCOPE_PREFIX.length)) }.getOrNull()
     }
 
     private fun sync(scope: String, feature: String, value: String): String =
@@ -227,5 +241,7 @@ class FeatureFlags(
         private const val SEPARATOR = '\u0000'
         private const val CHANNEL = "cryon:flags:sync"
         private const val TABLE = "cryon_feature_flags"
+        private val KEYS = listOf("scope", "feature")
+        private val COLUMNS = listOf("scope", "feature", "enabled")
     }
 }

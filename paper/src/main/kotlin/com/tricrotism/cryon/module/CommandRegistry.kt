@@ -14,6 +14,7 @@ import org.bukkit.Server
 import org.bukkit.craftbukkit.CraftServer
 import org.slf4j.Logger
 import java.lang.reflect.Field
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * The core's single owner of command registration (see [CommandService]). Every contribution — the
@@ -33,13 +34,11 @@ class CommandRegistry(private val server: Server, private val log: Logger) : Com
 
     private class Entry(val owner: String, val available: () -> Boolean, val handler: Any)
 
-    private val entries = ArrayList<Entry>()
-    private val branches = ArrayList<Entry>()
+    private val entries = CopyOnWriteArrayList<Entry>()
+    private val branches = CopyOnWriteArrayList<Entry>()
     private val liveRoots = LinkedHashMap<String, MutableSet<String>>() // owner -> root literal names it owns
-
-    // owner -> the (shared root, branch literal) pairs it contributed. Distinct from liveRoots because
-    // these roots are co-owned: dropping this owner must take its branches and leave the root standing.
     private val liveBranches = LinkedHashMap<String, MutableSet<Pair<String, String>>>()
+    private val sharedRootLabels = LinkedHashMap<String, MutableSet<String>>()
     private var booted = false
     private var refreshScheduled = false
 
@@ -65,36 +64,59 @@ class CommandRegistry(private val server: Server, private val log: Logger) : Com
         var changed = liveRoots.remove(owner)?.count { removeRoot(it) }?.let { it > 0 } ?: false
 
         val owned = liveBranches.remove(owner)
-        if (owned != null) {
-            val root = dispatcherRoot()
+        val root = dispatcherRoot()
+        if (owned != null && root != null) {
             for ((rootName, branchName) in owned) {
-                val shared = root?.getChild(rootName) ?: continue
-                if (removeChildFrom(shared, branchName)) changed = true
-                // The root exists only to hold branches — once the last one goes, so does it.
-                if (shared.children.isEmpty()) removeRoot(rootName)
+                val labels = sharedRootLabels[rootName] ?: linkedSetOf(rootName)
+                var emptied = true
+                for (label in labels) {
+                    val shared = root.getChild(label) ?: continue
+                    if (removeChildFrom(shared, branchName)) changed = true
+                    if (shared.children.isNotEmpty()) emptied = false
+                }
+                if (emptied) {
+                    labels.forEach { removeRoot(it) }
+                    sharedRootLabels.remove(rootName)
+                }
             }
         }
         if (changed) refresh()
     }
 
+    /**
+     * Resync every online player's command tree, coalescing the bursts a multi-module reload produces
+     * into one pass. The snapshot is taken globally but each `updateCommands` is applied on its own
+     * player's scheduler: it re-tests every node's access check against that player and writes to their
+     * connection, which is their region's work, not ours.
+     */
     override fun refresh() {
         if (refreshScheduled) return
         refreshScheduled = true
         Schedulers.global {
             refreshScheduled = false
-            server.onlinePlayers.forEach { runCatching { it.updateCommands() } }
+            server.onlinePlayers.forEach { player ->
+                Schedulers.entity(player) { runCatching { player.updateCommands() } }
+            }
         }
     }
 
     override fun describe(owner: String): List<CommandDescriptor> =
         (entries + branches).filter { it.owner == owner }.mapNotNull { AnnotationCommands.describe(it.handler) }
 
-    /** Register everything queued so far onto Paper's registrar, inside the boot COMMANDS window. */
+    /**
+     * Register everything queued so far onto Paper's registrar, inside the boot COMMANDS window.
+     *
+     * The registrar's return value is the authoritative label set — it includes the namespaced
+     * `cryon:<name>` variants Paper adds on top of the name and aliases we asked for. Recording only
+     * what we asked for would leave those nodes in the dispatcher on unload, still dispatching into a
+     * closed module classloader, so the answer is taken from Paper rather than re-derived.
+     */
     fun flushBoot(registrar: Commands) {
         for (entry in entries) {
             try {
-                AnnotationCommands.register(registrar, entry.handler, entry.available)
-                trackRoots(entry.owner, entry.handler)
+                val built = AnnotationCommands.build(entry.handler, entry.available)
+                val labels = registrar.register(built.node, built.description, built.aliases)
+                liveRoots.getOrPut(entry.owner) { linkedSetOf() }.addAll(labels)
             } catch (t: Throwable) {
                 log.error("Failed to register command {} for {}", entry.handler.javaClass.simpleName, entry.owner, t)
             }
@@ -105,7 +127,8 @@ class CommandRegistry(private val server: Server, private val log: Logger) : Com
         for ((rootName, group) in branches.groupBy { rootNameOf(it.handler) }) {
             if (rootName == null) continue
             try {
-                registrar.register(mergeBranches(rootName, group), null, emptyList())
+                val labels = registrar.register(mergeBranches(rootName, group), null, emptyList())
+                sharedRootLabels.getOrPut(rootName) { linkedSetOf(rootName) }.addAll(labels)
                 group.forEach { trackBranches(it.owner, rootName, it.handler) }
             } catch (t: Throwable) {
                 log.error("Failed to register shared command root {} for {}", rootName, group.map { it.owner }, t)
@@ -199,14 +222,6 @@ class CommandRegistry(private val server: Server, private val log: Logger) : Com
             names.add(alias)
         }
         return true
-    }
-
-    /** Record the root literal names a boot-registered handler owns, so [unregister] can drop them. */
-    private fun trackRoots(owner: String, handler: Any) {
-        val descriptor = AnnotationCommands.describe(handler) ?: return
-        val names = liveRoots.getOrPut(owner) { linkedSetOf() }
-        names.add(descriptor.name)
-        names.addAll(descriptor.aliases)
     }
 
     private fun removeRoot(name: String): Boolean {

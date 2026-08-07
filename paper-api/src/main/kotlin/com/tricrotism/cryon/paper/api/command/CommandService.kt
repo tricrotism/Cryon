@@ -11,7 +11,7 @@ package com.tricrotism.cryon.paper.api.command
  * It also keeps the reflected [describe] view of every owner's commands, so `/cryon info <id>` can
  * list a module's commands, aliases, and usages.
  *
- * Registered once by the core; resolve with `services.get`/`find(CommandService::class)`. Main-thread.
+ * Registered once by the core; resolve with `services.get<CommandService>()`/`find<CommandService>()`. Main-thread.
  */
 interface CommandService {
 

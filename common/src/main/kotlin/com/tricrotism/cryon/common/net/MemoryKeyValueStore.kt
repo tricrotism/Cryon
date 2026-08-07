@@ -75,6 +75,19 @@ class MemoryKeyValueStore : KeyValueStore {
         return CompletableFuture.completedFuture(granted)
     }
 
+    override fun refresh(key: String, member: String, ttl: Duration): CompletableFuture<Boolean> {
+        val now = System.currentTimeMillis()
+        var refreshed = false
+        holds.compute(key) { _, existing ->
+            val current = existing?.filterTo(HashMap()) { it.value > now } ?: return@compute null
+            if (member !in current) return@compute current.ifEmpty { null }
+            current[member] = now + ttl.toMillis()
+            refreshed = true
+            current
+        }
+        return CompletableFuture.completedFuture(refreshed)
+    }
+
     override fun close() {
         entries.clear()
         holds.clear()

@@ -26,13 +26,21 @@ import java.util.concurrent.atomic.AtomicBoolean
  * Form text is legacy section-coded: that is what Bedrock form UIs colour, and MiniMessage/Adventure
  * markup means nothing to them.
  */
-internal class FloodgateBedrockService(private val logger: Logger) : BedrockService {
+internal class FloodgateBedrockService(private val logger: Logger) : BedrockService, AutoCloseable {
 
     private val sessions = ConcurrentHashMap<UUID, FormSession>()
 
-    init {
-        Events.subscribe<PlayerQuitEvent>(EventPriority.MONITOR)
-            .handler { event -> sessions[event.player.uniqueId]?.cancel() }
+    private val quitSubscription = Events.subscribe<PlayerQuitEvent>(EventPriority.MONITOR)
+        .handler { event -> sessions[event.player.uniqueId]?.cancel() }
+
+    /**
+     * Drop the quit hook and settle every form still on a screen. Cancelling rather than abandoning
+     * keeps the exactly-once guarantee through shutdown: whatever a caller escrowed behind a form
+     * callback is released instead of hanging.
+     */
+    override fun close() {
+        quitSubscription.unregister()
+        sessions.values.toList().forEach { runCatching { it.cancel() } }
     }
 
     override fun isBedrock(player: Player): Boolean =
@@ -137,6 +145,12 @@ internal class FloodgateBedrockService(private val logger: Logger) : BedrockServ
         }
         builder.closedOrInvalidResultHandler(Runnable { session.cancel() })
         return send(player, session, builder)
+    }
+
+    override fun closeForm(player: Player): Boolean {
+        val session = sessions.remove(player.uniqueId) ?: return false
+        session.cancel()
+        return true
     }
 
     /**

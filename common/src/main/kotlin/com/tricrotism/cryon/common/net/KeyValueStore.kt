@@ -42,5 +42,18 @@ interface KeyValueStore {
         baseline: Int,
     ): CompletableFuture<Boolean>
 
+    /**
+     * Extend [member]'s existing hold under [key] by [ttl], reporting whether it still had one.
+     *
+     * Separate from [tryHold] because that one is a *capacity* primitive: it counts the caller's own
+     * live hold against `limit`, so re-asking for a slot you already occupy is refused. A holder that
+     * wants to stay is not asking for a second slot — it is saying it is still using the first, and
+     * routing that through [tryHold] fails on the very first renewal.
+     *
+     * False means the hold lapsed and somebody else may have taken it, so the caller must stop acting
+     * as though it owns the thing.
+     */
+    fun refresh(key: String, member: String, ttl: Duration): CompletableFuture<Boolean>
+
     fun close()
 }

@@ -166,7 +166,7 @@ class SharedServerRegistry(
         val db = database ?: return
         db.update(
             """
-            CREATE TABLE IF NOT EXISTS cryon_server_family (
+            CREATE TABLE IF NOT EXISTS $FAMILY_TABLE (
                 family        VARCHAR(64) PRIMARY KEY,
                 policy        VARCHAR(16) NOT NULL DEFAULT 'persistent',
                 max_players   INT NOT NULL DEFAULT 0,
@@ -179,10 +179,8 @@ class SharedServerRegistry(
 
     private fun upsertFamily(instance: ServerInstance) {
         val db = database ?: return
-        db.update(
-            "INSERT INTO cryon_server_family (family, max_players) VALUES (?, ?) ON CONFLICT (family) DO NOTHING",
-            instance.family, instance.maxPlayers,
-        ).exceptionally { 0 }
+        db.insertIfAbsent(FAMILY_TABLE, FAMILY_KEYS, FAMILY_COLUMNS, instance.family, instance.maxPlayers)
+            .exceptionally { 0 }
     }
 
     private fun fire(event: ServerRegistryEvent) {
@@ -193,6 +191,9 @@ class SharedServerRegistry(
 
     private companion object {
         private const val EVENTS_CHANNEL = "cryon:registry:events"
+        private const val FAMILY_TABLE = "cryon_server_family"
+        private val FAMILY_KEYS = listOf("family")
+        private val FAMILY_COLUMNS = listOf("family", "max_players")
         private const val INSTANCE_PREFIX = "cryon:registry:instance:"
         private const val RESERVED_PREFIX = "cryon:registry:reserved:"
         private const val ADD = "ADD"

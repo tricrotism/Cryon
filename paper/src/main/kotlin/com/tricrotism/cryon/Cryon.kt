@@ -1,6 +1,6 @@
 package com.tricrotism.cryon
 
-import com.tricrotism.cryon.Cryon.Companion.FLUSH_TIMEOUT_SECONDS
+import com.github.retrooper.packetevents.PacketEvents
 import com.tricrotism.cryon.bedrock.BedrockBridge
 import com.tricrotism.cryon.command.LanguageCommands
 import com.tricrotism.cryon.command.ModuleCommands
@@ -29,12 +29,14 @@ import com.tricrotism.cryon.paper.api.PaperModuleContext
 import com.tricrotism.cryon.paper.api.bedrock.BedrockService
 import com.tricrotism.cryon.paper.api.command.CommandService
 import com.tricrotism.cryon.paper.api.event.Events
+import com.tricrotism.cryon.paper.api.event.Subscription
 import com.tricrotism.cryon.paper.api.inventory.InventorySearch
 import com.tricrotism.cryon.paper.api.menu.MenuPalette
 import com.tricrotism.cryon.paper.api.placeholder.PlaceholderService
 import com.tricrotism.cryon.paper.api.scheduler.Schedulers
 import com.tricrotism.cryon.papi.CorePlaceholders
 import com.tricrotism.cryon.papi.PapiBridge
+import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents
 import org.bukkit.Server
 import org.bukkit.configuration.file.FileConfiguration
@@ -80,7 +82,9 @@ class Cryon : JavaPlugin() {
     private var agonesLifecycle: AgonesLifecycle? = null
     private var handoff: HandoffCoordinator? = null
     private var corePlaceholders: AutoCloseable? = null
+    private var bedrockService: AutoCloseable? = null
     private var heartbeatSeconds: Long = 5
+    private val subscriptions = ArrayList<Subscription>()
 
     // The transport. Always installed — Redis when configured, in-process otherwise — so the services
     // above it have one implementation each and features never branch on the deployment mode.
@@ -103,6 +107,7 @@ class Cryon : JavaPlugin() {
      */
     override fun onLoad() {
         CryonPaper.init(this) // so Schedulers/Events can reach the plugin
+        initPackets()
 
         messageService = MessageService()
         Messages.install(messageService)
@@ -110,10 +115,10 @@ class Cryon : JavaPlugin() {
         registerAdminLang(messageService)
         registerOwnLang(messageService)
 
-        services = ServiceRegistry(log).apply { register(MessageService::class, messageService) }
+        services = ServiceRegistry(log).apply { register<MessageService>(messageService) }
 
         manager = ModuleManager(log)
-        services.register(ModuleManager::class, manager) // so modules can query their own enabled-state
+        services.register<ModuleManager>(manager) // so modules can query their own enabled-state
 
         context = CryonContext(this, server, log, services)
 
@@ -140,6 +145,8 @@ class Cryon : JavaPlugin() {
 
     override fun onEnable() {
         initMenus()
+        runCatching { PacketEvents.getAPI()?.init() }
+            .onFailure { log.error("Failed to start the packet layer; Packets subscriptions will not fire", it) }
 
         setupInfrastructure(services)
 
@@ -147,12 +154,14 @@ class Cryon : JavaPlugin() {
         val status = reportNetwork(services)
 
         commandRegistry = CommandRegistry(server, log)
-        services.register(CommandService::class, commandRegistry)
+        services.register<CommandService>(commandRegistry)
 
         val papi = PapiBridge(this, log)
-        services.register(PlaceholderService::class, papi)
+        services.register<PlaceholderService>(papi)
 
-        services.register(BedrockService::class, BedrockBridge.create(log))
+        val bedrock = BedrockBridge.create(log)
+        services.register<BedrockService>(bedrock)
+        bedrockService = bedrock as? AutoCloseable
         corePlaceholders = papi.register(CORE_COMMAND_OWNER, CorePlaceholders(identity))
 
         manager.loadAll(context)
@@ -232,10 +241,33 @@ class Cryon : JavaPlugin() {
      * forbidden from touching anything but the third-party registry it came for.
      */
     private fun initMenus() {
+        if (menusBound) return
         val invui = InvUI.getInstance()
         invui.setPlugin(this)
         invui.setExceptionHandler { message, error -> log.error("InvUI: {}", message, error) }
         MenuPalette.installGlobalIngredients()
+        menusBound = true
+    }
+
+    /**
+     * Bind PacketEvents to this plugin, so `Packets` works for the core and every feature.
+     *
+     * Like InvUI this is core infrastructure a module must never set up itself: the library is shaded
+     * here unrelocated and its API is a static singleton, so one `setAPI` in one classloader is the
+     * whole contract. `load()` belongs in `onLoad` (it installs the injector before any connection can
+     * exist); `init()` runs in `onEnable`, ahead of the modules that subscribe.
+     *
+     * Best-effort, matching spark and PlaceholderAPI: a failure here logs and leaves `Packets`
+     * unavailable rather than taking the server down with it.
+     */
+    private fun initPackets() {
+        try {
+            PacketEvents.setAPI(SpigotPacketEventsBuilder.build(this))
+            PacketEvents.getAPI().settings.checkForUpdates(false) // the core pins the version
+            PacketEvents.getAPI().load()
+        } catch (t: Throwable) {
+            log.error("Failed to load the packet layer; Packets subscriptions will not fire", t)
+        }
     }
 
     /** Register a disk `plugins/Cryon/lang/` folder so admins can override/add translations. */
@@ -320,7 +352,7 @@ class Cryon : JavaPlugin() {
                     log,
                 )
                 database = db
-                services.register(Database::class, db)
+                services.register<Database>(db)
                 log.info("Database connected (${dialect.id})")
             } catch (e: Exception) {
                 log.error("Failed to initialize the database... continuing without it", e)
@@ -330,21 +362,23 @@ class Cryon : JavaPlugin() {
         setupTransport(services, cfg)
 
         identity = resolveIdentity(cfg)
-        services.register(InstanceIdentity::class, identity) // so a feature can ask who it is
+        services.register<InstanceIdentity>(identity) // so a feature can ask who it is
         heartbeatSeconds = cfg.getLong("network.heartbeat-seconds", 5).coerceAtLeast(1)
 
         featureFlags = FeatureFlags(identity.family, database, messenger, log)
         featureFlags.init()
-        services.register(FeatureFlags::class, featureFlags)
+        services.register<FeatureFlags>(featureFlags)
 
-        services.register(InventorySearch::class, DefaultInventorySearch())
+        services.register<InventorySearch>(DefaultInventorySearch())
 
         val db = database
         val locale: LocaleStore = if (db != null) {
             PlayerLocaleStore(db, messenger).also { s ->
                 s.init().exceptionally { log.error("Failed to create locale table", it); null }
-                Events.subscribe(PlayerJoinEvent::class.java).handler { event -> s.load(event.player.uniqueId) }
-                Events.subscribe(PlayerQuitEvent::class.java).handler { event -> s.unload(event.player.uniqueId) }
+                subscriptions += Events.subscribe<PlayerJoinEvent>()
+                    .handler { event -> s.load(event.player.uniqueId) }
+                subscriptions += Events.subscribe<PlayerQuitEvent>()
+                    .handler { event -> s.unload(event.player.uniqueId) }
                 log.info("Persistent player locale enabled")
             }
         } else {
@@ -379,8 +413,8 @@ class Cryon : JavaPlugin() {
             store = MemoryKeyValueStore()
             log.info("State is in-process only (no redis) — correct for a single server, not for a pool")
         }
-        services.register(Messenger::class, messenger)
-        services.register(KeyValueStore::class, store)
+        services.register<Messenger>(messenger)
+        services.register<KeyValueStore>(store)
     }
 
     /** Drop whatever a half-finished Redis setup managed to open. */
@@ -421,9 +455,9 @@ class Cryon : JavaPlugin() {
         val reg = SharedServerRegistry(store, messenger, database, Duration.ofSeconds(heartbeatSeconds * 3), log)
         reg.init()
         registry = reg
-        services.register(ServerRegistry::class, reg)
+        services.register<ServerRegistry>(reg)
 
-        if (sharedTransport) services.register(PlayerRouter::class, DefaultPlayerRouter(reg, messenger))
+        if (sharedTransport) services.register<PlayerRouter>(DefaultPlayerRouter(reg, messenger))
         reporter = InstanceReporter(reg, identity, server, Duration.ofSeconds(heartbeatSeconds), log)
             .also { it.register() }
     }
@@ -436,8 +470,8 @@ class Cryon : JavaPlugin() {
         val coordinator = HandoffCoordinator(identity.instanceId, messenger, log)
         coordinator.init()
         handoff = coordinator
-        services.register(PlayerHandoff::class, coordinator)
-        Events.subscribe(PlayerQuitEvent::class.java, EventPriority.MONITOR)
+        services.register<PlayerHandoff>(coordinator)
+        subscriptions += Events.subscribe<PlayerQuitEvent>(EventPriority.MONITOR)
             .handler { event -> coordinator.flushOnQuit(event.player.uniqueId) }
     }
 
@@ -452,7 +486,7 @@ class Cryon : JavaPlugin() {
     /** Say what this server is, and make any disagreement with `network.mode` impossible to miss. */
     private fun reportNetwork(services: ServiceRegistry): NetworkStatus {
         val status = NetworkStatus(identity, sharedTransport, database != null) { registry }
-        services.register(NetworkStatus::class, status)
+        services.register<NetworkStatus>(status)
         status.report(log)
         return status
     }
@@ -477,27 +511,34 @@ class Cryon : JavaPlugin() {
         )
         val life = AgonesLifecycle(agones, reporter::currentPlayers, { registry.family(family).size }, options, log)
         agonesLifecycle = life
-        services.register(AgonesLifecycle::class, life)
+        services.register<AgonesLifecycle>(life)
         life.start()
     }
 
     override fun onDisable() {
         watchers.forEach { runCatching { it.close() } }
         watchers.clear()
+        subscriptions.forEach { runCatching { it.unregister() } }
+        subscriptions.clear()
+        SparkSupport.uninstall(log)
         agonesLifecycle?.let { runCatching { it.stop() } }
-        reporter?.let { runCatching { it.drain() } } // stop new arrivals before we start saving
+        reporter?.let { runCatching { it.drain() } }
         flushOnlinePlayers()
-        reporter?.let { runCatching { it.stop() } } // deregister before the transport closes
-        registry?.let { runCatching { it.close() } }
+        reporter?.let { runCatching { it.stop() } }
         if (::manager.isInitialized) manager.disableAll()
-        corePlaceholders?.let { runCatching { it.close() } } // module providers close via their own disable
-        if (::loader.isInitialized) loader.close() // closes module loaders + the shared api/ parent
+        bedrockService?.let { runCatching { it.close() } }
+        corePlaceholders?.let { runCatching { it.close() } }
+        if (::loader.isInitialized) loader.close()
+        registry?.let { runCatching { it.close() } }
         handoff?.let { runCatching { it.close() } }
         if (::featureFlags.isInitialized) featureFlags.close()
         localeStore?.close()
         if (::messenger.isInitialized) messenger.close()
         if (::store.isInitialized) store.close()
         database?.close()
+        if (::services.isInitialized) services.clear()
+        runCatching { PacketEvents.getAPI()?.terminate() }
+        Locales.install(null)
     }
 
     /**
@@ -526,6 +567,10 @@ class Cryon : JavaPlugin() {
     private companion object {
         /** Owner key the core's own commands register under in the [CommandRegistry]. */
         const val CORE_COMMAND_OWNER = "cryon"
+
+        /** Whether InvUI is already bound in this classloader — see [initMenus]. */
+        @Volatile
+        var menusBound = false
 
         /** How long shutdown waits for player flushes before giving up and saying so. */
         const val FLUSH_TIMEOUT_SECONDS = 10L

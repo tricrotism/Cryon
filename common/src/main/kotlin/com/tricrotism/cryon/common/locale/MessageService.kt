@@ -15,8 +15,16 @@ import java.util.concurrent.CopyOnWriteArrayList
 /**
  * The network's i18n service: resolves `(locale, key)` to a rendered `Component` across all
  * registered [MessageSource]s, with a fallback chain (requested locale → its language → default
- * locale → its language) and basic count-based pluralization. Modules add their own sources via
- * [addSource] in `onLoad`. Created once by the core and shared through the module `ServiceRegistry`.
+ * locale → its language) and basic count-based pluralization. Created once by the core and shared
+ * through the module `ServiceRegistry`.
+ *
+ * **A module adds its source in `onEnable` and removes it on disable** — `PaperModule.track` does the
+ * second half. Not `onLoad`: a reload is disable-then-enable and never re-runs `onLoad`, so a source
+ * added there could not be removed without leaving the reloaded module with no strings at all. And it
+ * has to be removed, for two reasons that both outlive the jar — this list belongs to the core, so a
+ * source left in it holds the module's classloader for the rest of the server's uptime, and [template]
+ * takes the **first** match in registration order, so a stale copy silently shadows the new jar's
+ * strings after every reload.
  *
  * Thread-safe: sources are held in a `CopyOnWriteArrayList`; rendering is stateless.
  */
@@ -77,15 +85,18 @@ class MessageService(defaultLocale: Locale = Locale.US) {
     /** Render [key] for [locale]; missing keys render as `⟨key⟩` so gaps are visible, not silent. */
     fun render(locale: Locale, key: String, vararg resolvers: TagResolver): Component {
         val template = template(locale, key) ?: return missing(key)
-        return Mini.format(template, *resolvers)
+        return format(template, resolvers)
     }
 
     /** Pluralized render: tries `key.one` (count == 1) or `key.other`, then bare `key`. */
     fun renderPlural(locale: Locale, key: String, count: Long, vararg resolvers: TagResolver): Component {
         val variant = if (count == 1L) "$key.one" else "$key.other"
         val template = template(locale, variant) ?: template(locale, key) ?: return missing(key)
-        return Mini.format(template, *resolvers)
+        return format(template, resolvers)
     }
+
+    private fun format(template: String, resolvers: Array<out TagResolver>): Component =
+        if (resolvers.isEmpty()) Mini.format(template) else Mini.format(template, *resolvers)
 
     private fun localeChain(locale: Locale): List<Locale> = chains.computeIfAbsent(locale) { requested ->
         val chain = LinkedHashSet<Locale>()

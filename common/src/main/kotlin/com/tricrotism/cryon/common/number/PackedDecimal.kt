@@ -1,7 +1,5 @@
 package com.tricrotism.cryon.common.number
 
-import com.tricrotism.cryon.common.number.PackedDecimal.Companion.MAX_VALUE
-import com.tricrotism.cryon.common.number.PackedDecimal.Companion.ZERO
 import java.math.BigDecimal
 import java.math.MathContext
 import java.math.RoundingMode
@@ -168,7 +166,8 @@ value class PackedDecimal private constructor(private val bits: Long) : Comparab
 
     override fun toString(): String = toScientificString()
 
-    internal fun raw(): Long = bits
+    /** The packed bit pattern, for compact storage (PDC tags, columns); rebuild with [fromRaw]. */
+    fun raw(): Long = bits
 
     companion object {
         private const val DIGITS = 14
@@ -211,7 +210,8 @@ value class PackedDecimal private constructor(private val bits: Long) : Comparab
         /** Exact to 14 significant figures via [BigDecimal]; accepts `e`-notation. */
         fun parse(s: String): PackedDecimal = of(BigDecimal(s.trim()))
 
-        internal fun fromRaw(bits: Long): PackedDecimal = PackedDecimal(bits)
+        /** Rebuild a value stored via [raw]. */
+        fun fromRaw(bits: Long): PackedDecimal = PackedDecimal(bits)
 
         /** Build from a `double` mantissa × 10^[extraExp] — for of(Double)/sqrt/cbrt/pow. */
         private fun scaled(value: Double, extraExp: Int): PackedDecimal {

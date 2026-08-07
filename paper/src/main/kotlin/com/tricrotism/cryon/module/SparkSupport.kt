@@ -37,21 +37,55 @@ import java.lang.reflect.*
  */
 object SparkSupport {
 
+    /** What [uninstall] needs to put spark back the way it found it. */
+    private class Splice(
+        val platform: Any,
+        val pluginField: Field,
+        val realPlugin: Any?,
+        val proxy: Any,
+    )
+
+    @Volatile
+    private var installed: Splice? = null
+
     /** [author] is shown on the viewer's sources view for every module — pass the core plugin's authors. */
     fun install(server: Server, loader: ModuleLoader, author: String, log: Logger) {
+        if (installed != null) return
         val api = findSparkApi(server)
         if (api == null) {
             log.warn("spark not available; feature modules will show under Cryon on profiles, not split out")
             return
         }
         try {
-            splice(api, loader, author)
+            installed = splice(api, loader, author)
             log.info("spark hooked; feature modules now appear as separate sources on profiles")
         } catch (t: Throwable) {
             log.warn(
                 "Could not hook spark for per-module profiling (its internals may have changed); modules stay under Cryon",
                 t
             )
+        }
+    }
+
+    /**
+     * Give spark its own plugin back. **Must run on disable**, because spark outlives us: on Paper 26.x
+     * it is a bundled library rather than a plugin, so the field we wrote survives the plugin being
+     * unloaded. Our proxy's handler is defined by the core's classloader and captures the
+     * [ModuleLoader], which holds every feature jar's loader. Leaving it in place pins that whole
+     * graph for as long as the JVM runs, and a re-enable would splice a second proxy over the first.
+     *
+     * Only restores what is still ours: another plugin may have spliced over us afterwards, and
+     * overwriting that would drop its hook instead of ours.
+     */
+    fun uninstall(log: Logger) {
+        val splice = installed ?: return
+        installed = null
+        try {
+            if (splice.pluginField.get(splice.platform) === splice.proxy) {
+                splice.pluginField.set(splice.platform, splice.realPlugin)
+            }
+        } catch (t: Throwable) {
+            log.warn("Could not un-hook spark; its profiler may keep a reference to this plugin", t)
         }
     }
 
@@ -72,7 +106,7 @@ object SparkSupport {
     }
 
     /** Swap `SparkPlatform.plugin` for a proxy overriding the three attribution methods. */
-    private fun splice(api: Any, loader: ModuleLoader, author: String) {
+    private fun splice(api: Any, loader: ModuleLoader, author: String): Splice {
         val platform = field(api.javaClass, "platform").get(api)
             ?: throw IllegalStateException("spark platform not initialised")
 
@@ -107,6 +141,7 @@ object SparkSupport {
         }
 
         pluginField.set(platform, proxy)
+        return Splice(platform, pluginField, realPlugin, proxy)
     }
 
     /** A [Proxy] over spark's lookup: our module classloaders first, spark's real lookup for the rest. */

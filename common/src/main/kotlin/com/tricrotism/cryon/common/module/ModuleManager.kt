@@ -1,6 +1,7 @@
 package com.tricrotism.cryon.common.module
 
 import org.slf4j.Logger
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Owns module lifecycle and tracks each module's [ModuleState]. The loader [register]s every
@@ -9,19 +10,25 @@ import org.slf4j.Logger
  * [enable]/[disable]/[reload] drive a single module at runtime (e.g. from the `/cryon` command) —
  * re-enabling reuses the context captured at load, and callers follow it with [postLoad].
  *
- * Main-thread only: boot and the module command both run there; not safe for concurrent mutation.
+ * **Mutated from one thread only** — boot, and the `/cryon` command, which funnels onto the global
+ * region thread for exactly this reason. Read from any thread: Brigadier runs tab-complete suggesters
+ * and `PaperModule.isEnabled` on whatever thread dispatches, which on Folia is the player's own region
+ * thread. Hence the two storage choices below rather than plain maps.
  */
 class ModuleManager(private val logger: Logger) {
 
-    private val modules = LinkedHashMap<String, Module>()
-    private val states = LinkedHashMap<String, ModuleState>()
+    @Volatile
+    private var modules: Map<String, Module> = LinkedHashMap()
+
+    private val states = ConcurrentHashMap<String, ModuleState>()
 
     /** Track a discovered module. False (and ignored) if its id is already registered. */
     fun register(module: Module): Boolean {
-        if (modules.putIfAbsent(module.id, module) != null) {
+        if (modules.containsKey(module.id)) {
             logger.warn("Duplicate module id '{}', ignoring the duplicate", module.id)
             return false
         }
+        modules = LinkedHashMap(modules).apply { put(module.id, module) }
         states[module.id] = ModuleState.REGISTERED
         return true
     }
@@ -32,7 +39,8 @@ class ModuleManager(private val logger: Logger) {
      */
     fun unregister(id: String): Boolean {
         if (states[id] == ModuleState.ENABLED) return false
-        if (modules.remove(id) == null) return false
+        if (!modules.containsKey(id)) return false
+        modules = LinkedHashMap(modules).apply { remove(id) }
         states.remove(id)
         return true
     }
@@ -138,7 +146,12 @@ class ModuleManager(private val logger: Logger) {
     fun state(id: String): ModuleState? = states[id]
     fun has(id: String): Boolean = modules.containsKey(id)
     fun ids(): List<String> = modules.keys.toList()
-    fun states(): Map<String, ModuleState> = LinkedHashMap(states)
+    fun states(): Map<String, ModuleState> {
+        val snapshot = modules
+        val out = LinkedHashMap<String, ModuleState>(snapshot.size)
+        for (id in snapshot.keys) states[id]?.let { out[id] = it }
+        return out
+    }
 
     private fun enableInternal(id: String, module: Module): Boolean = try {
         module.onEnable()
@@ -146,6 +159,9 @@ class ModuleManager(private val logger: Logger) {
         logger.info("Enabled module {}", id)
         true
     } catch (e: Throwable) {
+        runCatching { module.onDisable() }.onFailure {
+            logger.error("Module {} also failed to unwind after a failed enable", id, it)
+        }
         states[id] = ModuleState.FAILED
         logger.error("Failed to enable module {}! Left it disabled so the server continues.", id, e)
         false

@@ -52,6 +52,7 @@ class AgonesLifecycle(
     fun stop() {
         health?.cancel()
         health = null
+        runCatching { agones.close() }
     }
 
     private fun tick() {

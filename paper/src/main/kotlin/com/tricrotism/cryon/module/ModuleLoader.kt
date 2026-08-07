@@ -59,11 +59,16 @@ class ModuleLoader(
     /** A module jar as the profiler should present it: display [name] (its module ids) + [version]. */
     data class ModuleSource(val name: String, val version: String)
 
+    @Volatile
     private var apiLoader: URLClassLoader? = null
     private var apiDir: File? = null
+
+    @Volatile
     private var moduleParent: ClassLoader = coreLoader
-    private val jars = LinkedHashMap<String, LoadedJar>() // key: source path; insertion = load order
-    private val moduleToJar = HashMap<String, String>()   // module id -> jar key
+
+    @Volatile
+    private var jars: Map<String, LoadedJar> = LinkedHashMap()
+    private val moduleToJar = HashMap<String, String>()
 
     // Module classloader -> source info, for spark profiler attribution (see sourceName). Concurrent
     // because the profiler reads it off its own export thread while hot-swaps mutate it on main.
@@ -109,7 +114,7 @@ class ModuleLoader(
         val loaded = ids.filter { manager.load(it, context) }
         loaded.forEach(manager::enable)
         loaded.forEach(manager::postLoad)
-        context.services.find(CommandService::class)?.refresh() // reveal re-enabled commands
+        context.services.find<CommandService>()?.refresh() // reveal re-enabled commands
         val enabled = loaded.filter { manager.state(it) == ModuleState.ENABLED }
         log.info("Reloaded api/ and {} module(s) ({} re-enabled)", sources.size, enabled.size)
         return enabled
@@ -147,7 +152,7 @@ class ModuleLoader(
         val loaded = ids.filter { manager.load(it, context) }
         loaded.forEach(manager::enable)
         loaded.forEach(manager::postLoad)
-        context.services.find(CommandService::class)?.refresh() // reveal now-enabled commands
+        context.services.find<CommandService>()?.refresh() // reveal now-enabled commands
         return loaded.filter { manager.state(it) == ModuleState.ENABLED }
     }
 
@@ -193,8 +198,11 @@ class ModuleLoader(
 
     /** Close every loader (modules before the shared parent) and clear the cache. For plugin disable. */
     fun close() {
-        jars.values.forEach { runCatching { it.loader.close() } }
-        jars.clear()
+        jars.values.forEach { jar ->
+            runCatching { context.services.unregisterByClassLoader(jar.loader) }
+            runCatching { jar.loader.close() }
+        }
+        jars = LinkedHashMap()
         moduleToJar.clear()
         loaderSources.clear()
         apiLoader?.let { runCatching { it.close() } }
@@ -236,7 +244,7 @@ class ModuleLoader(
                 log.info("Registered lang bundle from {}", source.name)
             }
 
-            jars[sourceKey] = LoadedJar(source, cache, loader, ids, lang)
+            jars = LinkedHashMap(jars).apply { put(sourceKey, LoadedJar(source, cache, loader, ids, lang)) }
             loaderSources[loader] = ModuleSource(
                 ids.joinToString(", ") { id -> "Cryon-Module-${id.replaceFirstChar(Char::uppercase)}" },
                 jarVersion(source.name),
@@ -255,9 +263,10 @@ class ModuleLoader(
     }
 
     private fun unloadByKey(jarKey: String): List<String>? {
-        val jar = jars.remove(jarKey) ?: return null
+        val jar = jars[jarKey] ?: return null
+        jars = LinkedHashMap(jars).apply { remove(jarKey) }
         loaderSources.remove(jar.loader)
-        val commands = context.services.find(CommandService::class)
+        val commands = context.services.find<CommandService>()
         for (id in jar.moduleIds.reversed()) {
             manager.disable(id) // no-op if already disabled
             manager.unregister(id)

@@ -10,6 +10,7 @@ repositories {
     maven("https://repo.extendedclip.com/releases/") // PlaceholderAPI
     maven("https://repo.xenondevs.xyz/releases") // InvUI — not published to Maven Central
     maven("https://repo.opencollab.dev/main/") // Floodgate / Cumulus
+    maven("https://repo.codemc.io/repository/maven-releases/") // PacketEvents
 }
 
 dependencies {
@@ -31,8 +32,12 @@ dependencies {
     // impl, which is only classloaded when the plugin is actually installed.
     compileOnly(libs.floodgate)
 
+    implementation(libs.packetevents)
+
     paperweight.paperDevBundle(libs.versions.paperDevBundle.get())
 }
+
+runPaper.folia.registerTask()
 
 tasks {
     build {
@@ -41,6 +46,12 @@ tasks {
 
     runServer {
         minecraftVersion(libs.versions.minecraft.get())
+        jvmArgs("-Xms2G", "-Xmx2G", "-Dcom.mojang.eula.agree=true")
+    }
+
+    named<xyz.jpenilla.runpaper.task.RunServer>("runFolia") {
+        minecraftVersion(libs.versions.minecraft.get())
+        runDirectory.set(layout.projectDirectory.dir("run-folia"))
         jvmArgs("-Xms2G", "-Xmx2G", "-Dcom.mojang.eula.agree=true")
     }
 

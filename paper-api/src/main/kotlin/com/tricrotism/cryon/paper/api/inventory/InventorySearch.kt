@@ -2,6 +2,7 @@ package com.tricrotism.cryon.paper.api.inventory
 
 import com.tricrotism.cryon.paper.api.extension.getTag
 import com.tricrotism.cryon.paper.api.extension.hasTag
+import com.tricrotism.cryon.paper.api.extension.pdcType
 import org.bukkit.NamespacedKey
 import org.bukkit.inventory.ItemStack
 import org.bukkit.persistence.PersistentDataType
@@ -10,7 +11,7 @@ import java.util.*
 /**
  * Searches every online player's inventory for items a predicate accepts, spreading the scan across
  * ticks so a whole network is never walked in a single one. The core registers an implementation
- * into the `ServiceRegistry`; a feature resolves it with `services.get(InventorySearch::class)`.
+ * into the `ServiceRegistry`; a feature resolves it with `services.get<InventorySearch>()`.
  *
  * The scan is asynchronous by nature: each player's inventory is read on that player's own region/
  * entity thread so it stays correct on Folia, so results are not available when [search] returns.
@@ -36,3 +37,10 @@ interface InventorySearch {
         onComplete: (List<Match>) -> Unit,
     ): Unit = search({ it.getTag(key, type) == value }, onComplete)
 }
+
+/** [InventorySearch.byTag] with the [PersistentDataType] inferred from [value], for primitive-backed tags. */
+inline fun <reified C : Any> InventorySearch.byTag(
+    key: NamespacedKey,
+    value: C,
+    noinline onComplete: (List<InventorySearch.Match>) -> Unit,
+): Unit = byTag(key, pdcType(C::class), value, onComplete)

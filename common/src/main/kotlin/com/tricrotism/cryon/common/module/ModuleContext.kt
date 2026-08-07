@@ -11,3 +11,9 @@ interface ModuleContext {
     val logger: Logger
     val services: ServiceRegistry
 }
+
+/** Resolve a required peer service: sugar for `services.get<T>()`. */
+inline fun <reified T : Any> ModuleContext.service(): T = services.get()
+
+/** Resolve an optional peer service, or null: sugar for `services.find<T>()`. */
+inline fun <reified T : Any> ModuleContext.serviceOrNull(): T? = services.find()

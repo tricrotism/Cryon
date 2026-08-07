@@ -3,7 +3,6 @@ package com.tricrotism.cryon.paper.api.menu
 import com.tricrotism.cryon.common.text.Mini
 import com.tricrotism.cryon.paper.api.bedrock.BedrockService
 import com.tricrotism.cryon.paper.api.extension.toItem
-import com.tricrotism.cryon.paper.api.menu.ConfirmMenu.open
 import com.tricrotism.cryon.paper.api.scheduler.Schedulers
 import net.kyori.adventure.text.Component
 import org.bukkit.Material
@@ -42,6 +41,9 @@ object ConfirmMenu {
      *
      * [title] is the window/form title, [question] the body — shown as the confirm button's lore on
      * Java (a chest menu has nowhere else to put it) and as the form content on Bedrock.
+     *
+     * Returns the [Dialog] so the opener can take it down again; a module **must** close its open
+     * dialogs in `onDisable`.
      */
     fun open(
         player: Player,
@@ -51,13 +53,52 @@ object ConfirmMenu {
         confirmLabel: Component = Mini.format("<green>Confirm"),
         cancelLabel: Component = Mini.format("<red>Cancel"),
         onResult: (Boolean) -> Unit,
-    ) {
+    ): Dialog {
+        val dialog = Dialog(player, bedrock)
         val scheduled = Schedulers.entity(player) {
+            if (dialog.isClosed) return@entity onResult(false)
             if (bedrock.sendModalForm(player, title, question, confirmLabel, cancelLabel, onResult)) return@entity
-            openWindow(player, title, question, confirmLabel, cancelLabel, onResult)
+            dialog.attach(openWindow(player, title, question, confirmLabel, cancelLabel, onResult))
         }
 
         if (scheduled == null) onResult(false)
+        return dialog
+    }
+
+    /**
+     * The opener's handle on a live dialog. [close] takes it down and answers false, exactly as the
+     * player dismissing it would, so the exactly-once guarantee holds either way.
+     *
+     * It exists because a dialog outlives the frame that opened it and holds that frame's code:
+     * InvUI keeps a strong reference to the `Item`s, the Bedrock form registry keeps the session, and
+     * both close over the result callback, which in a feature is the module's own class. A dialog left
+     * open through a module hot-unload therefore strands that module's classloader and leaves clicks
+     * dispatching into code that is gone. Track what you open and close it in `onDisable`.
+     *
+     * Not a `Window`: a Bedrock player never has one. Safe to close from any thread and at any point,
+     * including before the dialog appears, after it has been answered, or twice.
+     */
+    class Dialog internal constructor(private val player: Player, private val bedrock: BedrockService) : AutoCloseable {
+
+        @Volatile
+        private var window: Window? = null
+
+        @Volatile
+        internal var isClosed: Boolean = false
+            private set
+
+        internal fun attach(opened: Window) {
+            window = opened
+            if (isClosed) opened.close()
+        }
+
+        override fun close() {
+            isClosed = true
+            bedrock.closeForm(player)
+            val opened = window ?: return
+            window = null
+            Schedulers.entity(player) { opened.close() }
+        }
     }
 
     private fun openWindow(
@@ -67,7 +108,7 @@ object ConfirmMenu {
         confirmLabel: Component,
         cancelLabel: Component,
         onResult: (Boolean) -> Unit,
-    ) {
+    ): Window {
         val answered = AtomicBoolean()
 
         fun answer(result: Boolean, window: Window?) {
@@ -113,5 +154,6 @@ object ConfirmMenu {
             .build()
 
         window.open()
+        return window
     }
 }

@@ -75,6 +75,20 @@ class RedisKeyValueStore(config: RedisConfig) : KeyValueStore {
         ).toCompletableFuture().thenApply { it == 1L }
     }
 
+    override fun refresh(key: String, member: String, ttl: Duration): CompletableFuture<Boolean> {
+        val now = System.currentTimeMillis()
+        val holdMillis = ttl.toMillis()
+        return commands.eval<Long>(
+            REFRESH_SCRIPT,
+            ScriptOutputType.INTEGER,
+            arrayOf(key),
+            now.toString(),
+            (now + holdMillis).toString(),
+            member,
+            holdMillis.toString(),
+        ).toCompletableFuture().thenApply { it == 1L }
+    }
+
     override fun close() {
         connection.close()
         client.shutdown()
@@ -92,6 +106,14 @@ class RedisKeyValueStore(config: RedisConfig) : KeyValueStore {
             if (tonumber(ARGV[4]) + held) >= tonumber(ARGV[3]) then return 0 end
             redis.call('ZADD', KEYS[1], ARGV[2], ARGV[5])
             redis.call('PEXPIRE', KEYS[1], ARGV[6])
+            return 1
+        """.trimIndent()
+
+        private val REFRESH_SCRIPT = """
+            redis.call('ZREMRANGEBYSCORE', KEYS[1], 0, ARGV[1])
+            if redis.call('ZSCORE', KEYS[1], ARGV[3]) == false then return 0 end
+            redis.call('ZADD', KEYS[1], ARGV[2], ARGV[3])
+            redis.call('PEXPIRE', KEYS[1], ARGV[4])
             return 1
         """.trimIndent()
     }

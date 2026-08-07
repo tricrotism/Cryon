@@ -11,15 +11,17 @@ import org.bukkit.OfflinePlayer
  *
  * `%cryon_family%`, `%cryon_instance%`, `%cryon_mode%`, `%cryon_max_players%`.
  */
-class CorePlaceholders(private val identity: InstanceIdentity) : PlaceholderProvider {
+class CorePlaceholders(identity: InstanceIdentity) : PlaceholderProvider {
 
     override val identifier: String = "cryon"
 
-    override fun onRequest(player: OfflinePlayer?, params: String): String? = when (params.lowercase()) {
-        "family" -> identity.family
-        "instance" -> identity.instanceId
-        "mode" -> identity.mode.name.lowercase()
-        "max_players" -> identity.maxPlayers.toString()
-        else -> null
-    }
+    private val values: Map<String, String> = mapOf(
+        "family" to identity.family,
+        "instance" to identity.instanceId,
+        "mode" to identity.mode.name.lowercase(),
+        "max_players" to identity.maxPlayers.toString(),
+    )
+
+    override fun onRequest(player: OfflinePlayer?, params: String): String? =
+        values[params] ?: values[params.lowercase()]
 }

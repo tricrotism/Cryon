@@ -55,6 +55,7 @@ class CryonVelocityPlugin @Inject constructor(
     private var backendSync: BackendSynchronizer? = null
     private var transfers: TransferListener? = null
     private var maintenance: MaintenanceService? = null
+    private var maintenanceListener: MaintenanceListener? = null
     private var manager: ModuleManager? = null
     private var loader: VelocityModuleLoader? = null
 
@@ -83,6 +84,7 @@ class CryonVelocityPlugin @Inject constructor(
         loader?.close()
         backendSync?.stop()
         transfers?.stop()
+        maintenanceListener?.close()
         maintenance?.close()
         registry?.close()
         if (::messenger.isInitialized) messenger.close()
@@ -110,7 +112,7 @@ class CryonVelocityPlugin @Inject constructor(
         val langDir = File(dataDirectory.toFile(), "lang").apply { mkdirs() }
         messageService.addSource(DirectoryMessageSource(langDir))
         ownJar()?.let { jar -> LangScanner.fromJar(jar)?.let(messageService::addSource) }
-        services.register(MessageService::class, messageService)
+        services.register<MessageService>(messageService)
     }
 
     private fun ownJar(): File? = runCatching {
@@ -134,7 +136,7 @@ class CryonVelocityPlugin @Inject constructor(
                     logger,
                 )
                 database = db
-                services.register(Database::class, db)
+                services.register<Database>(db)
                 logger.info("Database connected (${dialect.id})")
             } catch (e: Exception) {
                 logger.error("Failed to initialize the database... continuing without it", e)
@@ -163,8 +165,8 @@ class CryonVelocityPlugin @Inject constructor(
             store = MemoryKeyValueStore()
             logger.info("State is in-process only (no redis) — this proxy sees a static backend list")
         }
-        services.register(Messenger::class, messenger)
-        services.register(KeyValueStore::class, store)
+        services.register<Messenger>(messenger)
+        services.register<KeyValueStore>(store)
     }
 
     /**
@@ -185,8 +187,8 @@ class CryonVelocityPlugin @Inject constructor(
         val reg = SharedServerRegistry(store, messenger, database, Duration.ofSeconds(heartbeat * 3), logger)
         reg.init()
         registry = reg
-        services.register(ServerRegistry::class, reg)
-        services.register(PlayerRouter::class, DefaultPlayerRouter(reg, messenger))
+        services.register<ServerRegistry>(reg)
+        services.register<PlayerRouter>(DefaultPlayerRouter(reg, messenger))
         backendSync = BackendSynchronizer(proxy, reg, logger).also { it.start() }
         transfers = TransferListener(proxy, messenger, logger).also { it.start() }
 
@@ -210,8 +212,10 @@ class CryonVelocityPlugin @Inject constructor(
             logger,
         ).also { it.init() }
         maintenance = service
-        services.register(MaintenanceService::class, service)
-        proxy.eventManager.register(this, MaintenanceListener(service, cfg.int("maintenance.ping-protocol", -1)))
+        services.register<MaintenanceService>(service)
+        val listener = MaintenanceListener(service, cfg.int("maintenance.ping-protocol", -1))
+        maintenanceListener = listener
+        proxy.eventManager.register(this, listener)
         AnnotationCommands.register(proxy.commandManager, MaintenanceCommand(service, proxy))
         logger.info("Maintenance mode available (/maintenance on|off [message], add|remove|list)")
     }
@@ -230,7 +234,7 @@ class CryonVelocityPlugin @Inject constructor(
         val apiDir = File(dataDir, "api").apply { mkdirs() }
         val modulesDir = File(dataDir, "modules").apply { mkdirs() }
         val mgr = ModuleManager(logger)
-        services.register(ModuleManager::class, mgr)
+        services.register<ModuleManager>(mgr)
         val ctx = VelocityContext(proxy, this, logger, services)
         val ldr = VelocityModuleLoader(mgr, logger, modulesDir, File(dataDir, ".module-cache"), javaClass.classLoader)
         ldr.loadSharedApi(apiDir)
@@ -238,6 +242,7 @@ class CryonVelocityPlugin @Inject constructor(
         ldr.registerAll()
         mgr.loadAll(ctx)
         mgr.enableAll()
+        mgr.postLoadAll()
         manager = mgr
         loader = ldr
     }

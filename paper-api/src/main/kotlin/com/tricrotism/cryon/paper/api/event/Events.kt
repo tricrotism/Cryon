@@ -15,7 +15,7 @@ import java.util.logging.Level
  * Functional event subscription — filter and handle without writing a `@EventHandler` class.
  *
  * ```
- * Events.subscribe(PlayerInteractEvent::class.java, EventPriority.HIGHEST)
+ * Events.subscribe<PlayerInteractEvent>(EventPriority.HIGHEST)
  *     .filter { it.hand == EquipmentSlot.HAND }
  *     .filter { it.item?.type == Material.TRIDENT }
  *     .handler { event -> /* … */ }
@@ -77,10 +77,16 @@ class SubscriptionBuilder<T : Event> internal constructor(
 class Subscription internal constructor(
     private val listener: Listener,
     private val active: AtomicBoolean,
-) {
+) : AutoCloseable {
     val isActive: Boolean get() = active.get()
 
     fun unregister() {
         if (active.compareAndSet(true, false)) HandlerList.unregisterAll(listener)
     }
+
+    /**
+     * Same as [unregister]. Exists so a subscription can go straight into `PaperModule.track(…)` and
+     * be torn down with the module, instead of every feature hand-rolling a list of these.
+     */
+    override fun close() = unregister()
 }

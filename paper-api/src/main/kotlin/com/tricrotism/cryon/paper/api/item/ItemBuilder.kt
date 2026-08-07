@@ -1,6 +1,7 @@
 package com.tricrotism.cryon.paper.api.item
 
 import com.tricrotism.cryon.common.text.Mini
+import com.tricrotism.cryon.paper.api.extension.pdcType
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.TextDecoration
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver
@@ -25,7 +26,7 @@ import org.bukkit.persistence.PersistentDataType
  *     .name("<scarlet>Frostbite")
  *     .lore("<off_white>Slows on hit.")
  *     .glow()
- *     .tag(myKey, PersistentDataType.INTEGER, 3)
+ *     .tag(myKey, 3)
  *     .build()
  *
  * val edited = existing.toBuilder().name("<gold>Renamed").build()
@@ -78,6 +79,10 @@ class ItemBuilder(item: ItemStack) {
 
     fun <P, C : Any> tag(key: NamespacedKey, type: PersistentDataType<P, C>, value: C): ItemBuilder =
         meta { persistentDataContainer.set(key, type, value) }
+
+    /** [tag] with the [PersistentDataType] inferred from [value], for primitive-backed tags. */
+    inline fun <reified C : Any> tag(key: NamespacedKey, value: C): ItemBuilder =
+        tag(key, pdcType(C::class), value)
 
     /** Escape hatch for anything not covered above. */
     fun meta(block: ItemMeta.() -> Unit): ItemBuilder = apply { workingMeta?.block() }

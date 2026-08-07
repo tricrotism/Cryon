@@ -8,6 +8,7 @@ import com.velocitypowered.api.event.Subscribe
 import com.velocitypowered.api.event.connection.LoginEvent
 import com.velocitypowered.api.event.proxy.ProxyPingEvent
 import com.velocitypowered.api.proxy.server.ServerPing
+import net.kyori.adventure.text.Component
 
 /**
  * Enforces [MaintenanceService] at the proxy edge. While maintenance is on, the server-list ping
@@ -23,13 +24,25 @@ import com.velocitypowered.api.proxy.server.ServerPing
 class MaintenanceListener(
     private val maintenance: MaintenanceService,
     private val pingProtocol: Int,
-) {
+) : AutoCloseable {
+
+    @Volatile
+    private var version: ServerPing.Version = ServerPing.Version(pingProtocol, maintenance.message())
+
+    @Volatile
+    private var description: Component = Mini.format(maintenance.message())
+
+    private val handle: AutoCloseable = maintenance.onChange {
+        version = ServerPing.Version(pingProtocol, maintenance.message())
+        description = Mini.format(maintenance.message())
+    }
+
     @Subscribe(order = PostOrder.LATE)
     fun onPing(event: ProxyPingEvent) {
         if (!maintenance.isEnabled()) return
         event.ping = event.ping.asBuilder()
-            .version(ServerPing.Version(pingProtocol, maintenance.message()))
-            .description(Mini.format(maintenance.message()))
+            .version(version)
+            .description(description)
             .build()
     }
 
@@ -38,8 +51,10 @@ class MaintenanceListener(
         if (!maintenance.isEnabled()) return
         val player = event.player
         if (player.hasPermission(BYPASS_PERMISSION) || maintenance.isAllowed(player.username)) return
-        event.result = ResultedEvent.ComponentResult.denied(Mini.format(maintenance.message()))
+        event.result = ResultedEvent.ComponentResult.denied(description)
     }
+
+    override fun close() = handle.close()
 
     private companion object {
         private const val BYPASS_PERMISSION = "cryon.maintenance.bypass"

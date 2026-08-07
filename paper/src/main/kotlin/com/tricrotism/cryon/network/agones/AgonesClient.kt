@@ -14,9 +14,14 @@ import java.util.concurrent.CompletableFuture
  * `AGONES_SDK_HTTP_PORT` and listens on `localhost`. Every call is best-effort: a failure is logged,
  * never thrown, so orchestration hiccups can't disturb gameplay.
  */
-class AgonesClient private constructor(private val baseUrl: String, private val logger: Logger) {
+class AgonesClient private constructor(
+    private val baseUrl: String,
+    private val logger: Logger,
+) : AutoCloseable {
 
     private val http: HttpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build()
+
+    override fun close() = http.close()
 
     fun ready(): CompletableFuture<Void> = post("/ready", EMPTY)
     fun health(): CompletableFuture<Void> = post("/health", EMPTY)

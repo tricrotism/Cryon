@@ -28,8 +28,9 @@ Modules in this repo (core + published API):
 Features live in **separate repos** (e.g. `Cryon-Modules/cryon-example-feature/`), `compileOnly` the
 API, and ship a thin jar dropped into `plugins/Cryon/modules/`.
 
-**No** DI container, codegen, or coroutine bridge yet. Menus are **InvUI**, shaded into `:paper`, with
-Bedrock clients served native Cumulus forms (see *Menus* and *Bedrock* under Utilities). **When you add
+**No** DI container, codegen, or coroutine bridge yet. Menus are **InvUI**, shaded into `:paper`, with Bedrock clients
+served native Cumulus forms (see *Menus* and *Bedrock* under Utilities); packets are **PacketEvents**, shaded the same
+way (see *Packets*). **When you add
 infrastructure (DI, KSP, Folia), document it here in the same pass** — keep this guide and the code in
 lockstep.
 
@@ -128,7 +129,7 @@ Admin surface (`cryon.admin`): `/cryon flags [scope]` — per-scope listing with
 name, or `player:<name>`; `/cryon flag status <feature> [player]` — the layered breakdown; `/cryon
 flag delete <feature>` (hardcoded-authorized account only); `/cryon flag reload`.
 
-In a module: resolve once (`services.get(FeatureFlags::class)`), `register("SHOP_SELL")` each ID in
+In a module: resolve once (`services.get<FeatureFlags>()`), `register("SHOP_SELL")` each ID in
 `onEnable` (persists its default and lists it), then gate every entry point **inside** the handler —
 not at wiring time — so a runtime toggle bites without re-enabling the module. Commands use the
 one-line guard `flags.guard(player, FLAG)` (acks the localized "⟨Feature⟩ is currently disabled."
@@ -219,7 +220,7 @@ Prefer the functional `Events` builder — no `Listener` class, returns a cancel
 filters run before the handler:
 
 ```kotlin
-Events.subscribe(PlayerInteractEvent::class.java, EventPriority.HIGHEST)  // or Events.subscribe<PlayerInteractEvent>(…)
+Events.subscribe<PlayerInteractEvent>(EventPriority.HIGHEST)  // or Events.subscribe(type, priority) with a Class
     .ignoreCancelled()
     .filter { it.hand == EquipmentSlot.HAND }
     .handler { event -> /* … */ }
@@ -242,6 +243,37 @@ type:
 - **No Bukkit API off the main thread** — entities, inventories, particles, `TextDisplay.text(…)`.
   Do async work, then hop back. Folia: use region/entity schedulers and document it.
 - **Locals that never escape a tick** can use plain `HashSet`/`ArrayList`.
+
+### Folia
+
+**`:paper` declares `folia-supported: true`, so there is no main thread.** Write every line as if two players' handlers
+run at the same instant, because on Folia they do — each player is owned by their region's thread, and only console
+commands and `Schedulers.global` land on the global region thread.
+
+- **A plain `HashMap`/`mutableListOf` field on a manager or `object` is a race** even with no
+  `async` anywhere in the file. This is the rule that costs people, not the scheduler ones.
+- **A snapshot is not a licence to touch.** `server.onlinePlayers` is safe to *read* from anywhere, but `sendMessage`
+  /inventory/`updateCommands` on each element needs a per-player
+  `Schedulers.entity(player) { … }` — they don't share a thread. `CommandRegistry.refresh` and
+  `DefaultInventorySearch` are the two worked examples.
+- **`Schedulers.global` never runs inline** — it always defers to a later tick. So a check-then-act whose mutation is
+  hopped reads state its own write hasn't applied yet; the burst races itself with no second actor involved. Perform the
+  authoritative mutation inline and branch on what it returns.
+- **Serializing writers does not protect readers.** The core funnels every `/cryon` hot-swap through the global region
+  thread (`ModuleCommands.onLoaderThread`) so `ModuleLoader`/`ModuleManager`/
+  `CommandRegistry` keep their single-writer invariant. The **runtime** Brigadier splice
+  (`CommandRegistry.liveRegister`) still mutates the live dispatcher's plain child maps while region threads may be
+  reading them — unavoidable, since Brigadier exposes no locking and Paper no API for it. It is a dev/admin path
+  measured in microseconds; boot-time registration goes through Paper's registrar and is unaffected.
+
+Two dependencies, both fine for what the core uses and both worth knowing:
+
+- **InvUI 2.2.0 is Folia-ready** — `AbstractWindow`'s tick task runs on `Player.getScheduler()`. Its one legacy
+  `Bukkit.getScheduler()` call is a fallback inside `AnimationImpl.start(…)` for a GUI with no viewer, so **InvUI
+  animations can throw on Folia**. Nothing in the core or the feature repos uses them; if you add one, drive it from a
+  viewer's entity scheduler.
+- **PlaceholderAPI** is a `softdepend` and makes no Folia guarantee of its own. `PapiBridge` is best-effort either way,
+  and `onRequest` must stay cheap, thread-safe, and free of Bukkit calls — which was already the rule.
 
 ---
 
@@ -332,9 +364,12 @@ Cache wiped on boot and disable.
   `postLoad()` — see **Pre-enable phase** and **Post-enable phase** below; almost nothing should
   override either.
 - **`ModuleContext`** (`:common`) — `logger` + `services`; Paper's `PaperModuleContext` adds `plugin`/`server`.
-- **`ServiceRegistry`** (`:common`) — intertwine seam. `register(Api::class, impl)` / `get<Api>()` /
-  `find<Api>()` (reified variants exist), keyed by interface.
-- **`PaperModule`** (`:paper-api`) — base exposing `plugin`/`server`/`services`/`logger`; `listen(listener)`
+- **`ServiceRegistry`** (`:common`) — intertwine seam. `register<Api>(impl)` / `get<Api>()` /
+  `find<Api>()` (KClass overloads exist; **always spell out the type argument on `register`** or the impl's concrete
+  class becomes the key), keyed by interface. `ModuleContext.service<T>()`/
+  `serviceOrNull<T>()` extensions cover code holding a context.
+- **`PaperModule`** (`:paper-api`) — base exposing `plugin`/`server`/`services`/`logger`, plus
+  `service<T>()`/`serviceOrNull<T>()` sugar for `services.get`/`find`; `listen(listener)`
   auto-unregisters on disable. Override `onLoad` (call `super` first), `onEnable`, `onDisable` (call `super`).
 
 **Isolation → intertwine only through shared interfaces.** Feature jars can't see each other's
@@ -345,7 +380,7 @@ classes. Expose behaviour by registering an impl of an **API interface in a shar
 contract type must load from the **shared parent**, not be bundled in either jar (two copies = two
 `Class` objects = `ClassCastException`). Ship the interfaces in a thin **`*-api` jar** in
 `plugins/Cryon/api/`; both provider and consumer depend on it **`compileOnly`**. Provider
-`services.register(FooService::class, impl)` in `onLoad`; consumer `services.find(FooService::class)`
+`services.register<FooService>(impl)` in `onLoad`; consumer `services.find<FooService>()`
 in `onEnable` (**`find`, not `get`** — the other repo may be absent). Reference: `cryon-visibility-api`
 consumed by `cryon-visibility`. Reserve `api/` for genuinely cross-repo contracts; a contract the core ships can live in
 `:paper-api`.
@@ -570,7 +605,11 @@ admin override always survives a restart.
 
 **Items (`…paper.api.item`/`…extension`):** `ItemBuilder` — name/lore (auto `<!i>`, palette-parsed),
 flags, glow, `enchant`, attributes, PDC `tag`s, `meta {}`. Extensions: `Material.toItem()`,
-`ItemStack.toBuilder()`/`modify {}`, `get/set/has/removeTag` (PDC), `isEmpty()`, `withAmount()`.
+`ItemStack.toBuilder()`/`modify {}`, `get/set/has/removeTag` (PDC), `isEmpty()`, `withAmount()`. The PDC helpers (and
+`ItemBuilder.tag`/`InventorySearch.byTag`) have reified forms that infer the
+`PersistentDataType` — `item.getTag<String>(key)`, `item.setTag(key, 5)`, `.tag(key, 3)` — covering the primitive-backed
+types plus `UUID` (16-byte array) and `PackedDecimal` (its packed long). Lists and custom types still pass the
+`PersistentDataType` explicitly (erasure hides a list's element type).
 
 **Menus — InvUI (`xyz.xenondevs.invui`, shaded into `:paper`).** `:paper` bundles `invui:2.2.0`
 **unrelocated**, exactly like kotlin-stdlib, so module classloaders resolve `xyz.xenondevs.invui.*`
@@ -604,7 +643,7 @@ any Paper bump that the shaded jar still has zero `craftbukkit/v1*` references a
 members still resolve against the new dev bundle.
 
 **Bedrock (`…paper.api.bedrock`).** `BedrockService` — `isBedrock`, `inputMode`, and `sendSimpleForm`/
-`sendModalForm`/`sendCustomForm`. **Always registered** (`services.get(BedrockService::class)`, or
+`sendModalForm`/`sendCustomForm`. **Always registered** (`services.get<BedrockService>()`, or
 `PaperModule.bedrock`): with Floodgate installed it is the real bridge, without it every player reports
 as Java and every send is a no-op, so features never branch on whether Geyser exists. All Floodgate and
 Cumulus types are confined to `:paper`'s `FloodgateBedrockService`, which is only classloaded after the
@@ -638,9 +677,36 @@ both sides.
 **Scheduling (`…paper.api.scheduler`):** `Schedulers` — `global`/`region(loc)`/`entity(e)`/`async`,
 each with `*Later`/`*Timer`. Pick the scope owning the data; no Bukkit API in `async`.
 
-**Events (`…paper.api.event`):** `Events.subscribe(Type::class.java, priority)` (or reified
-`subscribe<Type>()`)`.filter{…}.handler{…}` → cancellable `Subscription`; `expireAfter(n)` self-unregisters. Handler
+**Events (`…paper.api.event`):** `Events.subscribe<Type>(priority)` (or
+`subscribe(Type::class.java, priority)`)`.filter{…}.handler{…}` → cancellable `Subscription`; `expireAfter(n)`
+self-unregisters. Handler
 exceptions logged, not propagated.
+
+**Packets — PacketEvents (`…paper.api.packet`).** `Packets` is the `Events` builder's twin one layer down, for what
+Bukkit never surfaces. `Packets.onReceive(type…)` (client → server) and
+`Packets.onSend(type…)` (server → client) take `PacketType.Play.…` constants, then
+`.filter{…}.priority(…).expireAfter(n).handler{…}` → a `PacketSubscription` that is `AutoCloseable`, so it goes straight
+into `track(…)`. Cancel or rewrite in the handler (`event.isCancelled = true`); send with the
+`Player.sendPacket(wrapper)` extension.
+
+- **Handlers run on a Netty I/O thread — no Bukkit API, on Paper or Folia.** No entities, inventories, or `sendMessage`.
+  Read what you need off the event, then `Schedulers.entity(player) { … }`. Handlers are deliberately *not* hopped for
+  you: cancellation has to be decided before the packet moves on, and a scheduled handler always runs too late. Handler
+  exceptions are logged, never propagated — one escaping onto a Netty thread can drop the connection.
+- `:paper` shades **PacketEvents unrelocated**, exactly like InvUI and kotlin-stdlib, so module classloaders resolve
+  `com.github.retrooper.*` through the core. Features
+  `compileOnly("com.github.retrooper:packetevents-spigot:2.13.0")` (repo
+  `https://repo.codemc.io/repository/maven-releases/`) and **never shade it**. The consequence of unrelocated shading:
+  **do not also install the standalone PacketEvents plugin** — two copies both inject the pipeline.
+- The core owns the lifecycle in `Cryon.initPackets` (`setAPI` + `load()` in `onLoad`, `init()` in
+  `onEnable` ahead of the modules that subscribe, `terminate()` after they disable). Its API is a static singleton, so
+  **a module must never call `setAPI`/`load`/`init`**, the same rule as
+  `InvUI.setPlugin`. Best-effort like spark: a failure logs and leaves `Packets.isReady` false rather than taking the
+  server down.
+- One PacketEvents listener is registered per subscription (mirroring `Events`), and every listener is walked for every
+  packet. Fine for the handful of subscriptions a feature set needs; the ceiling and the upgrade path (one shared
+  listener per priority, dispatching through a type map) are marked in
+  `Packets.kt`. Version pinned in `libs.versions.toml`; 2.13.0 is the first release supporting 26.2.
 
 **PlaceholderAPI (`…paper.api.placeholder`, bridge in `…cryon.papi`).** Optional integration, structured
 like the module system itself: the **core** owns the single PAPI dependency and each module gets its
@@ -710,7 +776,13 @@ still comes from each handler's own `@Permission`. Same `onLoad` rule as `regist
   design — `SqlDialect.isMissingDatabase` matches only Postgres `3D000` and MySQL `1049`, so a
   refused connection, a bad password or a missing `CREATEDB` grant still fail with their own error
   instead of being papered over. One retry, then the original exception. The name is validated by
-  `SqlDialect.identifier` before it is concatenated into DDL, because DDL takes no bind parameters.
+  `SqlDialect.identifier` before it is concatenated into DDL, because DDL takes no bind parameters. **Write upserts
+  through `database.upsert(table, keys, columns, …params)` / `insertIfAbsent(…)`, never by hand** — params bind in
+  `columns` order. It is the one statement that is *not* portable: Postgres spells it `ON CONFLICT`, MySQL
+  `ON DUPLICATE KEY UPDATE`, and H2 accepts neither in any mode (`MODE=PostgreSQL` does not extend this far — its upsert
+  is `MERGE … KEY`, and leaving a row alone needs `MERGE … USING … WHEN NOT MATCHED`). So a hand-written upsert works on
+  exactly the backend it was written against and throws a syntax error on the other two, at runtime, inside a
+  fire-and-forget future with nothing waiting to notice. `SqlDialect.upsert`/`insertIfAbsent` own the three spellings.
 - `Messenger` — `publish`/`subscribe` + `request`/`handle`. String payloads. **Always registered**
   (`get<Messenger>()`): `RedisMessenger` when `redis.enabled`, else `LocalMessenger`.
 - `KeyValueStore` — async KV with TTL (`set`/`get`/`delete`/`keys`/`mget`/`tryHold`), for state that
@@ -776,7 +848,7 @@ server-scope) plus a per-process `instanceId`. Registered into the `ServiceRegis
   TTL** (a crashed pod's key expires; each node also runs a local reaper), synced over
   `cryon:registry:events` pub/sub into an in-memory replica so queries are non-blocking; the
   slow-changing family catalog lives in Postgres (optional). **Always registered** —
-  `services.get(ServerRegistry::class)`. Only ever populates its replica **from the pub/sub echo**, so
+  `services.get<ServerRegistry>()`. Only ever populates its replica **from the pub/sub echo**, so
   a `Messenger` that didn't echo to itself would leave it permanently empty.
 - `InstanceReporter` (`:paper`) — `register()` publishes this server as STARTING **before** modules
   load; `ready()` flips it to READY and starts heartbeating **after** they enable, so proxies never
@@ -786,8 +858,8 @@ server-scope) plus a per-process `instanceId`. Registered into the `ServiceRegis
 - `PlayerRouter` (`DefaultPlayerRouter`, in `:common`, runs on Paper and Velocity) — `route(uuid, family)`
   picks the least-loaded candidates and **reserves a slot atomically** (`ServerRegistry.tryReserve` →
   `KeyValueStore.tryHold`, a Lua/zset hold on Redis) before broadcasting on `cryon:routing:transfer`, so
-  two proxies can't overfill one shard. The owning proxy connects the player, others no-op. A Paper
-  feature never needs a proxy handle: `services.find(PlayerRouter::class)?.route(...)`.
+  two proxies can't overfill one shard. The owning proxy connects the player, others no-op. A Paper feature never needs
+  a proxy handle: `services.find<PlayerRouter>()?.route(...)`.
 - On Velocity, `BackendSynchronizer` registers/unregisters proxy servers off registry events and
   `TransferListener` performs the connects. Ephemeral minigame families fall back to the `Matchmaker`
   seam (interface only until a matchmaker module ships). `config.yml` adds a `network.*` block;
@@ -864,7 +936,12 @@ of populated shards on node upgrades. Add infrastructure **and document it here 
 | `bedrock.sendSimpleForm(...)` first, InvUI window as the fallback | Assuming a Bedrock player can read a chest menu's layout       |
 | Close your module's windows in `onDisable`                        | Leaving them open (leaks the module classloader on hot-unload) |
 | `Schedulers.async/global/region/entity`                           | raw `Bukkit.getScheduler()`                                    |
+| `Schedulers.entity(p)` per player when iterating online players   | Touching each `onlinePlayers` element from one thread          |
+| Mutate authoritatively inline, branch on the result               | Guard read + hopped mutation (`global` never runs inline)      |
+| `timer`/`asyncTimer`/`track(…)` on `PaperModule`                  | Raw `Schedulers.*Timer` in a module with no cancel on disable  |
 | `Events.subscribe(...).filter{}.handler{}`                        | ad-hoc `Listener` plumbing for one handler                     |
+| `Packets.onReceive/onSend(...).handler{}` + `track(…)`            | Registering a raw PacketEvents listener with no teardown       |
+| Hop out of a packet handler before any Bukkit call                | Touching entities/inventories on the Netty thread              |
 | `PackedDecimal` for values that grow past ~1e15                   | `BigDecimal` on hot incremental-math paths                     |
 | `@Command`/`@Subcommand` + `AnnotationCommands.register`          | `plugin.yml commands:` / `CommandMap` / Cloud (broken on 26.2) |
 | `PlaceholderProvider` + `registerPlaceholders(...)`               | Extending `PlaceholderExpansion` in a module (can't see PAPI)  |
@@ -876,6 +953,7 @@ of populated shards on node upgrades. Add infrastructure **and document it here 
 | `find<PlayerRouter>()` — null means nowhere to route              | Assuming a route is always possible                            |
 | `bestInstance(family)`                                            | Assuming a fixed server list; picking a full/STARTING instance |
 | Consume the DB/Redis `CompletableFuture` async                    | `.get()` on a DB future on the main thread                     |
+| `database.upsert(table, keys, columns, …)`                        | Hand-written `ON CONFLICT` / `ON DUPLICATE KEY` SQL            |
 | Play a `Sound.*` on player-facing actions                         | Silent state changes / redeems                                 |
 | `inventory.addItem` + handle overflow deliberately                | `dropItemNaturally` as the "didn't fit" path                   |
 | Explicit types; `val` over `var`                                  | Java-isms; needless `var`; gratuitous `!!`                     |

@@ -3,9 +3,9 @@ package com.tricrotism.cryon.common.locale
 import java.util.*
 
 /**
- * A provider of MiniMessage templates keyed by `(locale, key)`. A module registers one (or more)
- * with the [MessageService] in `onLoad` to contribute its messages. Implementations must be
- * thread-safe for reads.
+ * A provider of MiniMessage templates keyed by `(locale, key)`. A module registers one (or more) with
+ * the [MessageService] in `onEnable` and removes it on disable — see [MessageService] for why that
+ * pairing is not optional. Implementations must be thread-safe for reads.
  */
 interface MessageSource {
 

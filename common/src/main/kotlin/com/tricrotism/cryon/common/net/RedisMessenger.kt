@@ -38,15 +38,13 @@ class RedisMessenger(config: RedisConfig) : Messenger {
         publishConn.async().publish(channel, message).toCompletableFuture().thenAccept { }
 
     override fun subscribe(channel: String, handler: (String) -> Unit): MessengerSubscription {
-        val list = handlers.computeIfAbsent(channel) {
-            pubSubConn.async().subscribe(channel)
-            CopyOnWriteArrayList()
-        }
+        val fresh = CopyOnWriteArrayList<(String) -> Unit>()
+        val list = handlers.computeIfAbsent(channel) { fresh }
+        if (list === fresh) pubSubConn.async().subscribe(channel)
         list.add(handler)
         return MessengerSubscription {
             list.remove(handler)
-            if (list.isEmpty()) {
-                handlers.remove(channel)
+            if (list.isEmpty() && handlers.remove(channel, list)) {
                 pubSubConn.async().unsubscribe(channel)
             }
         }

@@ -10,13 +10,15 @@ import com.tricrotism.cryon.module.ModuleLoader
 import com.tricrotism.cryon.network.NetworkStatus
 import com.tricrotism.cryon.paper.api.command.*
 import com.tricrotism.cryon.paper.api.placeholder.PlaceholderService
+import com.tricrotism.cryon.paper.api.scheduler.Schedulers
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.event.ClickEvent
 import net.kyori.adventure.text.event.HoverEvent
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder
 import org.bukkit.Bukkit
 import org.bukkit.command.CommandSender
-import org.bukkit.entity.Player
+import org.bukkit.command.ConsoleCommandSender
+import org.bukkit.command.RemoteConsoleCommandSender
 import java.io.File
 import java.util.*
 
@@ -181,14 +183,14 @@ class ModuleCommands(
         toggle(sender, id, enable = false)
 
     @Subcommand("reload")
-    fun reloadModule(sender: CommandSender, @Arg("id", suggests = "moduleIds") id: String) {
+    fun reloadModule(sender: CommandSender, @Arg("id", suggests = "moduleIds") id: String) = onLoaderThread {
         if (!modules.has(id)) {
             sender.sendMessage(CommonMessages.error(notFound(id)))
-            return
+            return@onLoaderThread
         }
         if (modules.reload(id)) {
             sender.sendMessage(CommonMessages.success(line("<off_white>Reloaded <highlight><id></highlight>.", id)))
-            resyncCommands(sender)
+            commands.refresh()
         } else {
             sender.sendMessage(
                 CommonMessages.error(
@@ -202,7 +204,7 @@ class ModuleCommands(
     }
 
     @Subcommand("load")
-    fun load(sender: CommandSender, @Arg("jar", suggests = "loadableJars") jar: String) {
+    fun load(sender: CommandSender, @Arg("jar", suggests = "loadableJars") jar: String) = onLoaderThread {
         val file = File(loader.modulesDir, jar)
         if (!file.isFile || !jar.endsWith(".jar")) {
             sender.sendMessage(
@@ -213,7 +215,7 @@ class ModuleCommands(
                     )
                 )
             )
-            return
+            return@onLoaderThread
         }
         val enabled = loader.loadJar(file)
         if (enabled.isEmpty()) {
@@ -225,7 +227,7 @@ class ModuleCommands(
                     )
                 )
             )
-            return
+            return@onLoaderThread
         }
         sender.sendMessage(
             CommonMessages.success(
@@ -236,14 +238,13 @@ class ModuleCommands(
                 )
             )
         )
-        resyncCommands(sender)
     }
 
     @Subcommand("unload")
-    fun unload(sender: CommandSender, @Arg("id", suggests = "moduleIds") id: String) {
+    fun unload(sender: CommandSender, @Arg("id", suggests = "moduleIds") id: String) = onLoaderThread {
         if (!modules.has(id)) {
             sender.sendMessage(CommonMessages.error(notFound(id)))
-            return
+            return@onLoaderThread
         }
         val removed = loader.unloadModule(id)
         if (removed == null) {
@@ -255,7 +256,7 @@ class ModuleCommands(
                     )
                 )
             )
-            return
+            return@onLoaderThread
         }
         sender.sendMessage(
             CommonMessages.success(
@@ -265,11 +266,10 @@ class ModuleCommands(
                 )
             )
         )
-        resyncCommands(sender)
     }
 
     @Subcommand("reload-api")
-    fun reloadApi(sender: CommandSender) {
+    fun reloadApi(sender: CommandSender) = onLoaderThread {
         val enabled = loader.reloadApi()
         sender.sendMessage(
             CommonMessages.success(
@@ -279,15 +279,14 @@ class ModuleCommands(
                 )
             )
         )
-        resyncCommands(sender)
     }
 
     @Subcommand("scan")
-    fun scan(sender: CommandSender) {
+    fun scan(sender: CommandSender) = onLoaderThread {
         val enabled = loader.loadNew()
         if (enabled.isEmpty()) {
             sender.sendMessage(CommonMessages.info(Mini.format("<off_white>No new feature jars to load.")))
-            return
+            return@onLoaderThread
         }
         sender.sendMessage(
             CommonMessages.success(
@@ -297,7 +296,6 @@ class ModuleCommands(
                 )
             )
         )
-        resyncCommands(sender)
     }
 
     @Subcommand("flags")
@@ -394,8 +392,8 @@ class ModuleCommands(
 
     @Subcommand("flag", "delete")
     fun flagDelete(sender: CommandSender, @Arg("feature", suggests = "flagIds") feature: String) {
-        if ((sender as? Player)?.uniqueId != DELETE_AUTHORIZED) {
-            sender.sendMessage(CommonMessages.error(Mini.format("<off_white>You are not authorised to delete feature flags.")))
+        if (sender !is ConsoleCommandSender && sender !is RemoteConsoleCommandSender) {
+            sender.sendMessage(CommonMessages.error(Mini.format("<off_white>Feature flags can only be deleted from the server console.")))
             return
         }
         flags.delete(feature)
@@ -483,17 +481,17 @@ class ModuleCommands(
         }
     }
 
-    private fun toggle(sender: CommandSender, id: String, enable: Boolean) {
+    private fun toggle(sender: CommandSender, id: String, enable: Boolean) = onLoaderThread {
         if (!modules.has(id)) {
             sender.sendMessage(CommonMessages.error(notFound(id)))
-            return
+            return@onLoaderThread
         }
         val verb = if (enable) "enabled" else "disabled"
         val changed = if (enable) modules.enable(id) else modules.disable(id)
         if (changed && enable) modules.postLoad(id)
         if (changed) {
             sender.sendMessage(CommonMessages.success(line("<off_white>Module <highlight><id></highlight> $verb.", id)))
-            resyncCommands(sender)
+            commands.refresh()
         } else {
             sender.sendMessage(
                 CommonMessages.warn(
@@ -646,8 +644,7 @@ class ModuleCommands(
     /** The scope argument that reaches [scope] from a command, or null for an unresolvable player scope. */
     private fun commandScope(scope: String): String? {
         if (!scope.startsWith(FeatureFlags.PLAYER_SCOPE_PREFIX)) return scope
-        val uuid = runCatching { UUID.fromString(scope.substring(FeatureFlags.PLAYER_SCOPE_PREFIX.length)) }.getOrNull()
-        val name = uuid?.let { Bukkit.getOfflinePlayer(it).name } ?: return null
+        val name = playerName(scope.substring(FeatureFlags.PLAYER_SCOPE_PREFIX.length)) ?: return null
         return FeatureFlags.PLAYER_SCOPE_PREFIX + name
     }
 
@@ -655,8 +652,21 @@ class ModuleCommands(
     private fun scopeLabel(scope: String): String {
         if (!scope.startsWith(FeatureFlags.PLAYER_SCOPE_PREFIX)) return scope
         val raw = scope.substring(FeatureFlags.PLAYER_SCOPE_PREFIX.length)
-        val name = runCatching { UUID.fromString(raw) }.getOrNull()?.let { Bukkit.getOfflinePlayer(it).name }
-        return "player ${name ?: raw}"
+        return "player ${playerName(raw) ?: raw}"
+    }
+
+    /**
+     * The name behind a `player:` scope, or null if this server has never seen them.
+     *
+     * Never `getOfflinePlayer(uuid).name`, which reads like a getter but loads and decompresses that
+     * player's `.dat` off disk: `/cryon flags` calls this once per listed row, on the main thread. The
+     * online player answers for free, and the server's own profile cache answers for everyone else.
+     */
+    private fun playerName(rawUuid: String): String? {
+        val uuid = runCatching { UUID.fromString(rawUuid) }.getOrNull() ?: return null
+        Bukkit.getPlayer(uuid)?.let { return it.name }
+        val profile = Bukkit.createProfile(uuid)
+        return if (profile.completeFromCache()) profile.name else null
     }
 
     /** A bracketed, palette-coloured label that runs [command] on click and shows [hover] on mouse-over. */
@@ -672,9 +682,22 @@ class ModuleCommands(
             Placeholder.unparsed("id", id),
         )
 
-    /** Push refreshed command trees so a toggled module's commands also appear/vanish in tab-complete. */
-    private fun resyncCommands(sender: CommandSender) {
-        sender.server.onlinePlayers.forEach { it.updateCommands() }
+    /**
+     * Run a module-graph mutation on the one global region thread.
+     *
+     * [ModuleLoader], [ModuleManager] and the command registry all hold plain maps and document
+     * themselves as main-thread only. That is true on Paper, where commands dispatch on the main
+     * thread — but not on Folia, where a player's command runs on their own region thread while the
+     * hot-reload watcher is already dispatching through the global scheduler. Funnelling every
+     * mutating entry point through one lane keeps the invariant true on both, without making four
+     * maps concurrent for a path that runs a handful of times a session.
+     *
+     * Note this moves the command's feedback off the sender's own thread. That is fine — sending to a
+     * player is one of the few APIs Folia allows from anywhere, because it only queues a packet — but
+     * it is the reason nothing else in here may touch the sender beyond messaging them.
+     */
+    private fun onLoaderThread(body: () -> Unit) {
+        Schedulers.global { body() }
     }
 
     private fun line(template: String, id: String): Component = Mini.format(template, Placeholder.unparsed("id", id))
@@ -690,10 +713,5 @@ class ModuleCommands(
             ModuleState.REGISTERED -> "<gold>"
         }
         return Mini.format("$color${state.name}")
-    }
-
-    private companion object {
-        /** The only account allowed to permanently delete a flag from every scope. Mainly debug */
-        private val DELETE_AUTHORIZED: UUID = UUID.fromString("9cce3a11-63e5-4ece-8ba6-cf6c8b5557c8")
     }
 }

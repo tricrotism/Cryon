@@ -10,6 +10,7 @@ import java.sql.SQLException
 import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -20,6 +21,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * core catches and degrades gracefully).
  */
 class SqlDatabase(config: DatabaseConfig) : Database {
+
+    override val dialect: SqlDialect = config.dialect
 
     private val dataSource = HikariDataSource(HikariConfig().apply {
         jdbcUrl = config.dialect.jdbcUrl(config)
@@ -59,8 +62,24 @@ class SqlDatabase(config: DatabaseConfig) : Database {
             }
         }, executor)
 
+    /**
+     * Drain the query threads before the pool goes away.
+     *
+     * `shutdown()` only stops new submissions; it does not wait. Closing the [dataSource] straight
+     * after would evict connections out from under statements still executing, which on a normal
+     * shutdown is every write issued during teardown: module `onDisable` state, the last flag and
+     * locale updates, the registry deregister. Those futures are fire-and-forget, so the failure
+     * would also be silent. Wait the drain out, then force what is left rather than letting one
+     * wedged statement hold the server up forever.
+     */
     override fun close() {
         executor.shutdown()
+        try {
+            if (!executor.awaitTermination(DRAIN_TIMEOUT_SECONDS, TimeUnit.SECONDS)) executor.shutdownNow()
+        } catch (e: InterruptedException) {
+            executor.shutdownNow()
+            Thread.currentThread().interrupt()
+        }
         dataSource.close()
     }
 
@@ -69,6 +88,9 @@ class SqlDatabase(config: DatabaseConfig) : Database {
     }
 
     companion object {
+
+        /** How long [close] waits for in-flight statements before forcing the query threads down. */
+        private const val DRAIN_TIMEOUT_SECONDS = 5L
 
         /**
          * Connect, creating the database first if that is the only thing wrong.

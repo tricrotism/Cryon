@@ -34,6 +34,23 @@ interface PlayerHandoff {
     /**
      * Register [flush] under [id] (a short name of what it saves, used in logs). Returns a handle
      * that unregisters it; `PaperModule.onFlush` closes that for you on disable.
+     *
+     * Flushes at the same [stage] run together; lower stages finish before higher ones start. Almost
+     * everything belongs in the default stage, because almost every feature owns the state it writes
+     * and can save it without anyone's help. [BEFORE_OWNERS] exists for the feature that does not:
+     * one whose "save" is really a *hand-back* into another feature's memory, which that feature then
+     * writes to disk. A battle is the case — the live HP lives in the battle's own wrappers and has to
+     * land in Storage before Storage saves, and running the two together is a coin flip over whether
+     * the hand-back beats the snapshot.
      */
-    fun onFlush(id: String, flush: (UUID) -> CompletableFuture<Void>): AutoCloseable
+    fun onFlush(id: String, stage: Int = DEFAULT_STAGE, flush: (UUID) -> CompletableFuture<Void>): AutoCloseable
+
+    companion object {
+
+        /** For a flush that hands state back to another feature, so it lands before that feature saves. */
+        const val BEFORE_OWNERS: Int = -100
+
+        /** Where a feature that owns what it writes belongs. */
+        const val DEFAULT_STAGE: Int = 0
+    }
 }

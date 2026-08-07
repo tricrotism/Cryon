@@ -146,4 +146,16 @@ interface BedrockService {
         onSubmit: (FormResponse) -> Unit,
         onClose: () -> Unit = {},
     ): Boolean
+
+    /**
+     * Take down whatever form [player] currently has open, settling it as a dismissal. True if there
+     * was one. The one-callback guarantee is unchanged: this is the same outcome as the player closing
+     * it themselves, and a form already answered stays answered.
+     *
+     * The sender needs this to let go. Nothing else can see a Cumulus form (not even
+     * `openInventory`), so a feature holding state behind a callback has no other way to release it
+     * early, and a module being unloaded with a form on screen would otherwise leave that callback,
+     * and its classloader, reachable from the form registry.
+     */
+    fun closeForm(player: Player): Boolean
 }

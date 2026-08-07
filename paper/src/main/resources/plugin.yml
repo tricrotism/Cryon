@@ -5,6 +5,8 @@ main: com.tricrotism.cryon.Cryon
 api-version: '26.2'
 load: POSTWORLD
 
+folia-supported: true
+
 authors: [ tricrotism ]
 website: https://tricrotism.com/
 

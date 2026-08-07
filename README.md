@@ -93,7 +93,7 @@ set is [`Cryon-Modules`](../Cryon-Modules); the shape is:
 class VisibilityModule : PaperModule() {
     override fun onLoad(context: PaperModuleContext) {
         super.onLoad(context)
-        services.register(VisibilityService::class, engine)   // expose behaviour
+        services.register<VisibilityService>(engine)          // expose behaviour
         registerCommands(VanishCommands(engine))              // gated on isEnabled()
     }
     override fun onEnable() { /* consume peer services here */ }

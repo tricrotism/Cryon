@@ -44,6 +44,14 @@ class ServiceRegistry(private val logger: Logger) {
         return removed
     }
 
+    /**
+     * Drop every service. For plugin disable only: [register] refuses a duplicate type, so a registry
+     * left populated makes the next `onEnable` fail on its first `register` call rather than come up.
+     */
+    fun clear() {
+        services.clear()
+    }
+
     /** The service for [type], or throw — a missing required service is a wiring bug. */
     fun <T : Any> get(type: KClass<T>): T {
         val service = services[type] ?: error("No service registered for ${type.simpleName}")
@@ -57,6 +65,7 @@ class ServiceRegistry(private val logger: Logger) {
         return services[type] as T?
     }
 
+    /** Always spell out the type argument (`register<Api>(impl)`): letting it infer keys the entry by the concrete class, not the API interface. */
     inline fun <reified T : Any> register(service: T) = register(T::class, service)
     inline fun <reified T : Any> get(): T = get(T::class)
     inline fun <reified T : Any> find(): T? = find(T::class)

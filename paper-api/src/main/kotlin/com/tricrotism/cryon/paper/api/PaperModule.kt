@@ -6,13 +6,18 @@ import com.tricrotism.cryon.paper.api.bedrock.BedrockService
 import com.tricrotism.cryon.paper.api.command.CommandService
 import com.tricrotism.cryon.paper.api.placeholder.PlaceholderProvider
 import com.tricrotism.cryon.paper.api.placeholder.PlaceholderService
+import com.tricrotism.cryon.paper.api.scheduler.Schedulers
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask
+import org.bukkit.Location
 import org.bukkit.Server
+import org.bukkit.entity.Entity
 import org.bukkit.event.HandlerList
 import org.bukkit.event.Listener
 import org.bukkit.plugin.Plugin
 import org.slf4j.Logger
 import java.util.*
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 
 /**
  * Base class for Paper-side feature modules. Captures the [PaperModuleContext] in [onLoad] and
@@ -30,6 +35,8 @@ abstract class PaperModule : Module {
     private val listeners = ArrayList<Listener>()
     private val flushes = ArrayList<AutoCloseable>()
     private val placeholders = ArrayList<AutoCloseable>()
+    private val tasks = ArrayList<ScheduledTask>()
+    private val closeables = ArrayList<AutoCloseable>()
 
     protected val context: PaperModuleContext get() = moduleContext
     protected val plugin: Plugin get() = moduleContext.plugin
@@ -41,7 +48,13 @@ abstract class PaperModule : Module {
      * Bedrock-client support. Always present, with no Floodgate it reports every player as Java and
      * sends nothing, so menus can ask without branching on whether Geyser is installed.
      */
-    protected val bedrock: BedrockService get() = services.get(BedrockService::class)
+    protected val bedrock: BedrockService get() = services.get<BedrockService>()
+
+    /** Resolve a required peer service: sugar for `services.get<T>()`. */
+    protected inline fun <reified T : Any> service(): T = services.get()
+
+    /** Resolve an optional peer service, or null: sugar for `services.find<T>()`. */
+    protected inline fun <reified T : Any> serviceOrNull(): T? = services.find()
 
     override fun onLoad(context: ModuleContext) {
         moduleContext = context as PaperModuleContext
@@ -53,9 +66,73 @@ abstract class PaperModule : Module {
         listeners.add(listener)
     }
 
+    /**
+     * Schedule a repeating task that is automatically cancelled when this module disables.
+     *
+     * Prefer these over calling [Schedulers] directly for anything repeating. Cryon's tasks are owned
+     * by the **core** plugin, not by your jar, so Bukkit's own per-plugin cancellation never fires for
+     * a module: a timer still running after `/cryon unload` keeps firing into a closed classloader for
+     * the rest of the server's uptime, and stacks another copy on every hot-reload. Scheduling
+     * directly is fine as long as you cancel the handle yourself in [onDisable].
+     */
+    protected fun globalTimer(delayTicks: Long, periodTicks: Long, task: (ScheduledTask) -> Unit): ScheduledTask =
+        Schedulers.globalTimer(delayTicks, periodTicks, task).also { tasks += it }
+
+    /** Repeating async task, canceled on disable. See [globalTimer]. */
+    protected fun asyncTimer(
+        initialDelay: Long,
+        period: Long,
+        unit: TimeUnit,
+        task: (ScheduledTask) -> Unit,
+    ): ScheduledTask = Schedulers.asyncTimer(initialDelay, period, unit, task).also { tasks += it }
+
+    /** Repeating task on [location]'s region, canceled on disable. See [globalTimer]. */
+    protected fun regionTimer(
+        location: Location,
+        delayTicks: Long,
+        periodTicks: Long,
+        task: (ScheduledTask) -> Unit,
+    ): ScheduledTask = Schedulers.regionTimer(location, delayTicks, periodTicks, task).also { tasks += it }
+
+    /**
+     * Repeating task following [entity], canceled on disable. Null when the entity is already gone.
+     *
+     * The entity scheduler drops the task when its entity is removed, which covers a player logging
+     * out — but not this module unloading while they are still online, which is what [globalTimer]
+     * describes.
+     */
+    protected fun entityTimer(
+        entity: Entity,
+        delayTicks: Long,
+        periodTicks: Long,
+        retired: Runnable? = null,
+        task: (ScheduledTask) -> Unit,
+    ): ScheduledTask? =
+        Schedulers.entityTimer(entity, delayTicks, periodTicks, retired, task)?.also { tasks += it }
+
+    /**
+     * Register a resource closed automatically when this module disables — an `Events` `Subscription`,
+     * a `ServerRegistry.onChange` or `MaintenanceService.onChange` handle, a client, anything else that
+     * lives as long as the module.
+     *
+     * ```
+     * track(Events.subscribe<PlayerDeathEvent>().handler { … })
+     * ```
+     *
+     * These are the handles that strand a classloader when forgotten: each parks a lambda defined by
+     * *your* jar inside an object owned by the core, which outlives your unload. Closed in reverse
+     * registration order, after listeners and tasks are already down.
+     *
+     * **For module-lifetime resources only.** Nothing removes an entry before disable, so tracking a
+     * per-use object — a `ConfirmMenu.Dialog` per click, a window per open — grows this list for the
+     * module's whole life. Those belong in your own collection, keyed by player and pruned when the
+     * dialog resolves; close what is left of it in [onDisable].
+     */
+    protected fun <T : AutoCloseable> track(closeable: T): T = closeable.also { closeables += it }
+
     /** Whether this module is currently in the `ENABLED` state, per the [ModuleManager]. */
     protected fun isEnabled(): Boolean =
-        services.find(ModuleManager::class)?.state(id) == ModuleState.ENABLED
+        services.find<ModuleManager>()?.state(id) == ModuleState.ENABLED
 
     /**
      * Register `@Command` [handlers]. **Call from [onLoad].** The handlers are contributed to the
@@ -68,7 +145,7 @@ abstract class PaperModule : Module {
      * commands appear immediately with no server restart.
      */
     protected fun registerCommands(vararg handlers: Any) {
-        val commands = services.find(CommandService::class)
+        val commands = services.find<CommandService>()
         if (commands == null) {
             logger.error("CommandService unavailable! Commands for module '$id' will not register")
             return
@@ -85,7 +162,7 @@ abstract class PaperModule : Module {
      * root and evict every other contributor.
      */
     protected fun registerBranchCommands(vararg handlers: Any) {
-        val commands = services.find(CommandService::class)
+        val commands = services.find<CommandService>()
         if (commands == null) {
             logger.error("CommandService unavailable! Branch commands for module '$id' will not register")
             return
@@ -101,13 +178,17 @@ abstract class PaperModule : Module {
      * [flush] runs off the main thread, must not touch the Bukkit API, and must be safe to call while
      * the player is still online. Register from [onEnable].
      */
-    protected fun onFlush(name: String, flush: (UUID) -> CompletableFuture<Void>) {
-        val handoff = services.find(PlayerHandoff::class)
+    protected fun onFlush(
+        name: String,
+        stage: Int = PlayerHandoff.DEFAULT_STAGE,
+        flush: (UUID) -> CompletableFuture<Void>,
+    ) {
+        val handoff = services.find<PlayerHandoff>()
         if (handoff == null) {
             logger.error("PlayerHandoff unavailable! '$name' for module $id will never flush")
             return
         }
-        flushes += handoff.onFlush("$id/$name", flush) // scoped, so two modules may both flush "balances"
+        flushes += handoff.onFlush("$id/$name", stage, flush)
     }
 
     /**
@@ -116,7 +197,7 @@ abstract class PaperModule : Module {
      * [onEnable]; the callback runs on PlaceholderAPI's thread, so keep it cheap and thread-safe.
      */
     protected fun registerPlaceholders(provider: PlaceholderProvider) {
-        val placeholderService = services.find(PlaceholderService::class)
+        val placeholderService = services.find<PlaceholderService>()
         if (placeholderService == null) {
             logger.warn("PlaceholderService unavailable! Placeholders for module '$id' will not register")
             return
@@ -125,8 +206,12 @@ abstract class PaperModule : Module {
     }
 
     override fun onDisable() {
+        tasks.forEach { runCatching { it.cancel() } }
+        tasks.clear()
         listeners.forEach(HandlerList::unregisterAll)
         listeners.clear()
+        closeables.asReversed().forEach { runCatching { it.close() } }
+        closeables.clear()
         flushes.forEach { it.close() }
         flushes.clear()
         placeholders.forEach { it.close() }

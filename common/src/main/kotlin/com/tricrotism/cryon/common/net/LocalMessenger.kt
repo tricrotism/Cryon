@@ -50,7 +50,7 @@ class LocalMessenger(private val logger: Logger) : Messenger {
         list.add(handler)
         return MessengerSubscription {
             list.remove(handler)
-            if (list.isEmpty()) handlers.remove(channel)
+            if (list.isEmpty()) handlers.remove(channel, list)
         }
     }
 
