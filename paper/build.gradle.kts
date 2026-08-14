@@ -7,29 +7,20 @@ plugins {
 
 repositories {
     maven("https://repo.papermc.io/repository/maven-public/")
-    maven("https://repo.extendedclip.com/releases/") // PlaceholderAPI
-    maven("https://repo.xenondevs.xyz/releases") // InvUI — not published to Maven Central
-    maven("https://repo.opencollab.dev/main/") // Floodgate / Cumulus
-    maven("https://repo.codemc.io/repository/maven-releases/") // PacketEvents
+    maven("https://repo.extendedclip.com/releases/")
+    maven("https://repo.xenondevs.xyz/releases")
+    maven("https://repo.opencollab.dev/main/")
+    maven("https://repo.codemc.io/repository/maven-releases/")
 }
 
 dependencies {
     compileOnly(libs.slf4j)
     compileOnly(libs.placeholderapi)
+    compileOnly(libs.caffeine)
 
     implementation(project(":common"))
     implementation(project(":paper-api"))
-
-    // InvUI — the menu framework, shaded UNRELOCATED so module classloaders resolve
-    // xyz.xenondevs.invui.* through this jar, exactly like kotlin-stdlib.
-    //
-    // 2.x is a single mojang-mapped jar with no per-version NMS bridge, so unlike the 1.x line it
-    // needs no relocation and no bridge selection. Verified against the 26.2 dev bundle: zero
-    // versioned-CraftBukkit references, and every NMS member it touches resolves.
     implementation(libs.invui)
-
-    // Floodgate — Bedrock detection and Cumulus forms. compileOnly and confined to the BedrockService
-    // impl, which is only classloaded when the plugin is actually installed.
     compileOnly(libs.floodgate)
 
     implementation(libs.packetevents)

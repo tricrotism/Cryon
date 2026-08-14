@@ -10,7 +10,7 @@ import java.util.concurrent.TimeUnit
  * has registered, keeps it healthy with periodic pings, and mirrors the live player count into an
  * annotation so allocation/autoscaling can see load. Optionally reclaims an empty **persistent** shard
  * (requests `Shutdown` after a grace window so the fleet shrinks), guarded so it never kills the last
- * [Options.minInstances] of the family. Ephemeral matches instead call [requestShutdown] when they end.
+ * [Options.minInstances] of the server. Ephemeral matches instead call [requestShutdown] when they end.
  *
  * Registered into the `ServiceRegistry` so feature modules (a matchmaker, a match-end handler) can
  * reach [requestShutdown]. All ticks run on the async scheduler and only read a thread-safe counter.
@@ -30,6 +30,8 @@ class AgonesLifecycle(
     )
 
     private var health: ScheduledTask? = null
+
+    @Volatile
     private var emptySince: Long = 0L
 
     @Volatile
@@ -74,7 +76,7 @@ class AgonesLifecycle(
             return
         }
         if (now - emptySince >= options.emptyGraceSeconds * 1000) {
-            logger.info("Agones: empty for {}s with surplus capacity — reclaiming", options.emptyGraceSeconds)
+            logger.info("Agones: empty for {}s with surplus capacity. Reclaiming", options.emptyGraceSeconds)
             requestShutdown()
         }
     }

@@ -8,12 +8,12 @@ data class RedisConfig(val uri: String)
 
 /**
  * Messaging between processes: fire-and-forget [publish]/[subscribe] plus request/response
- * ([request]/[handle]). String payloads — encode richer data (JSON, etc.) yourself.
+ * ([request]/[handle]). String payloads. Encode richer data (JSON, etc.) yourself.
  *
  * Always registered in the module `ServiceRegistry`: `redis.enabled` picks [RedisMessenger], which
  * reaches every process in the network, otherwise [LocalMessenger] keeps the same contract inside
- * this process. Only the reach of a message differs — never its semantics — so callers never branch
- * on the deployment mode. A publisher always receives its own message back, on both transports.
+ * this process. Only the reach of a message differs, never its semantics, so callers never branch
+ * on the deployment shape. A publisher always receives its own message back, on both transports.
  */
 interface Messenger {
 

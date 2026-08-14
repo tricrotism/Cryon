@@ -27,6 +27,7 @@ import com.tricrotism.cryon.velocity.motd.MotdCommand
 import com.tricrotism.cryon.velocity.motd.MotdListener
 import com.tricrotism.cryon.velocity.network.BackendSynchronizer
 import com.tricrotism.cryon.velocity.network.HandoffListener
+import com.tricrotism.cryon.velocity.network.ServerAccessListener
 import com.tricrotism.cryon.velocity.network.TransferListener
 import com.velocitypowered.api.event.Subscribe
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent
@@ -73,6 +74,7 @@ class CryonVelocityPlugin @Inject constructor(
         setupInfrastructure(services, cfg)
         setupNetwork(services, cfg)
         setupMaintenance(services, cfg)
+        setupServerAccess(cfg)
         setupMotd(services)
         setupModules(services)
         logger.info("Cryon proxy loader enabled")
@@ -150,10 +152,10 @@ class CryonVelocityPlugin @Inject constructor(
         if (cfg.boolean("redis.enabled", false)) {
             try {
                 val config = RedisConfig(cfg.string("redis.uri", "redis://localhost:6379/0"))
-                messenger = RedisMessenger(config)
+                messenger = RedisMessenger(config, logger)
                 store = RedisKeyValueStore(config)
                 sharedTransport = true
-                logger.info("Redis connected — state is shared across the network")
+                logger.info("Redis connected. State is shared across the network")
             } catch (e: Exception) {
                 logger.error("Failed to initialize Redis... falling back to in-process state", e)
                 if (::messenger.isInitialized) runCatching { messenger.close() }
@@ -163,20 +165,20 @@ class CryonVelocityPlugin @Inject constructor(
         if (!sharedTransport) {
             messenger = LocalMessenger(logger)
             store = MemoryKeyValueStore()
-            logger.info("State is in-process only (no redis) — this proxy sees a static backend list")
+            logger.info("State is in-process only (no redis), this proxy sees a static backend list")
         }
         services.register<Messenger>(messenger)
         services.register<KeyValueStore>(store)
     }
 
     /**
-     * Dynamic backends, routing, and the handoff pause. All of it is inherently cross-process — the
-     * instances being discovered and flushed live in other JVMs — so unlike the Paper core's registry
+     * Dynamic backends, routing, and the handoff pause. All of it is inherently cross-process (the
+     * nodes being discovered and flushed live in other JVMs), so unlike the Paper core's registry
      * this genuinely has nothing to do without a shared transport, and says so.
      */
     private fun setupNetwork(services: ServiceRegistry, cfg: VelocityConfig) {
         if (!sharedTransport) {
-            logger.info("Dynamic routing off (no redis) — configure backends in velocity.toml")
+            logger.info("Dynamic routing off (no redis). Configure backends in velocity.toml")
             return
         }
         if (!cfg.boolean("network.registry-enabled", true)) {
@@ -192,11 +194,11 @@ class CryonVelocityPlugin @Inject constructor(
         backendSync = BackendSynchronizer(proxy, reg, logger).also { it.start() }
         transfers = TransferListener(proxy, messenger, logger).also { it.start() }
 
-        // Hold each backend switch open until the server being left has saved the player — see
-        // HandoffListener. Only meaningful once a player can move between instances at all.
+        // Hold each backend switch open until the server being left has saved the player. See
+        // HandoffListener. Only meaningful once a player can move between nodes at all.
         val timeout = Duration.ofSeconds(cfg.long("network.handoff-timeout-seconds", 5).coerceAtLeast(1))
         proxy.eventManager.register(this, HandoffListener(messenger, reg, timeout, logger))
-        logger.info("Player handoff on — transfers wait up to {}s for the source server to flush", timeout.toSeconds())
+        logger.info("Player handoff on. Transfers wait up to {}s for the source server to flush", timeout.toSeconds())
     }
 
     /**
@@ -220,6 +222,21 @@ class CryonVelocityPlugin @Inject constructor(
         logger.info("Maintenance mode available (/maintenance on|off [message], add|remove|list)")
     }
 
+    /**
+     * Gate every backend switch on whether the player may actually enter the target: maintenance,
+     * node state, and per-server access. Installed after maintenance because it enforces it, and
+     * independent of the transport — a static one-node deployment still has both a maintenance
+     * toggle and closed servers.
+     */
+    private fun setupServerAccess(cfg: VelocityConfig) {
+        val service = maintenance ?: return
+        val restricted = cfg.strings("network.restricted-servers").map { it.lowercase() }.toSet()
+        proxy.eventManager.register(this, ServerAccessListener(registry, service, restricted))
+        if (restricted.isNotEmpty()) {
+            logger.info("Access-restricted servers: {} (permission cryon.server.<id>)", restricted.joinToString())
+        }
+    }
+
     /** The MOTD system: a top/bottom line of left/center/right anchored segments, `/motd reload`able. */
     private fun setupMotd(services: ServiceRegistry) {
         val maintenanceService = maintenance ?: return
@@ -235,7 +252,7 @@ class CryonVelocityPlugin @Inject constructor(
         val modulesDir = File(dataDir, "modules").apply { mkdirs() }
         val mgr = ModuleManager(logger)
         services.register<ModuleManager>(mgr)
-        val ctx = VelocityContext(proxy, this, logger, services)
+        val ctx = VelocityContext(proxy, this, logger, services, dataDirectory)
         val ldr = VelocityModuleLoader(mgr, logger, modulesDir, File(dataDir, ".module-cache"), javaClass.classLoader)
         ldr.loadSharedApi(apiDir)
         ldr.prepareCache()

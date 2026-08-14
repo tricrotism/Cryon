@@ -1,10 +1,6 @@
 package com.tricrotism.cryon.paper.api.scheduler
 
 import com.tricrotism.cryon.paper.api.CryonPaper
-import com.tricrotism.cryon.paper.api.scheduler.Schedulers.async
-import com.tricrotism.cryon.paper.api.scheduler.Schedulers.entity
-import com.tricrotism.cryon.paper.api.scheduler.Schedulers.global
-import com.tricrotism.cryon.paper.api.scheduler.Schedulers.region
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask
 import org.bukkit.Bukkit
 import org.bukkit.Location
@@ -13,12 +9,12 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Folia-aware scheduling over Paper's threaded-region schedulers. Pick the scope that owns the data
- * you touch — never the single global main thread for world/entity work:
+ * you touch, never the single global main thread for world/entity work:
  *
- * - [global] — server-wide main work with no world context.
- * - [region] — work scoped to a `Location`'s region (blocks, world state there).
- * - [entity] — work that follows an entity across region threads (teleports, inventory).
- * - [async] — off the main thread (I/O, network); no Bukkit API.
+ * - [global]: server-wide main work with no world context.
+ * - [region]: work scoped to a `Location`'s region (blocks, world state there).
+ * - [entity]: work that follows an entity across region threads (teleports, inventory).
+ * - [async]: off the main thread (I/O, network); no Bukkit API.
  *
  * One-shot callbacks take `() -> Unit`; repeating callbacks take `(ScheduledTask) -> Unit` so they
  * can cancel themselves. Tick delays must be `>= 1`. Returns the `ScheduledTask` (nullable for

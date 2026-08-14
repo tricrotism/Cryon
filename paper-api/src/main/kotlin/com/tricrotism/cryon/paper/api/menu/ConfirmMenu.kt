@@ -14,13 +14,13 @@ import xyz.xenondevs.invui.window.Window
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * A yes/no dialog — the one menu every feature eventually needs, so it lives here rather than being
+ * A yes/no dialog, the one menu every feature eventually needs, so it lives here rather than being
  * rebuilt per module.
  *
  * **Cross-platform by construction.** Java players get a three-row InvUI window; Bedrock players get a
  * native Cumulus modal, which is what a confirmation actually is on a touchscreen. Callers don't
  * choose: [open] asks [BedrockService] and picks. Closing the dialog counts as declining on both
- * sides, so [onResult] always fires exactly once and nothing is left hanging — including when the
+ * sides, so [onResult] always fires exactly once and nothing is left hanging, including when the
  * player disconnects mid-dialog, or a later menu opens over this one.
  *
  * **Callable from any thread.** [open] hops to the player itself, and [onResult] comes back on the
@@ -39,7 +39,7 @@ object ConfirmMenu {
     /**
      * Ask [player] to confirm. [onResult] receives true only if they actively accepted.
      *
-     * [title] is the window/form title, [question] the body — shown as the confirm button's lore on
+     * [title] is the window/form title, [question] the body. Shown as the confirm button's lore on
      * Java (a chest menu has nowhere else to put it) and as the form content on Bedrock.
      *
      * Returns the [Dialog] so the opener can take it down again; a module **must** close its open

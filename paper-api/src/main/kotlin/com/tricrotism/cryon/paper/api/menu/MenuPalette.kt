@@ -1,6 +1,5 @@
 package com.tricrotism.cryon.paper.api.menu
 
-import com.tricrotism.cryon.paper.api.menu.MenuPalette.EMPTY
 import net.kyori.adventure.text.Component
 import org.bukkit.Material
 import org.bukkit.inventory.ItemStack
@@ -8,7 +7,7 @@ import xyz.xenondevs.invui.gui.Structure
 
 /**
  * The filler panes every menu draws its frame from, addressed by the legacy colour code of the colour
- * you want — `0` black, `f` white, `e` yellow, and so on.
+ * you want: `0` black, `f` white, `e` yellow, and so on.
  *
  * The point is that a [Structure] string reads as the menu's picture:
  *
@@ -72,7 +71,7 @@ object MenuPalette {
      * Register every colour code plus [EMPTY] as a global InvUI ingredient. Called once by the core in
      * `onEnable`; calling it again is harmless but pointless.
      *
-     * Deliberately not frozen afterwards ([Structure.freezeGlobalIngredients]) — a module is still
+     * Deliberately not frozen afterwards ([Structure.freezeGlobalIngredients]), a module is still
      * free to add its own global ingredient, and freezing would turn that into a hard failure.
      */
     fun installGlobalIngredients() {

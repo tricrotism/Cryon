@@ -4,7 +4,7 @@ import java.math.BigDecimal
 import java.math.MathContext
 
 /**
- * `BigDecimal` helpers that stay correct and allocation-light even far beyond `Double` range — the
+ * `BigDecimal` helpers that stay correct and allocation-light even far beyond `Double` range. The
  * magnitude/log routines never call `toDouble()` on the whole value, so they don't overflow.
  */
 object BigDecimalUtils {

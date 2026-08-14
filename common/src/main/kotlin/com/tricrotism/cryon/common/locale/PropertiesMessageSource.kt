@@ -5,7 +5,7 @@ import java.nio.charset.StandardCharsets
 import java.util.*
 
 /**
- * A [MessageSource] that loads `<basePath>/<locale>.properties` (UTF-8) from a class loader — e.g.
+ * A [MessageSource] that loads `<basePath>/<locale>.properties` (UTF-8) from a class loader. E.g.
  * a feature jar bundling `lang/en_US.properties`. Keys are flat (`economy.not_enough`), values are
  * MiniMessage templates. [reload] re-reads the files; reads see a consistent snapshot via `@Volatile`.
  */

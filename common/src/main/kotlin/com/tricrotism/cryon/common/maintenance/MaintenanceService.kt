@@ -8,7 +8,7 @@ import java.util.concurrent.CompletableFuture
  * logins. Backed by SQL (source of truth when a `Database` is present) and synced instantly across
  * proxies over the `Messenger`, mirroring `FeatureFlags`.
  *
- * **Proxy-side only**, and always registered there — resolve via `services.get<MaintenanceService>()`
+ * **Proxy-side only**, and always registered there. Resolve via `services.get<MaintenanceService>()`
  * on Velocity. It is deliberately absent on Paper: maintenance is enforced where logins arrive.
  */
 interface MaintenanceService {

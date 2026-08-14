@@ -4,12 +4,14 @@ import com.tricrotism.cryon.common.locale.LangScanner
 import com.tricrotism.cryon.common.locale.Locales
 import com.tricrotism.cryon.common.locale.MessageService
 import com.tricrotism.cryon.common.text.CommonMessages
+import com.tricrotism.cryon.common.text.Mini
 import com.tricrotism.cryon.paper.api.command.Arg
 import com.tricrotism.cryon.paper.api.command.Command
 import com.tricrotism.cryon.paper.api.command.Subcommand
 import com.tricrotism.cryon.paper.api.extension.clearLanguage
 import com.tricrotism.cryon.paper.api.extension.resolvedLocale
 import com.tricrotism.cryon.paper.api.extension.setLanguage
+import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder
 import org.bukkit.Sound
 import org.bukkit.command.CommandSender
@@ -18,7 +20,7 @@ import org.slf4j.LoggerFactory
 import java.util.*
 
 /**
- * `/language [set <code> | clear]` — self-service player language override, annotation-defined, backed
+ * `/language [set <code> | clear]`. Self-service player language override, annotation-defined, backed
  * by the persistent, cross-server `PlayerLocaleStore`. `set` confirms in the new language; `clear`
  * confirms in the client locale. Messages live in the core's `lang/` bundles.
  */
@@ -55,6 +57,17 @@ class LanguageCommands(private val messages: MessageService) {
                     )
                 )
             )
+            CommandUi.closest(code, COMMON_LOCALES)?.let { nearest ->
+                player.sendMessage(
+                    Component.textOfChildren(
+                        Mini.format("  <slate_gray>Did you mean</slate_gray> "),
+                        CommandUi.button(
+                            nearest, "sky_blue", "/language set $nearest",
+                            CommandUi.hover("sky_blue", nearest, "Click to use this language"),
+                        ),
+                    )
+                )
+            }
             return
         }
         player.setLanguage(locale).exceptionally { log.warn("Failed to persist locale for {}", player.name, it); null }

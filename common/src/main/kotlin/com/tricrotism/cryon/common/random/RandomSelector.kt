@@ -1,7 +1,5 @@
 package com.tricrotism.cryon.common.random
 
-import com.tricrotism.cryon.common.random.RandomSelector.Companion.uniform
-import com.tricrotism.cryon.common.random.RandomSelector.Companion.weighted
 import java.util.*
 import java.util.concurrent.ThreadLocalRandom
 
@@ -10,7 +8,7 @@ import java.util.concurrent.ThreadLocalRandom
  * [uniform] or [weighted]; a weighted selector uses Vose's alias method, so construction is O(n) and
  * every [pick] afterwards is O(1).
  *
- * A selector is immutable and thread-safe once built — share one across threads and pass each thread
+ * A selector is immutable and thread-safe once built. Share one across threads and pass each thread
  * its own [Random] (or use the [ThreadLocalRandom] defaults).
  */
 interface RandomSelector<E> {

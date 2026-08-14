@@ -4,7 +4,7 @@ import java.util.*
 
 /**
  * A provider of MiniMessage templates keyed by `(locale, key)`. A module registers one (or more) with
- * the [MessageService] in `onEnable` and removes it on disable — see [MessageService] for why that
+ * the [MessageService] in `onEnable` and removes it on disable. See [MessageService] for why that
  * pairing is not optional. Implementations must be thread-safe for reads.
  */
 interface MessageSource {
@@ -14,7 +14,7 @@ interface MessageSource {
 
     /**
      * Every key this source defines for [locale]. Empty when the source can't enumerate (the default),
-     * which is why it isn't used for resolution — only to export a complete on-disk reference bundle.
+     * which is why it isn't used for resolution, only to export a complete on-disk reference bundle.
      */
     fun keys(locale: Locale): Set<String> = emptySet()
 

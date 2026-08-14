@@ -1,6 +1,5 @@
 package com.tricrotism.cryon.common.server
 
-import com.tricrotism.cryon.common.server.TransferRequest.CHANNEL
 import java.util.*
 
 /**
@@ -13,7 +12,7 @@ object TransferRequest {
     const val CHANNEL = "cryon:routing:transfer"
     private val SEP = Char(0)
 
-    fun encode(player: UUID, instanceId: String): String = "$player$SEP$instanceId"
+    fun encode(player: UUID, nodeId: String): String = "$player$SEP$nodeId"
 
     fun decode(message: String): Pair<UUID, String>? {
         val parts = message.split(SEP)

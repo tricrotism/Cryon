@@ -7,10 +7,10 @@ import java.util.concurrent.ConcurrentHashMap
  * Owns module lifecycle and tracks each module's [ModuleState]. The loader [register]s every
  * discovered module, then runs [loadAll] (publish services), [enableAll] (consume peers) and
  * [postLoadAll] (peers now live). [disableAll] tears down in reverse order.
- * [enable]/[disable]/[reload] drive a single module at runtime (e.g. from the `/cryon` command) —
+ * [enable]/[disable]/[reload] drive a single module at runtime (e.g. from the `/cryon` command),
  * re-enabling reuses the context captured at load, and callers follow it with [postLoad].
  *
- * **Mutated from one thread only** — boot, and the `/cryon` command, which funnels onto the global
+ * **Mutated from one thread only**. Boot, and the `/cryon` command, which funnels onto the global
  * region thread for exactly this reason. Read from any thread: Brigadier runs tab-complete suggesters
  * and `PaperModule.isEnabled` on whatever thread dispatches, which on Folia is the player's own region
  * thread. Hence the two storage choices below rather than plain maps.
@@ -34,7 +34,7 @@ class ModuleManager(private val logger: Logger) {
     }
 
     /**
-     * Drop a module from tracking entirely (the hot-remove path). It must already be disabled —
+     * Drop a module from tracking entirely (the hot-remove path). It must already be disabled,
      * returns false while it is still `ENABLED`, so callers disable first. False too if unknown.
      */
     fun unregister(id: String): Boolean {
@@ -75,7 +75,7 @@ class ModuleManager(private val logger: Logger) {
     }
 
     /**
-     * Run `postLoad` for a single already-`ENABLED` module — the hot-add path. Kept apart from
+     * Run `postLoad` for a single already-`ENABLED` module, the hot-add path, kept apart from
      * [enable] so a caller enabling several modules at once (a multi-module jar, `reloadApi`) can
      * enable them all before any of their `postLoad`s runs, which is the whole guarantee the phase
      * makes. False if the module is unknown or not `ENABLED`.
@@ -134,7 +134,7 @@ class ModuleManager(private val logger: Logger) {
         return disableInternal(id, module)
     }
 
-    /** Disable (if enabled) then re-enable a module, `postLoad` included — it is a full cycle. */
+    /** Disable (if enabled) then re-enable a module, `postLoad` included, it is a full cycle. */
     fun reload(id: String): Boolean {
         if (!modules.containsKey(id)) return false
         if (states[id] == ModuleState.ENABLED && !disable(id)) return false

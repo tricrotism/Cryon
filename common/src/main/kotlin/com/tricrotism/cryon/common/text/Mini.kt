@@ -2,7 +2,6 @@ package com.tricrotism.cryon.common.text
 
 import com.github.benmanes.caffeine.cache.Cache
 import com.github.benmanes.caffeine.cache.Caffeine
-import com.tricrotism.cryon.common.text.Mini.format
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.minimessage.MiniMessage
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver
@@ -11,7 +10,7 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import java.time.Duration
 
 /**
- * The project's MiniMessage entry point — a non-strict instance preloaded with the [CryonPalette]
+ * The project's MiniMessage entry point, a non-strict instance preloaded with the [CryonPalette]
  * tags, a short-lived deserialize cache, and legacy (`§`) interop. Prefer [format] over building a
  * `MiniMessage` yourself so palette tags resolve and repeated strings stay cheap.
  */
@@ -33,10 +32,10 @@ object Mini {
         .maximumSize(500_000)
         .build()
 
-    /** Deserialize [text] with the palette (cached ~15s — for static, resolver-free strings). */
+    /** Deserialize [text] with the palette (cached ~15s, for static, resolver-free strings). */
     fun format(text: String): Component = cache.get(text) { mm.deserialize(it) }
 
-    /** Deserialize [text] with extra [resolvers] (not cached — resolvers vary per call). */
+    /** Deserialize [text] with extra [resolvers] (not cached, resolvers vary per call). */
     fun format(text: String, vararg resolvers: TagResolver): Component =
         mm.deserialize(text, TagResolver.resolver(*resolvers))
 

@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.logging.Level
 
 /**
- * Functional event subscription — filter and handle without writing a `@EventHandler` class.
+ * Functional event subscription. Filter and handle without writing a `@EventHandler` class.
  *
  * ```
  * Events.subscribe<PlayerInteractEvent>(EventPriority.HIGHEST)

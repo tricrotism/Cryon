@@ -6,8 +6,8 @@ package com.tricrotism.cryon.common.module
  * `META-INF/services/com.tricrotism.cryon.common.module.Module` and must have a no-arg constructor.
  *
  * Lifecycle is two-phase so modules can intertwine regardless of load order:
- *  1. [onLoad] runs for **every** module first — publish your services into [ModuleContext.services].
- *  2. [onEnable] runs after all modules have loaded — now every peer's services are available.
+ *  1. [onLoad] runs for **every** module first. Publish your services into [ModuleContext.services].
+ *  2. [onEnable] runs after all modules have loaded. Now every peer's services are available.
  *
  * [preLoad] sits ahead of both, in the host's own load phase, for the rare module that has to reach
  * a third-party registry before the rest of the server enables. [postLoad] closes the other end, for
@@ -23,13 +23,13 @@ interface Module {
 
     /**
      * Runs inside the host's own load phase, before **any** plugin on the server has enabled. The
-     * only window in which a third-party registry that seals itself on enable — WorldGuard's flag
-     * registry being the motivating case — can still be written to.
+     * only window in which a third-party registry that seals itself on enable (WorldGuard's flag
+     * registry being the motivating case) can still be written to.
      *
      * Cryon's own infrastructure does not exist yet: [ModuleContext.services] is empty here, and
      * staying empty is the point. Touch nothing but the platform and the registry you came for.
      *
-     * Does **not** run when a jar is hot-loaded at runtime — by then the same registries are shut,
+     * Does **not** run when a jar is hot-loaded at runtime: by then the same registries are shut,
      * so a module that needs this phase must be present at boot to work at all.
      */
     fun preLoad(context: ModuleContext) {}
@@ -41,12 +41,12 @@ interface Module {
     fun onEnable() {}
 
     /**
-     * Runs once every module has finished [onEnable] — the mirror of [preLoad] at the far end of the
+     * Runs once every module has finished [onEnable]. The mirror of [preLoad] at the far end of the
      * lifecycle. Where [onEnable] can only rely on peers having *published* their services,
      * this can rely on them being live: their listeners registered, their tasks running, their
      * runtime state built.
      *
-     * Takes no context for the same reason [onEnable] doesn't — [onLoad] has already run, so a
+     * Takes no context for the same reason [onEnable] doesn't: [onLoad] has already run, so a
      * module holds its own. Unlike [preLoad] it does run on the hot-add path, after the new jar's
      * modules have all enabled, so a hot-swapped module reaches the same state a booted one does.
      *

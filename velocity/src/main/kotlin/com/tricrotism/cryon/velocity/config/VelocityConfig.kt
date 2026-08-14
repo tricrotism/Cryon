@@ -14,6 +14,7 @@ class VelocityConfig private constructor(private val root: Map<String, Any?>) {
     fun boolean(path: String, default: Boolean): Boolean = resolve(path) as? Boolean ?: default
     fun int(path: String, default: Int): Int = (resolve(path) as? Number)?.toInt() ?: default
     fun long(path: String, default: Long): Long = (resolve(path) as? Number)?.toLong() ?: default
+    fun strings(path: String): List<String> = (resolve(path) as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
 
     private fun resolve(path: String): Any? {
         var node: Any? = root

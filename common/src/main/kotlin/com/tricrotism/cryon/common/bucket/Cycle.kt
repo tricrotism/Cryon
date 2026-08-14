@@ -4,7 +4,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * A thread-safe rotating cursor over a fixed list, used to walk a [Bucket]'s partitions
- * deterministically over time — each [next] advances one step and wraps at the end.
+ * deterministically over time, each [next] advances one step and wraps at the end.
  */
 interface Cycle<E> {
 

@@ -14,17 +14,17 @@ resolves it env-first; the DB password and forwarding secret come from Secrets. 
   valueFrom:
     fieldRef:
       fieldPath: status.podIP
-- name: CRYON_SERVER_FAMILY
+- name: CRYON_SERVER
   value: "{{ .family }}"
-- name: CRYON_INSTANCE_ID
+- name: CRYON_NODE
   valueFrom:
     fieldRef:
       fieldPath: metadata.name
-- name: CRYON_INSTANCE_ADDRESS
+- name: CRYON_NODE_ADDRESS
   valueFrom:
     fieldRef:
       fieldPath: status.podIP
-- name: CRYON_INSTANCE_PORT
+- name: CRYON_NODE_PORT
   value: "25565"
 - name: CRYON_AGONES_SHUTDOWN_WHEN_EMPTY
   value: "{{ .shutdownWhenEmpty | default false }}"

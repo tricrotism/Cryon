@@ -80,12 +80,12 @@ class FormResponse(private val values: Map<String, Any?>) {
  * Geyser is installed.
  *
  * Why it exists: a Java inventory menu is translated by Geyser into a Bedrock container, and while it
- * opens, everything the layout leans on — filler panes, control rows, hover lore — is meaningless on a
+ * opens, everything the layout leans on (filler panes, control rows, hover lore) is meaningless on a
  * touchscreen. Native forms are the Bedrock idiom, and they scroll, so they need no paging.
  *
  * Every callback here is dispatched on the player's own scheduler, so handlers may touch the Bukkit
  * API directly. (Floodgate delivers responses on its own thread; the core hops for you.) A player who
- * has already left has no entity scheduler, so their callback runs on the global one instead — it
+ * has already left has no entity scheduler, so their callback runs on the global one instead. It
  * still has to fire, because releasing an escrow can't be skipped just because they logged off.
  *
  * **Exactly one callback per send.** A form can be answered, dismissed, replaced by a later send, or

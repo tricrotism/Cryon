@@ -29,7 +29,7 @@ interface InventorySearch {
     fun byTag(key: NamespacedKey, onComplete: (List<Match>) -> Unit): Unit =
         search({ it.hasTag(key) }, onComplete)
 
-    /** Items whose [key] tag equals [value] — pin down one unique item by its stored id string. */
+    /** Items whose [key] tag equals [value]. Pin down one unique item by its stored id string. */
     fun <P : Any, C : Any> byTag(
         key: NamespacedKey,
         type: PersistentDataType<P, C>,

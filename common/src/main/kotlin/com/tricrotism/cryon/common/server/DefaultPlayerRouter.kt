@@ -8,13 +8,13 @@ import java.util.concurrent.CompletableFuture
  * The one [PlayerRouter] implementation: picks the target from the [ServerRegistry] and asks the
  * proxies to move the player by broadcasting on [TransferRequest.CHANNEL]. Needs only registry +
  * messenger, so it runs unchanged on Paper (feature modules requesting transfers) and Velocity
- * (proxies also being senders). Ephemeral families fall back to the [matchmaker] supplier, which is
+ * (proxies also being senders). Ephemeral servers fall back to the [matchmaker] supplier, which is
  * null until Phase 2.
  *
- * Registered **only when the transport is shared**. Routing is inherently cross-process — the request
- * is consumed by a proxy in another JVM — so over the in-process transport this could only publish
+ * Registered **only when the transport is shared**. Routing is inherently cross-process. The request
+ * is consumed by a proxy in another JVM, so over the in-process transport this could only publish
  * into a void and report success. A single server has nowhere to route to, and `find` returning null
- * says so honestly; see the deployment-mode notes in CLAUDE.md.
+ * says so honestly; see the deployment-shape notes in CLAUDE.md.
  */
 class DefaultPlayerRouter(
     private val registry: ServerRegistry,
@@ -22,18 +22,18 @@ class DefaultPlayerRouter(
     private val matchmaker: () -> Matchmaker? = { null },
 ) : PlayerRouter {
 
-    override fun route(player: UUID, family: String): CompletableFuture<RouteResult> {
+    override fun route(player: UUID, serverId: String): CompletableFuture<RouteResult> {
         // Candidates least-loaded first; reserve a slot atomically so two proxies can't overfill one.
-        val candidates = registry.family(family)
-            .filter { it.state == InstanceState.READY && it.playerCount < it.maxPlayers }
-            .sortedWith(compareBy({ it.playerCount }, { it.instanceId }))
-            .map { it.instanceId }
+        val candidates = registry.nodesOf(serverId)
+            .filter { it.state == NodeState.READY && it.playerCount < it.maxPlayers }
+            .sortedWith(compareBy({ it.playerCount }, { it.nodeId }))
+            .map { it.nodeId }
         return reserveFirst(player, candidates, 0).thenCompose { reserved ->
             if (reserved != null) return@thenCompose routeToInstance(player, reserved)
             val matcher = matchmaker()
                 ?: return@thenCompose CompletableFuture.completedFuture<RouteResult>(RouteResult.NoInstance)
-            matcher.claim(family, setOf(player))
-                .thenCompose { routeToInstance(player, it.instanceId) }
+            matcher.claim(serverId, setOf(player))
+                .thenCompose { routeToInstance(player, it.nodeId) }
                 .exceptionally { RouteResult.Failed(it.message ?: "matchmaking failed") }
         }
     }
@@ -47,7 +47,7 @@ class DefaultPlayerRouter(
         }
     }
 
-    override fun routeToInstance(player: UUID, instanceId: String): CompletableFuture<RouteResult> =
-        messenger.publish(TransferRequest.CHANNEL, TransferRequest.encode(player, instanceId))
-            .thenApply<RouteResult> { RouteResult.Sent(instanceId) }
+    override fun routeToInstance(player: UUID, nodeId: String): CompletableFuture<RouteResult> =
+        messenger.publish(TransferRequest.CHANNEL, TransferRequest.encode(player, nodeId))
+            .thenApply<RouteResult> { RouteResult.Sent(nodeId) }
 }

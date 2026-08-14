@@ -21,12 +21,12 @@ class TransferListener(
 
     fun start() {
         subscription = messenger.subscribe(TransferRequest.CHANNEL) { message ->
-            val (player, instanceId) = TransferRequest.decode(message) ?: return@subscribe
-            val target = proxy.getServer(instanceId).orElse(null) ?: return@subscribe
+            val (player, nodeId) = TransferRequest.decode(message) ?: return@subscribe
+            val target = proxy.getServer(nodeId).orElse(null) ?: return@subscribe
             proxy.getPlayer(player).ifPresent { connecting ->
                 connecting.createConnectionRequest(target).connect().whenComplete { result, error ->
                     if (error != null || result?.isSuccessful == false) {
-                        logger.warn("Failed to route {} to {}", player, instanceId)
+                        logger.warn("Failed to route {} to {}", player, nodeId)
                     }
                 }
             }

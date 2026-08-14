@@ -7,7 +7,7 @@ interface Weighted {
     val weight: Double
 }
 
-/** Assigns a weight to an element — the pluggable weight source for [RandomSelector.weighted]. */
+/** Assigns a weight to an element. The pluggable weight source for [RandomSelector.weighted]. */
 fun interface Weigher<E> {
 
     /** The weight of [element]; must be non-negative. */

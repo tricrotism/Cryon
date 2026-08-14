@@ -13,11 +13,11 @@ import java.util.concurrent.TimeUnit
 /**
  * Watches `plugins/Cryon/modules/` on a daemon thread and drives hot add/remove/replace: a new jar
  * fires [onChanged], a replaced jar fires [onChanged] (the [ModuleLoader] reloads it), a deleted jar
- * fires [onDeleted]. Bursts are coalesced — file copies emit many `MODIFY` events, so after the
+ * fires [onDeleted]. Bursts are coalesced. File copies emit many `MODIFY` events, so after the
  * first event we keep draining for a short quiet window before dispatching one batch.
  *
  * Filesystem events arrive off the main thread; both callbacks are invoked on the **main thread**
- * (via [Schedulers.global]) because they touch module lifecycle (listeners, commands). Dev-only —
+ * (via [Schedulers.global]) because they touch module lifecycle (listeners, commands). Dev-only,
  * gated behind config so production never runs it. Originals are never locked (the loader runs from
  * copies), so admins can freely delete/replace jars here.
  */

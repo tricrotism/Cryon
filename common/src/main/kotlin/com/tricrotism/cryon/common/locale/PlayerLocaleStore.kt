@@ -10,7 +10,7 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Persistent, cross-server per-player language override. Backed by SQL (source of truth) with an
  * in-memory cache for synchronous reads at send time, kept fresh across servers via a Redis
- * invalidation broadcast. Resolution (`override ?: client locale`) is platform-side — see
+ * invalidation broadcast. Resolution (`override ?: client locale`) is platform-side. See
  * `Player.resolvedLocale()`.
  *
  * Lifecycle: [init] once, [load] on join, [unload] on quit, [set]/[clear] to change.
@@ -32,6 +32,17 @@ class PlayerLocaleStore(
     /** Load [uuid]'s stored override into the cache. Call on join. */
     fun load(uuid: UUID): CompletableFuture<Void> {
         cache.putIfAbsent(uuid, Optional.empty())
+        return reread(uuid)
+    }
+
+    /**
+     * Re-read a player already in the cache, without putting them back if they have left.
+     *
+     * [load] claims the slot first because a join means the player is here; an invalidation says
+     * nothing about that, and their quit can land between the check and the read. Everything else
+     * here writes through `computeIfPresent` for the same reason.
+     */
+    private fun reread(uuid: UUID): CompletableFuture<Void> {
         return database
             .query("SELECT locale FROM $TABLE WHERE uuid = ?", uuid.toString()) { it.getString(1) }
             .thenAccept { rows ->
@@ -70,7 +81,7 @@ class PlayerLocaleStore(
 
     private fun onInvalidate(message: String) {
         val uuid = runCatching { UUID.fromString(message) }.getOrNull() ?: return
-        if (cache.containsKey(uuid)) load(uuid)
+        if (cache.containsKey(uuid)) reread(uuid)
     }
 
     private companion object {

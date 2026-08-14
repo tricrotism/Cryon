@@ -18,6 +18,10 @@ Write-Host "Starting Redis ..." -ForegroundColor Cyan
 Launch "cryon-redis" "start-redis.ps1"
 Start-Sleep -Seconds 2
 
+Write-Host "Starting the pack host (port 8085) ..." -ForegroundColor Cyan
+Launch "cryon-pack-host" "start-pack-host.ps1"
+Start-Sleep -Seconds 1
+
 Write-Host "Starting paper1 ..." -ForegroundColor Cyan
 Launch "cryon-paper1" "start-paper1.ps1"
 Write-Host "Starting paper2 ..." -ForegroundColor Cyan
@@ -29,5 +33,5 @@ Write-Host "Starting Velocity ..." -ForegroundColor Cyan
 Launch "cryon-velocity" "start-velocity.ps1"
 
 Write-Host ""
-Write-Host "All four windows launched. Connect a Minecraft client to localhost:25565." -ForegroundColor Green
+Write-Host "All five windows launched. Connect a Minecraft client to localhost:25565." -ForegroundColor Green
 Write-Host "Stop everything with: .\stop-all.ps1" -ForegroundColor Yellow

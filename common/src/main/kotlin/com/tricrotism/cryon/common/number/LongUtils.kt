@@ -97,7 +97,7 @@ object LongUtils {
         }
     }
 
-    /** Parse without validation — assumes a well-formed integer string. Use only on trusted input. */
+    /** Parse without validation. Assumes a well-formed integer string. Use only on trusted input. */
     fun unsafelyParseLong(string: String): Long {
         val length = string.length
         var number = 0L

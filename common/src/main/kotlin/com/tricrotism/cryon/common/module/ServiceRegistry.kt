@@ -5,7 +5,7 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.reflect.KClass
 
 /**
- * Cross-module service registry — the intertwine seam. Because feature jars are class-loaded in
+ * Cross-module service registry, the intertwine seam. Because feature jars are class-loaded in
  * isolation, modules cannot reference each other's concrete classes. Instead a module publishes an
  * implementation of a *shared API interface* here in [Module.onLoad], and peers resolve it by that
  * interface in [Module.onEnable]. The interface must live in an artifact the core exposes to every
@@ -25,7 +25,7 @@ class ServiceRegistry(private val logger: Logger) {
     }
 
     /**
-     * Drop every service whose implementation was loaded by [loader] — the hot-unload/reload cleanup.
+     * Drop every service whose implementation was loaded by [loader]. The hot-unload/reload cleanup.
      * A module publishes impls defined in its own jar, so closing that jar's loader means removing its
      * services here too; otherwise a reload (`onLoad` runs again) would hit "already registered", and
      * peers could resolve a dead instance from a closed loader. Returns how many were removed.
@@ -52,14 +52,14 @@ class ServiceRegistry(private val logger: Logger) {
         services.clear()
     }
 
-    /** The service for [type], or throw — a missing required service is a wiring bug. */
+    /** The service for [type], or throw, a missing required service is a wiring bug. */
     fun <T : Any> get(type: KClass<T>): T {
         val service = services[type] ?: error("No service registered for ${type.simpleName}")
         @Suppress("UNCHECKED_CAST")
         return service as T
     }
 
-    /** The service for [type], or null — for optional dependencies. */
+    /** The service for [type], or null, for optional dependencies. */
     fun <T : Any> find(type: KClass<T>): T? {
         @Suppress("UNCHECKED_CAST")
         return services[type] as T?

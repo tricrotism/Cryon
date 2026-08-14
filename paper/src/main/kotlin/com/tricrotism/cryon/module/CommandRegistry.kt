@@ -17,8 +17,8 @@ import java.lang.reflect.Field
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
- * The core's single owner of command registration (see [CommandService]). Every contribution — the
- * core's own commands and each module's — is queued here. At boot the plugin flushes the queue
+ * The core's single owner of command registration (see [CommandService]). Every contribution (the
+ * core's own commands and each module's) is queued here. At boot the plugin flushes the queue
  * through one `COMMANDS` lifecycle handler ([flushBoot]); once that window has passed, further
  * contributions are spliced straight into the server's live Brigadier dispatcher, so a module loaded
  * at runtime gets its commands with no restart.
@@ -106,7 +106,7 @@ class CommandRegistry(private val server: Server, private val log: Logger) : Com
     /**
      * Register everything queued so far onto Paper's registrar, inside the boot COMMANDS window.
      *
-     * The registrar's return value is the authoritative label set — it includes the namespaced
+     * The registrar's return value is the authoritative label set: it includes the namespaced
      * `cryon:<name>` variants Paper adds on top of the name and aliases we asked for. Recording only
      * what we asked for would leave those nodes in the dispatcher on unload, still dispatching into a
      * closed module classloader, so the answer is taken from Paper rather than re-derived.
@@ -141,7 +141,7 @@ class CommandRegistry(private val server: Server, private val log: Logger) : Com
      * Build one literal node for [rootName] carrying every branch in [group].
      *
      * The root's own access check is the OR of its contributors', so it stays visible while any one
-     * of them is usable and disappears when none are — each branch keeps its own gate underneath.
+     * of them is usable and disappears when none are, and each branch keeps its own gate underneath.
      */
     private fun mergeBranches(rootName: String, group: List<Entry>): LiteralCommandNode<CommandSourceStack> {
         val built = group.map { AnnotationCommands.build(it.handler, it.available) }
@@ -162,7 +162,7 @@ class CommandRegistry(private val server: Server, private val log: Logger) : Com
             return false
         }
         if (built.node.children.isEmpty()) {
-            log.warn("Branch command {} for {} has no subcommands — nothing to contribute", built.name, owner)
+            log.warn("Branch command {} for {} has no subcommands, nothing to contribute", built.name, owner)
             return false
         }
         val root = dispatcherRoot() ?: return false
@@ -244,11 +244,11 @@ class CommandRegistry(private val server: Server, private val log: Logger) : Com
         @Suppress("UNCHECKED_CAST")
         (server as CraftServer).server.commands.dispatcher.root as RootCommandNode<Any>
     } catch (t: Throwable) {
-        log.error("Cannot reach the command dispatcher — runtime command (un)registration disabled", t)
+        log.error("Cannot reach the command dispatcher. Runtime command (un)registration disabled", t)
         null
     }
 
-    /** Brigadier's private child maps (`children`, `literals`, `arguments`) — no public removal API. */
+    /** Brigadier's private child maps (`children`, `literals`, `arguments`). No public removal API. */
     private val childMapFields: List<Field> by lazy {
         listOf("children", "literals", "arguments").map {
             CommandNode::class.java.getDeclaredField(it).apply { isAccessible = true }

@@ -15,13 +15,13 @@ import java.lang.reflect.*
  * `URLClassLoader`s, so module frames never even reach the lookup; and the lookup only recognises
  * Bukkit/Paper plugin loaders anyway. spark exposes no API to extend either, so we splice in
  * reflectively: `SparkPlatform` delegates to its `SparkPlugin` (an interface) live at export time,
- * so we replace that field with a [Proxy] overriding the three attribution methods —
+ * so we replace that field with a [Proxy] overriding the three attribution methods,
  *
- *  - `createClassFinder()` — spark's real finder first, then each module classloader, so module
+ *  - `createClassFinder()`: spark's real finder first, then each module classloader, so module
  *    classes become findable at all;
- *  - `createClassSourceLookup()` — module classloaders resolve via [ModuleLoader.sourceName]
+ *  - `createClassSourceLookup()`: module classloaders resolve via [ModuleLoader.sourceName]
  *    (falling back to spark's real lookup, e.g. core classes -> Cryon);
- *  - `getKnownSources()` — the real plugin list plus one entry per loaded feature jar, so the
+ *  - `getKnownSources()`: the real plugin list plus one entry per loaded feature jar, so the
  *    viewer's sources view lists modules with their versions.
  *
  * We reach the `SparkPlatform` through spark's registered API (`me.lucko.spark.api.Spark`, which holds
@@ -48,7 +48,7 @@ object SparkSupport {
     @Volatile
     private var installed: Splice? = null
 
-    /** [author] is shown on the viewer's sources view for every module — pass the core plugin's authors. */
+    /** [author] is shown on the viewer's sources view for every module. Pass the core plugin's authors. */
     fun install(server: Server, loader: ModuleLoader, author: String, log: Logger) {
         if (installed != null) return
         val api = findSparkApi(server)
@@ -119,7 +119,7 @@ object SparkSupport {
         val createFinder = sparkPluginType.getMethod("createClassFinder")
         val finderType = createFinder.returnType // the ClassFinder interface
         val knownSources = sparkPluginType.getMethod("getKnownSources")
-        // getKnownSources(): Collection<SourceMetadata> — pull the element type out of the generics.
+        // getKnownSources(): Collection<SourceMetadata>. Pull the element type out of the generics.
         val metadataType = (knownSources.genericReturnType as ParameterizedType).actualTypeArguments[0] as Class<*>
         val metadataCtor = metadataType.getConstructor(
             String::class.java, String::class.java, String::class.java, String::class.java

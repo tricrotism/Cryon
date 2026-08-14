@@ -17,13 +17,13 @@ val Long.pd: PackedDecimal get() = toPackedDecimal()
 val Double.pd: PackedDecimal get() = toPackedDecimal()
 val BigDecimal.pd: PackedDecimal get() = toPackedDecimal()
 
-// Grouped formatting — `1234567L.formatCommas()` -> "1,234,567".
+// Grouped formatting, `1234567L.formatCommas()` -> "1,234,567".
 fun Int.formatCommas(): String = NumberUtils.formatCommas(this)
 fun Long.formatCommas(): String = NumberUtils.formatCommas(this)
 fun Double.formatCommas(): String = NumberUtils.formatCommas(this)
 fun BigDecimal.formatCommas(): String = NumberUtils.formatCommas(this)
 
-// Suffixed balances — `1500L.formatBalance()` -> "1.5k".
+// Suffixed balances, `1500L.formatBalance()` -> "1.5k".
 fun Long.formatBalance(isLong: Boolean = false): String = NumberUtils.formatBalance(this, isLong)
 fun BigDecimal.formatBalance(isLong: Boolean = false): String = NumberUtils.formatBalance(this, isLong)
 fun PackedDecimal.formatBalance(isLong: Boolean = false): String = NumberUtils.formatBalance(this, isLong)
@@ -31,7 +31,7 @@ fun PackedDecimal.formatBalance(isLong: Boolean = false): String = NumberUtils.f
 fun Int.roman(): String = NumberUtils.roman(this)
 
 /**
- * Compact duration from a whole number of seconds — `90L.formatDuration()` -> "1m 30s". The two
+ * Compact duration from a whole number of seconds, `90L.formatDuration()` -> "1m 30s". The two
  * most-significant units only: a countdown is glanced at, and `1h 2m 5s` is three numbers where two
  * would do. Non-positive input renders `"0s"`.
  */
@@ -50,7 +50,7 @@ fun Long.formatDuration(): String {
 }
 
 /**
- * Full duration from a whole number of seconds — every non-zero unit down to seconds, matching
+ * Full duration from a whole number of seconds, every non-zero unit down to seconds, matching
  * vanilla's `%statistic_time_played%`: `90L.formatDurationFull()` -> "1m 30s",
  * `93_784L.formatDurationFull()` -> "1d 2h 3m 4s". Zero units are dropped (`3_600L` -> "1h"), and
  * non-positive input renders `"0s"`. Use [formatDuration] instead for the two-unit compact form a

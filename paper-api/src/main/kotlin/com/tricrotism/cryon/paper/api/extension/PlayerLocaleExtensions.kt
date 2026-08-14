@@ -7,7 +7,7 @@ import java.util.concurrent.CompletableFuture
 
 /**
  * The locale to render for this player: their **persistent, cross-server override** if set, else
- * their **client locale** (`locale()`). All message helpers resolve through this. Synchronous — the
+ * their **client locale** (`locale()`). All message helpers resolve through this. Synchronous. The
  * override is served from the in-memory cache the core loads on join (null store ⇒ client locale).
  */
 fun Player.resolvedLocale(): Locale = Locales.store?.cached(uniqueId) ?: locale()

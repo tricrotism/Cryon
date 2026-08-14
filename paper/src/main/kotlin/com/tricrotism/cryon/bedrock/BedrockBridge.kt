@@ -9,8 +9,8 @@ import org.slf4j.Logger
 /**
  * Picks the [BedrockService] implementation at startup.
  *
- * A service is **always** registered — the no-Floodgate one reports every player as Java and no-ops
- * every send — so a feature calls `services.get<BedrockService>()` unconditionally and never
+ * A service is **always** registered. The no-Floodgate one reports every player as Java and no-ops
+ * every send, so a feature calls `services.get<BedrockService>()` unconditionally and never
  * branches on whether Geyser is installed. Same shape as `Messenger`/`KeyValueStore`.
  */
 object BedrockBridge {
@@ -18,7 +18,7 @@ object BedrockBridge {
     fun create(logger: Logger): BedrockService {
         if (Bukkit.getPluginManager().getPlugin("floodgate") == null) return NoBedrock
         return try {
-            FloodgateBedrockService(logger).also { logger.info("Floodgate detected — Bedrock forms enabled") }
+            FloodgateBedrockService(logger).also { logger.info("Floodgate detected. Bedrock forms enabled") }
         } catch (t: Throwable) {
             logger.warn("Floodgate is present but the Bedrock bridge could not be created", t)
             NoBedrock

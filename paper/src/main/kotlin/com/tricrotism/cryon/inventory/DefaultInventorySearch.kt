@@ -3,7 +3,6 @@ package com.tricrotism.cryon.inventory
 import com.tricrotism.cryon.common.bucket.Bucket
 import com.tricrotism.cryon.common.bucket.Buckets
 import com.tricrotism.cryon.common.bucket.PartitioningStrategies
-import com.tricrotism.cryon.inventory.DefaultInventorySearch.Companion.PARTITIONS
 import com.tricrotism.cryon.paper.api.inventory.InventorySearch
 import com.tricrotism.cryon.paper.api.inventory.InventorySearch.Match
 import com.tricrotism.cryon.paper.api.scheduler.Schedulers
@@ -16,13 +15,13 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Default [InventorySearch]. Snapshots the online players on the global thread into a partitioned
- * [Bucket], then walks one partition per tick via its [Bucket.cycle] — the same load-amortization
+ * [Bucket], then walks one partition per tick via its [Bucket.cycle], the same load-amortization
  * the ChatEmojis anti-dupe sweep gets from its 20-partition bucket, so any search covers the whole
  * network within [PARTITIONS] ticks regardless of how many players are online.
  *
  * Each player's inventory is read on that player's own entity scheduler, which keeps it correct on
  * Folia (inventories are region/entity state). A per-search [AtomicInteger] counts the scheduled
- * scans down: every player resolves exactly once — the scan ran, or the player logged off first —
+ * scans down: every player resolves exactly once, either the scan ran or the player logged off first,
  * and the instant the last one lands, [onComplete] fires once on the global thread. `remaining`
  * starts at the full count, so an early scan finishing can never trip completion before the later
  * partitions are even swept.

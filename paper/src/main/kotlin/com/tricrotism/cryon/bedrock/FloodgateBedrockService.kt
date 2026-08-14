@@ -198,7 +198,7 @@ internal class FloodgateBedrockService(private val logger: Logger) : BedrockServ
      * Form callbacks arrive on Floodgate's thread; handlers are allowed to touch the Bukkit API.
      *
      * A player who has already been retired has no entity scheduler left, and that is exactly the
-     * disconnect case, so fall back to the global one rather than dropping the callback — the handler
+     * disconnect case, so fall back to the global one rather than dropping the callback. The handler
      * is releasing state it already holds, and skipping it is how escrows go missing.
      */
     private fun run(player: Player, action: () -> Unit) {

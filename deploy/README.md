@@ -63,7 +63,7 @@ helm upgrade --install cryon deploy/helm/cryon -n cryon
 
 ## How it works operationally
 
-- **Identity**: each pod gets `CRYON_SERVER_FAMILY` + downward-API `POD_NAME`/`POD_IP`; the plugin
+- **Identity**: each pod gets `CRYON_SERVER` + downward-API `POD_NAME`/`POD_IP`; the plugin
   registers `POD_IP:25565` (in-cluster pod-IP dialing) with a heartbeat TTL. Confirm your proxies are
   in-cluster; if they are external, switch to an Agones host-port policy and register the assigned
   `status.address:port` instead.

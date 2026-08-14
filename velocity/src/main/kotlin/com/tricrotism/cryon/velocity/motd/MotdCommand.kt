@@ -7,7 +7,7 @@ import com.tricrotism.cryon.velocity.sendLocalized
 import com.velocitypowered.api.command.CommandSource
 
 /**
- * `/motd reload` — re-reads the MOTD section of the proxy `config.yml` at runtime. Guarded by
+ * `/motd reload`. Re-reads the MOTD section of the proxy `config.yml` at runtime. Guarded by
  * `cryon.motd`.
  */
 @Command("motd", "MOTD control")

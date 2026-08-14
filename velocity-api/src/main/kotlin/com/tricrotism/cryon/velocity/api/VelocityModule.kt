@@ -4,6 +4,7 @@ import com.tricrotism.cryon.common.module.*
 import com.velocitypowered.api.proxy.ProxyServer
 import com.velocitypowered.api.scheduler.ScheduledTask
 import org.slf4j.Logger
+import java.io.File
 
 /**
  * Base class for Velocity-side feature modules, mirroring `PaperModule`. Captures the
@@ -25,6 +26,15 @@ abstract class VelocityModule : Module {
     protected val services: ServiceRegistry get() = moduleContext.services
     protected val logger: Logger get() = moduleContext.logger
 
+    /**
+     * This module's own directory, `plugins/cryon/data/<id>/`, created on first use. The proxy twin
+     * of `PaperModule.dataFolder`, and there for the same reason: the loader's own directory is not
+     * a namespace, and two modules writing into it share whatever names they both picked.
+     */
+    protected val dataFolder: File by lazy {
+        moduleContext.dataDirectory.resolve("data").resolve(id).toFile().apply { mkdirs() }
+    }
+
     /** Resolve a required peer service: sugar for `services.get<T>()`. */
     protected inline fun <reified T : Any> service(): T = services.get()
 
@@ -45,7 +55,7 @@ abstract class VelocityModule : Module {
      * Record a scheduled task so it is cancelled when this module disables.
      *
      * Proxy tasks are registered against the **core** plugin, not your jar, so nothing cancels them
-     * for you — one left running keeps firing into a closed classloader for the proxy's uptime.
+     * for you: one left running keeps firing into a closed classloader for the proxy's uptime.
      *
      * ```
      * track(proxy.scheduler.buildTask(context.plugin) { … }.repeat(30, SECONDS).schedule())
@@ -54,11 +64,11 @@ abstract class VelocityModule : Module {
     protected fun track(task: ScheduledTask): ScheduledTask = task.also { tasks += it }
 
     /**
-     * Register a resource closed automatically when this module disables — a `ServerRegistry.onChange`
+     * Register a resource closed automatically when this module disables: a `ServerRegistry.onChange`
      * or `MaintenanceService.onChange` handle, or anything else parking one of your lambdas inside an
      * object the core owns. Closed in reverse registration order.
      *
-     * **For module-lifetime resources only** — nothing removes an entry before disable, so a per-use
+     * **For module-lifetime resources only**: nothing removes an entry before disable, so a per-use
      * object tracked here grows the list for the module's whole life.
      */
     protected fun <T : AutoCloseable> track(closeable: T): T = closeable.also { closeables += it }

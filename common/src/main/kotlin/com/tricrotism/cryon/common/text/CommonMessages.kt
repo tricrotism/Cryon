@@ -1,21 +1,13 @@
 package com.tricrotism.cryon.common.text
 
 import com.tricrotism.cryon.common.locale.Messages
-import com.tricrotism.cryon.common.text.CommonMessages.KEY_PREFIX
-import com.tricrotism.cryon.common.text.CommonMessages.alert
-import com.tricrotism.cryon.common.text.CommonMessages.basic
-import com.tricrotism.cryon.common.text.CommonMessages.defaultLocale
-import com.tricrotism.cryon.common.text.CommonMessages.error
-import com.tricrotism.cryon.common.text.CommonMessages.info
-import com.tricrotism.cryon.common.text.CommonMessages.success
-import com.tricrotism.cryon.common.text.CommonMessages.warn
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.TextDecoration
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder
 import java.util.*
 
 /**
- * Message builder: a single optional prefix + a palette-aware body. Bodies stay **localized** — the
+ * Message builder: a single optional prefix + a palette-aware body. Bodies stay **localized**. The
  * canned phrases resolve through [Messages] by `cryon.common.*` key, English inline as fallback
  * (overridable via any `lang/<locale>.properties`). The prefix is one shared, lang-driven base
  * (`cryon.common.prefix`, resolved in [defaultLocale], blank by default so there is no glyph); it is

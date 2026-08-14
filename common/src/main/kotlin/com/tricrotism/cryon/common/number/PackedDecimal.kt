@@ -154,7 +154,7 @@ value class PackedDecimal private constructor(private val bits: Long) : Comparab
     fun toBigDecimal(): BigDecimal =
         if (isZero) BigDecimal.ZERO else BigDecimal.valueOf(m).scaleByPowerOfTen(e)
 
-    /** Scientific form, e.g. `1.2345e7`. Cheap and exact — the exponent is already base-10. */
+    /** Scientific form, e.g. `1.2345e7`. Cheap and exact. The exponent is already base-10. */
     fun toScientificString(): String {
         if (isZero) return "0"
         val digits = abs(m).toString()
@@ -213,7 +213,7 @@ value class PackedDecimal private constructor(private val bits: Long) : Comparab
         /** Rebuild a value stored via [raw]. */
         fun fromRaw(bits: Long): PackedDecimal = PackedDecimal(bits)
 
-        /** Build from a `double` mantissa × 10^[extraExp] — for of(Double)/sqrt/cbrt/pow. */
+        /** Build from a `double` mantissa × 10^[extraExp], for of(Double)/sqrt/cbrt/pow. */
         private fun scaled(value: Double, extraExp: Int): PackedDecimal {
             if (value == 0.0 || !value.isFinite()) return ZERO
             val neg = value < 0

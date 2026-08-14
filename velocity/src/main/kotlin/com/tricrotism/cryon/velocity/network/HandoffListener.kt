@@ -13,13 +13,13 @@ import java.time.Duration
  * Holds a backend switch open just long enough for the server the player is leaving to save them.
  *
  * This is the whole reason player state survives a transfer. The proxy connects the player to the new
- * backend *before* dropping the old one, so without this the new server's login — and every feature
- * load behind it — races the old server's quit handler, and the player arrives with whatever was
+ * backend *before* dropping the old one, so without this the new server's login (and every feature
+ * load behind it) races the old server's quit handler, and the player arrives with whatever was
  * written last time. Pausing here inverts that: the old instance flushes, acknowledges, and only then
  * does the connection proceed, so the new one is guaranteed to read what the old one just wrote.
  *
  * The pause is bounded and never fatal. A timeout, a missing backend, or a server that isn't a Cryon
- * instance all let the connection through — a player who moves is strictly better than a player stuck
+ * instance all let the connection through: a player who moves is strictly better than a player stuck
  * on a failed transfer, and the flush will still happen on quit.
  */
 class HandoffListener(
@@ -39,7 +39,7 @@ class HandoffListener(
         if (target == null || target == from) return null
         // Only a registered instance runs a Cryon core that could answer. A statically configured
         // backend never would, and asking it anyway would stall every transfer for the full timeout.
-        if (registry.instance(from) == null) return null
+        if (registry.node(from) == null) return null
 
         val player = event.player.uniqueId
         val request = messenger

@@ -6,7 +6,7 @@ import java.time.Duration
 import java.util.concurrent.CompletableFuture
 
 /**
- * [KeyValueStore] over Lettuce — the transport that reaches every process in the network. One
+ * [KeyValueStore] over Lettuce, the transport that reaches every process in the network. One
  * connection, async commands throughout, so every call runs off the caller's thread. Constructed like
  * [RedisMessenger] (its own [RedisClient]); kept independent so enabling/disabling either is isolated.
  *
@@ -25,8 +25,8 @@ class RedisKeyValueStore(config: RedisConfig) : KeyValueStore {
     override fun get(key: String): CompletableFuture<String?> =
         commands.get(key).toCompletableFuture().thenApply { it }
 
-    override fun delete(key: String): CompletableFuture<Void> =
-        commands.del(key).toCompletableFuture().thenAccept { }
+    override fun delete(key: String): CompletableFuture<Boolean> =
+        commands.del(key).toCompletableFuture().thenApply { it > 0 }
 
     override fun keys(pattern: String): CompletableFuture<List<String>> {
         val result = CompletableFuture<List<String>>()
@@ -52,6 +52,23 @@ class RedisKeyValueStore(config: RedisConfig) : KeyValueStore {
         return commands.mget(*keys.toTypedArray()).toCompletableFuture()
             .thenApply { values -> values.map { if (it.hasValue()) it.value else null } }
     }
+
+    /**
+     * HSET plus PEXPIRE. Two commands rather than one, but they are pipelined on the same connection
+     * and neither is a read, so nothing here depends on the pair being atomic: the worst interleaving
+     * is a competing writer's expiry winning, and both are asking for the same [ttl] from roughly the
+     * same instant.
+     */
+    override fun hset(key: String, field: String, value: String, ttl: Duration): CompletableFuture<Void> =
+        commands.hset(key, field, value).toCompletableFuture()
+            .thenCompose { commands.pexpire(key, ttl.toMillis()).toCompletableFuture() }
+            .thenAccept { }
+
+    override fun hgetAll(key: String): CompletableFuture<Map<String, String>> =
+        commands.hgetall(key).toCompletableFuture().thenApply { it ?: emptyMap() }
+
+    override fun hdel(key: String, field: String): CompletableFuture<Boolean> =
+        commands.hdel(key, field).toCompletableFuture().thenApply { it > 0 }
 
     override fun tryHold(
         key: String,

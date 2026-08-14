@@ -11,7 +11,7 @@ fun MessageService.render(player: Player, key: String, vararg resolvers: TagReso
     render(player.resolvedLocale(), key, *resolvers)
 
 /**
- * Render [key] in [player]'s locale and send it wrapped in the shared [CommonMessages] base prefix —
+ * Render [key] in [player]'s locale and send it wrapped in the shared [CommonMessages] base prefix,
  * the localized ack path. `messages.send(player, "shop.too_poor", …)`.
  */
 fun MessageService.send(player: Player, key: String, vararg resolvers: TagResolver) =

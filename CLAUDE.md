@@ -9,9 +9,10 @@ Modules in this repo (core + published API):
 - **`:common`** — platform-neutral framework: module system (`Module`, `ModuleManager`,
   `ModuleContext`, `ServiceRegistry`), `number` (`PackedDecimal`, `LongUtils`, `BigDecimalUtils`,
   `NumberUtils`), `text` (`Mini`, `CryonPalette`, `CommonMessages`), `locale`
-  (`MessageService` + sources), `data`/`net` (SQL + the `Messenger`/`KeyValueStore` transport, Redis or
-  in-process), `server` (deployment mode, server registry, player routing, player handoff), primitive
-  `extension`s. Adventure `compileOnly`; no Bukkit/Velocity types (the `:velocity` loader reuses it).
+  (`MessageService` + sources), `data`/`net` (SQL + the `Messenger`/`KeyValueStore` transport, Redis or in-process),
+  `server` (deployment mode, server registry, player routing, player handoff),
+  `currency` (`CurrencyService`, the ledger), primitive `extension`s. Adventure `compileOnly`; no Bukkit/Velocity types
+  (the `:velocity` loader reuses it).
   **Published.**
 - **`:paper-api`** — what feature repos compile against: `PaperModule`/`PaperModuleContext`,
   `CryonPaper`, `item.ItemBuilder`, `scheduler.Schedulers` (Folia-aware), `event.Events`,
@@ -117,17 +118,18 @@ whole feature when one slice breaks.
 
 **The system: `FeatureFlags`** (`…common.flag`), created by the core and shared via the
 `ServiceRegistry`. Bare uppercase IDs (`FISHING`, `FISHING_RARE` — **no** gamemode prefixes; a
-gamemode-specific flag is scoped via the scope argument, never the ID). **Layered — most specific
-wins:** player override → server override (this server's family, `network.family`/legacy `server-name` in
+gamemode-specific flag is scoped via the scope argument, never the ID). **Layered — most specific wins:** player
+override → server override (this server's pool, `network.server`/legacy `server-name` in
 `config.yml`) → global
 override → default **enabled**. SQL-persisted (`cryon_feature_flags`, source of truth) and synced
 across every server via a Redis broadcast when the infra is configured; without it the same API runs
 in-memory per server (resets on restart).
 
 Admin surface (`cryon.admin`): `/cryon flags [scope]` — per-scope listing with clickable toggles;
-`/cryon flag enable|disable|clear <feature> [scope]` where scope is `global` (default), a server
-name, or `player:<name>`; `/cryon flag status <feature> [player]` — the layered breakdown; `/cryon
-flag delete <feature>` (hardcoded-authorized account only); `/cryon flag reload`.
+`/cryon flag enable|disable|clear <feature> [scope]`; `/cryon flag status <feature> [player]` — the layered breakdown;
+`/cryon flag delete <feature>` (console only); `/cryon flag reload`. **A scope is
+`global` (the default), `server` for this server's own pool, another server's name, or a bare player name** —
+`player:<name>` is still accepted so existing scripts keep working, but nothing suggests it.
 
 In a module: resolve once (`services.get<FeatureFlags>()`), `register("SHOP_SELL")` each ID in
 `onEnable` (persists its default and lists it), then gate every entry point **inside** the handler —
@@ -301,8 +303,15 @@ No decorative dividers (`// ── fishing ──`). Comment the *why* when non-
 
 ## Build & Run
 
-JDK 25, Kotlin 2.4.20-Beta1, paperweight dev bundle 26.2. Gradle config-cache/parallel/build-cache on. No unit tests —
-verify on a local server.
+JDK 25, Kotlin 2.4.20-Beta1, paperweight dev bundle 26.2. Gradle config-cache/parallel/build-cache on. **Verify on a
+local server** — there are no tests in this repo, and `./gradlew test` therefore passes without running anything.
+
+If one is ever worth adding, the case is the narrow one a running server cannot reach: a state that needs a *dependency*
+to fail part-way through a sequence, which is not reachable by stopping a database from outside because the first
+statement fails first. That would want a `src/test/kotlin` in the module it tests (Kotlin associates the two
+compilations, so the test sees `internal` types and can substitute a fake `CurrencyStore` without widening any public
+API), plus `kotlin("test")` on that module. **Don't grow it into a general suite** — anything observable from a running
+server belongs on a running server.
 
 - `./gradlew build` — all modules; `:paper`'s `build` runs `shadowJar` → `paper/build/libs/`. The
   shaded jar bundles `:common` + `:paper-api` + kotlin-stdlib — **don't relocate kotlin-stdlib**
@@ -548,6 +557,33 @@ isn't width-counted, so keep segments mostly unbolded for tight alignment.
 
 ---
 
+## Command Surface
+
+Two rules cover everything the core exposes to a human.
+
+**Every menu action has a command, and neither is the primary one.** `AdminMenu` (`…cryon.menu`) is
+`/cryon` as a menu: modules, feature flags and the network summary, an InvUI window on Java and Cumulus forms on
+Bedrock. `commands.menu` in the core `config.yml` (default `true`) decides which of the two a bare `/cryon` gives a
+*player*; `/cryon menu` and `/cryon help` reach the other one whichever way it is set, and the console always gets the
+help, having nowhere to put a window. A menu answers "which of these is off?" faster because the state is the layout; a
+command wins once you know the id, and it is the only one that works from a script. Menu pages are read at open time and
+an action re-opens rather than editing the clicked slot, so a button can never describe a module that has since failed.
+The core owns its sessions and closes them on disable.
+
+**An unknown id is answered with the nearest real one, not just a rejection.**
+`CommandUi.unknown(sender, noun, input, candidates) { retry }` (`…cryon.command`) prints the rejection plus a clickable
+correction when something is close enough to be worth offering: a prefix match wins outright, otherwise the edit
+distance has to be within a third of the input. Nothing is offered when nothing is close, because a wrong guess invites
+a click that fails twice. Route every
+`no such module / jar / currency / player / locale` path through it. `CommandUi` also owns the shared
+`button`/`suggestButton`/`usage` look, so clickable output is the same wherever it appears.
+
+`/cryon help [page]` is grouped by what an operator is trying to do (Modules, Jars, Flags, Server)
+and paginated — Brigadier already tab-completes the tree, so what help adds is which commands belong together and what
+each is for. Add an entry to `ModuleCommands.HELP` in the same pass as a new subcommand.
+
+---
+
 ## Utilities
 
 Shared helpers — **check these before writing your own.** Reach a peer feature's behaviour through `ServiceRegistry`,
@@ -602,6 +638,17 @@ override file** for the default locale
 `plugins/Cryon/lang/en_US.properties` lacks are appended to it, so admins get a complete editable
 reference and new keys surface there automatically. **Existing entries are never rewritten** — an
 admin override always survives a restart.
+
+**Module files (`PaperModule.dataFolder` / `config()`).** A module's own directory is
+`plugins/Cryon/data/<id>/`, created on first use, and `config(name = "config.yml")` extracts the copy bundled in **that
+module's jar** on first run and returns a fresh read each call (reload = call again and swap your field; there is no
+hidden cached instance). Never `plugin.dataFolder` — that is the *core's* folder, one flat namespace where two modules
+wanting a `config.yml` silently share one file. It sits beside `modules/` rather than inside it, so clearing the jar
+drop-folder cannot take a module's saved state with it. The default is read straight from the jar's code source, **not**
+through
+`getResourceAsStream`: that delegates parent-first, and the core jar also has a `config.yml`, so a module asking for its
+own default would silently be handed the core's. `VelocityModule.dataFolder` is the proxy twin, under
+`plugins/cryon/data/<id>/`.
 
 **Items (`…paper.api.item`/`…extension`):** `ItemBuilder` — name/lore (auto `<!i>`, palette-parsed),
 flags, glow, `enchant`, attributes, PDC `tag`s, `meta {}`. Extensions: `Material.toItem()`,
@@ -720,7 +767,7 @@ server-wide) and registers it, keyed by the owning module id so **`/cryon info <
 `compileOnly`; absent → the namespace is still recorded (so info stays honest) but no expansion installs,
 and features never branch on it. `onRequest` runs on PAPI's thread (maybe async, maybe hot) — keep it
 cheap, thread-safe, no Bukkit API off-main. Built-in namespace `%cryon_…%` (`CorePlaceholders`):
-`family`/`instance`/`mode`/`max_players` off the immutable `InstanceIdentity`.
+`server`/`node`/`expect`/`max_players` off the immutable `NodeIdentity`.
 
 **Commands — annotation framework over Paper Brigadier (`…paper.api.command`).** **Cloud is broken on
 26.2** (cloud-bukkit's `ItemStackParser` reflects a missing method). Use the `@Command` layer
@@ -761,6 +808,50 @@ touching anyone else's branch. Two consequences of the root being co-owned: a **
 (empty path) and any aliases are ignored**, since neither belongs to a single contributor. Permission
 still comes from each handler's own `@Permission`. Same `onLoad` rule as `registerCommands`.
 
+**Schema migrations (`…common.data.SchemaMigrator`).** `database.migrate(namespace, migrations, logger)`
+— forward-only, one shared `cryon_schema_version` table keyed by namespace, so a new module is a row rather than a
+schema change of its own. The whole run sits in one transaction holding
+`SELECT … FOR UPDATE` on that namespace's row, so N nodes booting together produce one migration and N-1 no-ops. **No
+down migrations**: a rollback that discards columns is a data-loss decision nobody should make by editing a list — fix a
+bad step by adding another. **One caveat:** MySQL commits implicitly on DDL, so there a create/alter cannot roll back
+and does not hold its lock for the rest of the transaction; Postgres and H2 do transactional DDL and behave as
+described. Keep each migration to one coherent change so the MySQL failure mode stays diagnosable. Reference:
+`cryon-core-servers` in
+`SharedServerRegistry`, which renames a table and carries its rows over.
+
+**Currency (`…common.currency`).** The ledger. `CurrencyService` (impl `Currencies`) holds any number of currencies,
+each `SERVER`- or `GLOBAL`-scoped, in one `cryon_currency` table keyed by `(scope, currency, uuid)` — so a new currency
+is a `register(Currency(...))` call in `onEnable`, never a migration. Without SQL it runs in memory and says so at boot.
+
+**Off by default, and genuinely optional like `Database` — resolve it with `find<CurrencyService>()` and handle null.**
+`currency.enabled` in the core `config.yml` (default **`false`**) decides whether the service is registered at all; off,
+the `/balance`, `/pay` and `/currency` commands are not contributed either. Only the servers running an economy turn it
+on, and the rows stay untouched while it is off. A feature that hard-requires money should say so in its own log line
+and disable its slice, not `get` and take the server down.
+
+Four rules, and the first is the one that matters:
+
+- **The mutation is the answer.** `withdraw` is a compare-and-set with a retry, not a balance read followed by a
+  subtract: it writes only if the stored value has not moved. **Gate the reward on the returned `Boolean` and on nothing
+  else.** `transfer` moves both sides in one transaction (`COMPLETED`/`INSUFFICIENT`/`FAILED` — branch on all three;
+  "you were short" and "the store is down" are different facts). Same-process callers are serialised per account by
+  `AccountLocks`, which chains futures instead of holding a monitor across I/O, so nothing parks a region thread.
+- **`cachedBalance` is display only.** Synchronous and safe on a tick thread, for HUDs, scoreboards and placeholders;
+  null means "not known here", never zero. Deciding anything with it reintroduces exactly the race `withdraw` removes.
+  The authoritative read is `balance`/`balances`, and it is async.
+- **The ledger is exact; only the presentation is packed.** The API speaks `PackedDecimal` (14 significant figures)
+  because that is the project number type, but the stored value and the arithmetic are `BigDecimal`. A 100 deposit onto
+  a 1e20 balance would otherwise vanish and the matching purchase be free. Amounts, displays and multipliers round; the
+  running total never does. Prices set more than ~14 orders of magnitude below a balance still charge nothing — that is
+  inherent to the number type.
+- **A write broadcasts.** Every mutation publishes the touched account so other nodes drop their cached copy, and fires
+  a `CurrencyChange` (`before`/`after`/exact `delta`/reason) to `onChange` listeners, which is the hook for audit logs,
+  quests and achievements.
+
+Core commands: `/balance [player]` (`cryon.currency.balance.others`), `/pay <player> <currency> <amount>`
+(`cryon.currency.pay`), `/currency list|top|give|take|set` (`cryon.currency.admin`). Leaderboards are a cached snapshot
+refreshed by an async timer (`currency.leaderboard-refresh-seconds`, default 300) and read synchronously.
+
 **Storage + transport (`…common.data`/`…common.net`).**
 
 - `Database` (`SqlDatabase`, HikariCP) — async SQL: `query`/`update` return `CompletableFuture`s
@@ -788,8 +879,9 @@ still comes from each handler's own `@Permission`. Same `onLoad` rule as `regist
 - `KeyValueStore` — async KV with TTL (`set`/`get`/`delete`/`keys`/`mget`/`tryHold`), for state that
   must expire on its own (server liveness). **Always registered** (`get<KeyValueStore>()`):
   `RedisKeyValueStore` when `redis.enabled`, else `MemoryKeyValueStore`.
-- `config.yml` holds `network.mode`, `database.*`, `redis.*` (both `enabled: false` by default),
-  `production` (default `true`) and `modules.auto-reload` (defaults to `!production`).
+- `config.yml` holds `network.expect`, `database.*`, `redis.*` (both `enabled: false` by default),
+  `currency.*` (`enabled: false`), `commands.menu` (default `true`), `production` (default `true`) and
+  `modules.auto-reload` (defaults to `!production`).
 
 **Player locale — persistent & cross-server.** `Player.resolvedLocale()` = stored override ?: client
 `locale()`; all helpers use it. A chosen override (`player.setLanguage(de)`) persists to SQL +
@@ -798,12 +890,17 @@ broadcasts an invalidation; `PlayerLocaleStore` caches it in memory for sync rea
 on a single server is just this process), else `MemoryLocaleStore` (overrides work but reset on
 restart). A store is always installed; falls back to client locale without an override.
 
-**Deployment modes — `single` and `instanced`.** A deployment is one of two shapes, declared in
-`network.mode` (or `CRYON_NETWORK_MODE`) and exposed as `InstanceIdentity.mode`:
+**Two words, used everywhere.** A **server** is what a player joins and picks from a hub menu (`prison`, `skyblock`); a
+**node** is one process running it, and a node id *is* the name the proxy registers it under. In Kotlin the pool is
+`serverId`, not `server`, because `server` is Bukkit's
+`Server` and the collision would be constant.
 
-- **`single`** — this server is the whole family. A Velocity proxy still fronts it, with a static
+**How many nodes you mean to run** is declared in `network.expect` (or `CRYON_EXPECT`) and exposed as
+`NodeIdentity.expectation`:
+
+- **`one-node`** — this process is the whole server. A Velocity proxy still fronts it, with a static
   backend in `velocity.toml`. Redis optional.
-- **`instanced`** — one of N interchangeable instances of `network.family` (10 prison shards), players
+- **`many-nodes`** — one of N interchangeable nodes of `network.server` (10 prison shards), players
   load-balanced onto the healthiest. Redis + Postgres **required**.
 
 **Mode and transport are orthogonal, and this is the load-bearing idea.** The mode declares *intent*;
@@ -816,7 +913,7 @@ It exists so the core can check intent against reality and be loud when they dis
 everything above them has **exactly one implementation, always present**: `ServerRegistry`,
 `FeatureFlags`, `MaintenanceService`, `PlayerHandoff`. Over the in-process transport the registry
 simply holds one instance — this one — which is what a single server *is*, not a degraded pool, so
-`bestInstance(family)` answering "you" needs no special case. **Write feature code once; never branch
+`bestNode(serverId)` answering "you" needs no special case. **Write feature code once; never branch
 on the mode.** `LocalMessenger` echoes to the publisher and delivers on its own thread precisely so
 that code behaves identically on both transports (see its KDoc — both are load-bearing).
 
@@ -830,32 +927,37 @@ usually so:
   arrive, and a single-server deployment still has exactly one proxy, so its in-process state is
   already network-wide truth. Nothing on Paper reads it.
 
-**The rule: more than one process that must share state ⇒ Redis.** Loopback does not bridge JVMs, so
-several *different* `single`-mode families behind one proxy is an instanced-transport deployment, not
+**The rule: more than one process that must share state ⇒ Redis.** Loopback does not bridge JVMs, so several *different*
+one-node servers behind one proxy is a shared-transport deployment, not
 a single-mode one.
 
-Validation is **loud but non-fatal** (`NetworkStatus`, `:paper`): `instanced` without Redis or without
-a database, or `single` while >1 live instance shares your family, prints a banner at boot and shows
-in **`/cryon network`** (mode, family, instance, transport, database, live instances, warnings).
+Validation is **loud but non-fatal** (`NetworkStatus`, `:paper`): `many-nodes` without Redis or without a database, or
+`one-node` while >1 live node serves your server, prints a banner at boot and shows in **`/cryon network`** (server,
+node, expect, transport, database, live nodes, warnings).
 
-**Network / sharding (`…common.server`).** Each running server resolves an `InstanceIdentity`
-(env-first: `CRYON_NETWORK_MODE`, `CRYON_SERVER_FAMILY`, `CRYON_INSTANCE_ID`/`HOSTNAME`,
-`CRYON_INSTANCE_ADDRESS`, `CRYON_INSTANCE_PORT`, else `config.yml` `network.*`, else Paper's own
-values), generalizing the old static `server-name` into a `family` (the pool, and the FeatureFlags
-server-scope) plus a per-process `instanceId`. Registered into the `ServiceRegistry`.
+The old spellings — `network.family`, `network.instance-id`, `network.mode`, and the values
+`single`/`instanced` — are still read for one release. Each logs a rename warning once at boot. The alias deliberately
+checks `isSet` rather than `getString`: a `FileConfiguration` falls through to the jar's defaults, so reading the new
+key first would always answer *something* and silently discard the operator's declared intent.
+
+**Network / sharding (`…common.server`).** Each process resolves a `NodeIdentity`
+(env-first: `CRYON_EXPECT`, `CRYON_SERVER`, `CRYON_NODE`/`HOSTNAME`, `CRYON_NODE_ADDRESS`,
+`CRYON_NODE_PORT`, else `config.yml` `network.*`, else Paper's own values), generalizing the old static `server-name`
+into a `serverId` (the pool, and the FeatureFlags server scope) plus a per-process `nodeId`. Registered into the
+`ServiceRegistry`.
 
 - `ServerRegistry` (`SharedServerRegistry`) — the directory of live instances. Liveness is **KV with a
   TTL** (a crashed pod's key expires; each node also runs a local reaper), synced over
-  `cryon:registry:events` pub/sub into an in-memory replica so queries are non-blocking; the
-  slow-changing family catalog lives in Postgres (optional). **Always registered** —
+  `cryon:registry:events` pub/sub into an in-memory replica so queries are non-blocking; the slow-changing server
+  catalog (`cryon_servers`) lives in Postgres (optional). **Always registered** —
   `services.get<ServerRegistry>()`. Only ever populates its replica **from the pub/sub echo**, so
   a `Messenger` that didn't echo to itself would leave it permanently empty.
-- `InstanceReporter` (`:paper`) — `register()` publishes this server as STARTING **before** modules
+- `NodeReporter` (`:paper`) — `register()` publishes this node as STARTING **before** modules
   load; `ready()` flips it to READY and starts heartbeating **after** they enable, so proxies never
   route into a half-loaded server. Player count rides an `AtomicInteger` fed by join/quit, so the async
   heartbeat never touches Bukkit off-thread; sets DRAINING then deregisters on disable. Proxies never
   register themselves; they only read.
-- `PlayerRouter` (`DefaultPlayerRouter`, in `:common`, runs on Paper and Velocity) — `route(uuid, family)`
+- `PlayerRouter` (`DefaultPlayerRouter`, in `:common`, runs on Paper and Velocity) — `route(uuid, serverId)`
   picks the least-loaded candidates and **reserves a slot atomically** (`ServerRegistry.tryReserve` →
   `KeyValueStore.tryHold`, a Lua/zset hold on Redis) before broadcasting on `cryon:routing:transfer`, so
   two proxies can't overfill one shard. The owning proxy connects the player, others no-op. A Paper feature never needs
@@ -863,7 +965,19 @@ server-scope) plus a per-process `instanceId`. Registered into the `ServiceRegis
 - On Velocity, `BackendSynchronizer` registers/unregisters proxy servers off registry events and
   `TransferListener` performs the connects. Ephemeral minigame families fall back to the `Matchmaker`
   seam (interface only until a matchmaker module ships). `config.yml` adds a `network.*` block;
-  `server-name` remains a legacy alias for `network.family`.
+  `server-name` remains a legacy alias for `network.server`.
+- **Who may enter a server is decided on the proxy (`ServerAccessListener`, `:velocity`).** A switch can start from a
+  feature module, `/server`, a forced host or Velocity's fallback-on-kick, and none of those callers can weigh the
+  target's state against the player's permissions — `PlayerRouter` lives in
+  `:common` and never sees a player. `ServerPreConnectEvent` is the one point they all pass through, so the listener
+  denies there, at `PostOrder.FIRST` (ahead of `HandoffListener`, so a refused move never makes the source node flush).
+  Three rules: maintenance is on and the player has neither
+  `cryon.maintenance.bypass` nor an allowlist entry; the target node is registered but not `READY`; or its `serverId` is
+  listed in `network.restricted-servers` and the player lacks `cryon.server.<serverId>`. A name the registry doesn't
+  know is a static backend and is only maintenance-gated. **Denying costs the player nothing** — Velocity leaves them on
+  their current backend; on the initial connect there is none, so a denial disconnects them, which is what a closed
+  server means. `PlayerRouter` still answers `Sent`
+  for a move the proxy then refuses: it reports that the request was broadcast, not that it was admitted.
 - `AgonesLifecycle` (`:paper`, `…network.agones`) — active only under an Agones sidecar (detected via
   `AGONES_SDK_HTTP_PORT`). Talks to the sidecar over REST (`AgonesClient`, JDK `HttpClient`, no gRPC):
   marks `Ready` after registration, pings `Health`, mirrors the player count to an annotation, and
@@ -879,7 +993,7 @@ server-scope) plus a per-process `instanceId`. Registered into the `ServiceRegis
   `cryon_maintenance_allow` and synced over `cryon:maintenance:allow`, mirroring the toggle's
   write-through + broadcast.
 
-**Player handoff — saving on quit is a bug in `instanced` (`PlayerHandoff`, `…common.server`).** A
+**Player handoff — saving on quit is a bug with more than one node (`PlayerHandoff`, `…common.server`).** A
 proxy moves a player A→B by connecting B **first** and dropping A **after**
 (`createConnectionRequest(…).connect()`). So B's login, and every feature load behind it, happens
 *before* A's `PlayerQuitEvent` runs. A feature that saves on quit is therefore always one step behind:
@@ -943,15 +1057,22 @@ of populated shards on node upgrades. Add infrastructure **and document it here 
 | `Packets.onReceive/onSend(...).handler{}` + `track(…)`            | Registering a raw PacketEvents listener with no teardown       |
 | Hop out of a packet handler before any Bukkit call                | Touching entities/inventories on the Netty thread              |
 | `PackedDecimal` for values that grow past ~1e15                   | `BigDecimal` on hot incremental-math paths                     |
+| `services.find<CurrencyService>()` (optional, like SQL)           | `get<CurrencyService>()` assuming an economy is configured     |
+| Branch the reward on `withdraw`'s returned `Boolean`              | Reading a balance to decide, then taking it separately         |
+| `cachedBalance` for HUDs/placeholders only                        | Deciding a purchase from `cachedBalance`                       |
+| Branch all three `TransferResult` values                          | Collapsing `INSUFFICIENT` and `FAILED` into "not completed"    |
 | `@Command`/`@Subcommand` + `AnnotationCommands.register`          | `plugin.yml commands:` / `CommandMap` / Cloud (broken on 26.2) |
+| `CommandUi.unknown(...)` for a bad id                             | Rejecting the input without offering the nearest match         |
+| A command for every menu action                                   | A menu as the only way to do something (console can't click)   |
+| `branch { leaf(...) }` from `…api.menu` to build a tree           | Hand-building `MenuBranch`/`MenuLeaf` node lists               |
 | `PlaceholderProvider` + `registerPlaceholders(...)`               | Extending `PlaceholderExpansion` in a module (can't see PAPI)  |
 | `player.resolvedLocale()` for messages                            | `player.locale()` directly (ignores overrides)                 |
 | `services.find<Database>()` (genuinely optional)                  | `get<Database>()` assuming SQL is enabled                      |
 | `get<Messenger>()`/`get<KeyValueStore>()`/`get<ServerRegistry>()` | Null-checking them, or branching on the deployment mode        |
 | `onFlush("…") { uuid -> … }` for player state                     | Saving player state in a quit handler (too late on a transfer) |
-| `PlayerRouter.route(uuid, family)` to move players                | Hardcoding a backend server name to connect to                 |
+| `PlayerRouter.route(uuid, serverId)` to move players              | Hardcoding a backend server name to connect to                 |
 | `find<PlayerRouter>()` — null means nowhere to route              | Assuming a route is always possible                            |
-| `bestInstance(family)`                                            | Assuming a fixed server list; picking a full/STARTING instance |
+| `bestNode(serverId)`                                              | Assuming a fixed server list; picking a full/STARTING node     |
 | Consume the DB/Redis `CompletableFuture` async                    | `.get()` on a DB future on the main thread                     |
 | `database.upsert(table, keys, columns, …)`                        | Hand-written `ON CONFLICT` / `ON DUPLICATE KEY` SQL            |
 | Play a `Sound.*` on player-facing actions                         | Silent state changes / redeems                                 |

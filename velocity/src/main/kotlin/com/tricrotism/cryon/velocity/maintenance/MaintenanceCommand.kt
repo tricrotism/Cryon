@@ -8,13 +8,13 @@ import com.velocitypowered.api.proxy.ProxyServer
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder
 
 /**
- * `/maintenance` — toggles network-wide maintenance and manages the bypass allowlist, all synced to
+ * `/maintenance`. Toggles network-wide maintenance and manages the bypass allowlist, all synced to
  * every proxy via [MaintenanceService]. Guarded by `cryon.maintenance`.
  *
- * - `on [message]` / `off` — flip maintenance.
- * - `add|remove <player>` — manage names that may join while maintenance is on (independent of the
+ * - `on [message]` / `off`: flip maintenance.
+ * - `add|remove <player>`: manage names that may join while maintenance is on (independent of the
  *   `cryon.maintenance.bypass` permission).
- * - `list` — show the allowlist.
+ * - `list`: show the allowlist.
  */
 @Command("maintenance", "Network maintenance")
 @Permission("cryon.maintenance")
@@ -70,9 +70,9 @@ class MaintenanceCommand(
         }
     }
 
-    /** Tab-completion for `add` — online player names. */
+    /** Tab-completion for `add`. Online player names. */
     fun onlinePlayers(): Collection<String> = proxy.allPlayers.map { it.username }
 
-    /** Tab-completion for `remove` — the current allowlist. */
+    /** Tab-completion for `remove`. The current allowlist. */
     fun allowlisted(): Collection<String> = maintenance.allowlist().sorted()
 }

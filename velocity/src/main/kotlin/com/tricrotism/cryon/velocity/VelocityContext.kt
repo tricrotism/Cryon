@@ -4,6 +4,7 @@ import com.tricrotism.cryon.common.module.ServiceRegistry
 import com.tricrotism.cryon.velocity.api.VelocityModuleContext
 import com.velocitypowered.api.proxy.ProxyServer
 import org.slf4j.Logger
+import java.nio.file.Path
 
 /** The concrete [VelocityModuleContext] the core hands to every Velocity module. */
 class VelocityContext(
@@ -11,4 +12,5 @@ class VelocityContext(
     override val plugin: Any,
     override val logger: Logger,
     override val services: ServiceRegistry,
+    override val dataDirectory: Path,
 ) : VelocityModuleContext

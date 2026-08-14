@@ -6,6 +6,7 @@ import com.tricrotism.cryon.common.module.ModuleManager
 import com.tricrotism.cryon.common.module.ModuleState
 import com.tricrotism.cryon.common.text.CommonMessages
 import com.tricrotism.cryon.common.text.Mini
+import com.tricrotism.cryon.menu.AdminMenu
 import com.tricrotism.cryon.module.ModuleLoader
 import com.tricrotism.cryon.network.NetworkStatus
 import com.tricrotism.cryon.paper.api.command.*
@@ -19,19 +20,30 @@ import org.bukkit.Bukkit
 import org.bukkit.command.CommandSender
 import org.bukkit.command.ConsoleCommandSender
 import org.bukkit.command.RemoteConsoleCommandSender
+import org.bukkit.entity.Player
 import java.io.File
 import java.util.*
 
 /**
- * `/cryon modules | info <id> | enable <id> | disable <id> | reload <id>` — runtime *lifecycle*;
- * `load <jar> | unload <id> | scan` — jar-level *hot-swap*; `reload-api` — cascade-reload the
- * shared `api/` contract layer plus every module; `network` — this server's deployment shape; and
- * the feature kill switches:
- * `flags [scope]`, `flag enable|disable|clear <feature> [scope]`, `flag status <feature> [player]`,
- * `flag delete <feature>`, `flag reload` — where scope is `global` (default), a server name, or
- * `player:<name>`; `lang reload` — re-read the message files from disk. The built-in module manager,
- * annotation-defined and gated by `cryon.admin`.
- * `<id>`/`<jar>` tab-complete from the live state. Admin-facing English output.
+ * The built-in module manager, annotation-defined and gated by `cryon.admin`.
+ *
+ * Lifecycle: `list | info <id> | enable <id> | disable <id> | reload <id>`. Jar-level hot-swap:
+ * `load <jar> | unload <id> | scan`, plus `reload-api` for the cascade that reloads the shared `api/`
+ * contract layer and every module with it. `network` prints this server's deployment shape and
+ * `lang reload` re-reads the message files from disk.
+ *
+ * Feature kill switches: `flags [scope]`, `flag enable|disable|clear <feature> [scope]`,
+ * `flag status <feature> [player]`, `flag delete <feature>`, `flag reload`. **A scope is `global`
+ * (the default), `server` for this server's own pool, another server's name, or simply a player's
+ * name** — `player:<name>` still parses, but nothing suggests it any more, because decorating a name
+ * is work the command can do itself.
+ *
+ * Three things exist to keep the surface findable. Bare `/cryon` opens the menu or prints the help,
+ * whichever `commands.menu` makes primary; `menu` and `help [page]` reach the other one regardless,
+ * and the console always gets the help. Every unknown id answers with the nearest real one as a
+ * one-click correction (see [CommandUi.unknown]) rather than only rejecting what was typed.
+ *
+ * `<id>`/`<jar>`/`<scope>` tab-complete from live state. Admin-facing English output.
  */
 @Command("cryon", "Cryon module manager")
 @Permission("cryon.admin")
@@ -43,22 +55,90 @@ class ModuleCommands(
     private val network: NetworkStatus,
     private val messages: MessageService,
     private val placeholders: PlaceholderService,
+    private val menu: AdminMenu,
+    private val menuFirst: Boolean,
 ) {
 
+    /**
+     * Bare `/cryon`. A player gets whichever surface `commands.menu` makes primary; console always
+     * gets the help, having nowhere to put a window.
+     */
     @Subcommand
-    fun overview(sender: CommandSender) = list(sender)
+    fun overview(sender: CommandSender) {
+        if (menuFirst && sender is Player) menu.open(sender) else help(sender)
+    }
+
+    /**
+     * Open the admin menu regardless of which surface is primary.
+     */
+    @Subcommand("menu")
+    fun menu(sender: CommandSender) {
+        if (sender !is Player) {
+            sender.sendMessage(CommonMessages.error(Mini.format("<off_white>The menu needs a player. Try /cryon help.")))
+            return
+        }
+        menu.open(sender)
+    }
+
+    @Subcommand("help")
+    fun help(sender: CommandSender) = help(sender, 1)
+
+    @Subcommand("help")
+    fun help(sender: CommandSender, @Arg("page") page: Int) {
+        val pages = (HELP.size + HELP_PAGE_SIZE - 1) / HELP_PAGE_SIZE
+        val current = page.coerceIn(1, pages)
+        sender.sendMessage(
+            CommonMessages.info(
+                Mini.format(
+                    "<off_white>Cryon commands <slate_gray>(page <p>/<n>)",
+                    Placeholder.unparsed("p", current.toString()),
+                    Placeholder.unparsed("n", pages.toString()),
+                )
+            )
+        )
+        var section: String? = null
+        for (entry in HELP.drop((current - 1) * HELP_PAGE_SIZE).take(HELP_PAGE_SIZE)) {
+            if (entry.section != section) {
+                section = entry.section
+                sender.sendMessage(
+                    Mini.format("  <u><slate_gray><s></slate_gray></u>", Placeholder.unparsed("s", section))
+                )
+            }
+            sender.sendMessage(CommandUi.usage(entry.path, entry.description))
+        }
+        sender.sendMessage(pageFooter(current, pages))
+    }
+
+    private fun pageFooter(current: Int, pages: Int): Component {
+        if (pages <= 1) return Mini.format("  <slate_gray>Every command also tab-completes.")
+        val parts = mutableListOf<Component>(Mini.format("  "))
+        if (current > 1) {
+            parts += CommandUi.button(
+                "← prev", "sky_blue", "/cryon help ${current - 1}",
+                CommandUi.hover("sky_blue", "Previous page", "Page ${current - 1}"),
+            )
+            parts += Component.space()
+        }
+        if (current < pages) {
+            parts += CommandUi.button(
+                "next →", "sky_blue", "/cryon help ${current + 1}",
+                CommandUi.hover("sky_blue", "Next page", "Page ${current + 1}"),
+            )
+        }
+        return Component.textOfChildren(*parts.toTypedArray())
+    }
 
     /** What this server was told to be, what it actually is, and any way the two disagree. */
     @Subcommand("network")
     fun network(sender: CommandSender) {
         val identity = network.identity
         sender.sendMessage(Mini.format("<off_white>Network"))
-        line(sender, "Mode", identity.mode.name.lowercase())
-        line(sender, "Family", identity.family)
-        line(sender, "Instance", identity.instanceId)
+        line(sender, "Server", identity.serverId)
+        line(sender, "Expect", identity.expectation.name.lowercase().replace('_', '-'))
+        line(sender, "Node", identity.nodeId)
         line(sender, "Transport", network.transport)
         line(sender, "Database", if (network.persistent) "on" else "off")
-        line(sender, "Live in family", network.familySize().toString())
+        line(sender, "Live nodes", network.nodeCount().toString())
 
         val warnings = network.warnings()
         if (warnings.isEmpty()) {
@@ -92,7 +172,7 @@ class ModuleCommands(
     fun info(sender: CommandSender, @Arg("id", suggests = "moduleIds") id: String) {
         val state = modules.state(id)
         if (state == null) {
-            sender.sendMessage(CommonMessages.error(notFound(id)))
+            unknownModule(sender, id, "info")
             return
         }
         sender.sendMessage(
@@ -185,7 +265,7 @@ class ModuleCommands(
     @Subcommand("reload")
     fun reloadModule(sender: CommandSender, @Arg("id", suggests = "moduleIds") id: String) = onLoaderThread {
         if (!modules.has(id)) {
-            sender.sendMessage(CommonMessages.error(notFound(id)))
+            unknownModule(sender, id, "reload")
             return@onLoaderThread
         }
         if (modules.reload(id)) {
@@ -195,7 +275,7 @@ class ModuleCommands(
             sender.sendMessage(
                 CommonMessages.error(
                     line(
-                        "<off_white>Failed to reload <highlight><id></highlight> — check console.",
+                        "<off_white>Failed to reload <highlight><id></highlight>. Check console.",
                         id
                     )
                 )
@@ -207,14 +287,7 @@ class ModuleCommands(
     fun load(sender: CommandSender, @Arg("jar", suggests = "loadableJars") jar: String) = onLoaderThread {
         val file = File(loader.modulesDir, jar)
         if (!file.isFile || !jar.endsWith(".jar")) {
-            sender.sendMessage(
-                CommonMessages.error(
-                    line(
-                        "<off_white>No jar <highlight><id></highlight> in modules/.",
-                        jar
-                    )
-                )
-            )
+            CommandUi.unknown(sender, "jar", jar, loader.loadableJarNames()) { "/cryon load $it" }
             return@onLoaderThread
         }
         val enabled = loader.loadJar(file)
@@ -222,7 +295,7 @@ class ModuleCommands(
             sender.sendMessage(
                 CommonMessages.warn(
                     line(
-                        "<off_white>Loaded <highlight><id></highlight> but no module enabled — check console.",
+                        "<off_white>Loaded <highlight><id></highlight> but no module enabled. Check console.",
                         jar
                     )
                 )
@@ -232,7 +305,7 @@ class ModuleCommands(
         sender.sendMessage(
             CommonMessages.success(
                 Mini.format(
-                    "<off_white>Loaded <highlight><jar></highlight> — enabled <highlight><list></highlight>.",
+                    "<off_white>Loaded <highlight><jar></highlight>. Enabled <highlight><list></highlight>.",
                     Placeholder.unparsed("jar", jar),
                     Placeholder.unparsed("list", enabled.joinToString(", ")),
                 )
@@ -243,7 +316,7 @@ class ModuleCommands(
     @Subcommand("unload")
     fun unload(sender: CommandSender, @Arg("id", suggests = "moduleIds") id: String) = onLoaderThread {
         if (!modules.has(id)) {
-            sender.sendMessage(CommonMessages.error(notFound(id)))
+            unknownModule(sender, id, "unload")
             return@onLoaderThread
         }
         val removed = loader.unloadModule(id)
@@ -261,7 +334,7 @@ class ModuleCommands(
         sender.sendMessage(
             CommonMessages.success(
                 Mini.format(
-                    "<off_white>Unloaded <highlight><list></highlight>. The jar stays in modules/ — delete it to remove permanently.",
+                    "<off_white>Unloaded <highlight><list></highlight>. The jar stays in modules/. Delete it to remove permanently.",
                     Placeholder.unparsed("list", removed.joinToString(", ")),
                 )
             )
@@ -412,11 +485,11 @@ class ModuleCommands(
         if (flags.reload()) {
             sender.sendMessage(CommonMessages.success(Mini.format("<off_white>Reloading feature flags from the database.")))
         } else {
-            sender.sendMessage(CommonMessages.warn(Mini.format("<off_white>No database configured — flags are in-memory only, nothing to reload.")))
+            sender.sendMessage(CommonMessages.warn(Mini.format("<off_white>No database configured. Flags are in-memory only, nothing to reload.")))
         }
     }
 
-    /** Re-read every message source from disk — the admin `lang/` override and every module's bundle. */
+    /** Re-read every message source from disk. The admin `lang/` override and every module's bundle. */
     @Subcommand("lang", "reload")
     fun langReload(sender: CommandSender) {
         messages.reload()
@@ -427,7 +500,7 @@ class ModuleCommands(
     @Suppress("unused")
     fun moduleIds(): Collection<String> = modules.ids()
 
-    /** Suggester for flag features — every registered/overridden flag ID. */
+    /** Suggester for flag features, every registered/overridden flag ID. */
     @Suppress("unused")
     fun flagIds(): Collection<String> = flags.features()
 
@@ -435,15 +508,16 @@ class ModuleCommands(
     @Suppress("unused")
     fun flagScopes(): Collection<String> = buildList {
         add(FeatureFlags.GLOBAL_SCOPE)
-        add(flags.serverName)
-        Bukkit.getOnlinePlayers().forEach { add(FeatureFlags.PLAYER_SCOPE_PREFIX + it.name) }
+        add(SERVER_SCOPE_KEYWORD)
+        add(flags.serverId)
+        Bukkit.getOnlinePlayers().forEach { add(it.name) }
     }
 
     /** Suggester for player arguments. */
     @Suppress("unused")
     fun onlinePlayerNames(): Collection<String> = Bukkit.getOnlinePlayers().map { it.name }
 
-    /** Suggester for `/cryon load` — jars sitting in modules/ that aren't loaded yet. */
+    /** Suggester for `/cryon load`. Jars sitting in modules/ that aren't loaded yet. */
     @Suppress("unused")
     fun loadableJars(): Collection<String> = loader.loadableJarNames()
 
@@ -483,7 +557,7 @@ class ModuleCommands(
 
     private fun toggle(sender: CommandSender, id: String, enable: Boolean) = onLoaderThread {
         if (!modules.has(id)) {
-            sender.sendMessage(CommonMessages.error(notFound(id)))
+            unknownModule(sender, id, if (enable) "enable" else "disable")
             return@onLoaderThread
         }
         val verb = if (enable) "enabled" else "disabled"
@@ -504,7 +578,7 @@ class ModuleCommands(
         }
     }
 
-    /** The clickable action row shown after a module — a state-aware toggle plus reload and info. */
+    /** The clickable action row shown after a module, a state-aware toggle plus reload and info. */
     private fun actionButtons(id: String, state: ModuleState): Component {
         val toggle = if (state == ModuleState.ENABLED) {
             button("■", "scarlet", "/cryon disable $id", actionHover("scarlet", "■ Disable", "disable", id))
@@ -546,7 +620,7 @@ class ModuleCommands(
                     scope,
                     feature
                 )
-            ) "<off_white>Cleared the <highlight><label></highlight> <off_white>entry for <highlight><feature></highlight><off_white> — it falls back to the next layer."
+            ) "<off_white>Cleared the <highlight><label></highlight> <off_white>entry for <highlight><feature></highlight><off_white>, it falls back to the next layer."
             else "<off_white><highlight><feature></highlight> <off_white>has no entry for <highlight><label></highlight><off_white>."
         sender.sendMessage(
             CommonMessages.info(
@@ -573,7 +647,7 @@ class ModuleCommands(
         if (player != null) {
             sender.sendMessage(layerLine("Player ($playerName)", flags.override(flags.playerScope(player), feature)))
         }
-        sender.sendMessage(layerLine("Server (${flags.serverName})", flags.override(flags.serverName, feature)))
+        sender.sendMessage(layerLine("Server (${flags.serverId})", flags.override(flags.serverId, feature)))
         sender.sendMessage(layerLine("Global", flags.override(FeatureFlags.GLOBAL_SCOPE, feature)))
     }
 
@@ -626,12 +700,27 @@ class ModuleCommands(
         )
     }
 
-    /** Resolve a typed scope — `global`, a server name, or `player:<name>` — to its storage key. */
+    /**
+     * Resolve a typed scope to its storage key.
+     *
+     * Accepts `global`, `server` (or this server's own name), `player:<name>`, and a **bare player
+     * name**, which is what an operator reaches for and what the old spelling made them decorate. The
+     * order matters: the reserved words and the real server name win before a name is treated as a
+     * player, so a server called `global` cannot be shadowed by someone logging in under that name.
+     * Anything else is passed through as a literal scope, which is how another server in the pool is
+     * still addressable by name from here.
+     */
     private fun resolveScope(sender: CommandSender, raw: String): String? {
         val trimmed = raw.trim()
-        if (!trimmed.lowercase().startsWith(FeatureFlags.PLAYER_SCOPE_PREFIX)) return trimmed
-        val name = trimmed.substring(FeatureFlags.PLAYER_SCOPE_PREFIX.length)
-        return resolvePlayerId(sender, name)?.let(flags::playerScope)
+        val lower = trimmed.lowercase()
+        if (lower == FeatureFlags.GLOBAL_SCOPE) return FeatureFlags.GLOBAL_SCOPE
+        if (lower == SERVER_SCOPE_KEYWORD || lower == flags.serverId.lowercase()) return flags.serverId
+        if (lower.startsWith(FeatureFlags.PLAYER_SCOPE_PREFIX)) {
+            val name = trimmed.substring(FeatureFlags.PLAYER_SCOPE_PREFIX.length)
+            return resolvePlayerId(sender, name)?.let(flags::playerScope)
+        }
+        Bukkit.getPlayerExact(trimmed)?.let { return flags.playerScope(it.uniqueId) }
+        return trimmed
     }
 
     /** An online or previously-seen player's UUID, or ack the sender that they're unknown. */
@@ -644,8 +733,7 @@ class ModuleCommands(
     /** The scope argument that reaches [scope] from a command, or null for an unresolvable player scope. */
     private fun commandScope(scope: String): String? {
         if (!scope.startsWith(FeatureFlags.PLAYER_SCOPE_PREFIX)) return scope
-        val name = playerName(scope.substring(FeatureFlags.PLAYER_SCOPE_PREFIX.length)) ?: return null
-        return FeatureFlags.PLAYER_SCOPE_PREFIX + name
+        return playerName(scope.substring(FeatureFlags.PLAYER_SCOPE_PREFIX.length))
     }
 
     /** `player:<uuid>` scopes display as `player <name>`; other scopes as themselves. */
@@ -687,13 +775,13 @@ class ModuleCommands(
      *
      * [ModuleLoader], [ModuleManager] and the command registry all hold plain maps and document
      * themselves as main-thread only. That is true on Paper, where commands dispatch on the main
-     * thread — but not on Folia, where a player's command runs on their own region thread while the
+     * thread, but not on Folia, where a player's command runs on their own region thread while the
      * hot-reload watcher is already dispatching through the global scheduler. Funnelling every
      * mutating entry point through one lane keeps the invariant true on both, without making four
      * maps concurrent for a path that runs a handful of times a session.
      *
-     * Note this moves the command's feedback off the sender's own thread. That is fine — sending to a
-     * player is one of the few APIs Folia allows from anywhere, because it only queues a packet — but
+     * Note this moves the command's feedback off the sender's own thread. That is fine: sending to a
+     * player is one of the few APIs Folia allows from anywhere, because it only queues a packet, but
      * it is the reason nothing else in here may touch the sender beyond messaging them.
      */
     private fun onLoaderThread(body: () -> Unit) {
@@ -702,7 +790,11 @@ class ModuleCommands(
 
     private fun line(template: String, id: String): Component = Mini.format(template, Placeholder.unparsed("id", id))
 
-    private fun notFound(id: String): Component = line("<off_white>No module <highlight><id></highlight>.", id)
+    /**
+     * Reject an unknown module id, offering the nearest real one as a one-click correction.
+     */
+    private fun unknownModule(sender: CommandSender, id: String, verb: String) =
+        CommandUi.unknown(sender, "module", id, modules.ids()) { "/cryon $verb $it" }
 
     private fun stateLabel(state: ModuleState): Component {
         val color = when (state) {
@@ -713,5 +805,41 @@ class ModuleCommands(
             ModuleState.REGISTERED -> "<gold>"
         }
         return Mini.format("$color${state.name}")
+    }
+
+    private class HelpEntry(val section: String, val path: String, val description: String)
+
+    private companion object {
+
+        const val HELP_PAGE_SIZE = 8
+
+        /** Addresses this server's own pool without typing its name. */
+        const val SERVER_SCOPE_KEYWORD = "server"
+
+        /**
+         * The help, grouped by what an operator is trying to do rather than by the order the methods
+         * happen to be declared in. Brigadier already tab-completes every one of these; what it cannot
+         * say is which of them belong together, or what any of them is for.
+         */
+        val HELP = listOf(
+            HelpEntry("Modules", "cryon list", "Every module and its state"),
+            HelpEntry("Modules", "cryon info <id>", "Commands, placeholders and state for one module"),
+            HelpEntry("Modules", "cryon enable <id>", "Enable a loaded module"),
+            HelpEntry("Modules", "cryon disable <id>", "Disable a running module"),
+            HelpEntry("Modules", "cryon reload <id>", "Disable then re-enable a module"),
+            HelpEntry("Jars", "cryon load <jar>", "Load and enable a jar from modules/"),
+            HelpEntry("Jars", "cryon unload <id>", "Unload the jar a module came from"),
+            HelpEntry("Jars", "cryon scan", "Load every jar in modules/ that is not loaded yet"),
+            HelpEntry("Jars", "cryon reload-api", "Reload the api/ layer and every module with it"),
+            HelpEntry("Flags", "cryon flags [scope]", "Feature flags, all scopes or one"),
+            HelpEntry("Flags", "cryon flag enable <feature> [scope]", "Turn a feature on"),
+            HelpEntry("Flags", "cryon flag disable <feature> [scope]", "Turn a feature off"),
+            HelpEntry("Flags", "cryon flag clear <feature> [scope]", "Drop one scope's override"),
+            HelpEntry("Flags", "cryon flag status <feature> [player]", "The layered breakdown"),
+            HelpEntry("Flags", "cryon flag reload", "Re-read the flags from the database"),
+            HelpEntry("Server", "cryon network", "This server's deployment shape"),
+            HelpEntry("Server", "cryon menu", "The same actions as a menu"),
+            HelpEntry("Server", "cryon lang reload", "Re-read the language files from disk"),
+        )
     }
 }

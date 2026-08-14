@@ -15,7 +15,7 @@ import java.util.function.Predicate
 import com.mojang.brigadier.Command as BrigadierExecutor
 
 /**
- * Registers [Command]-annotated classes onto Velocity's native Brigadier via reflection — the proxy
+ * Registers [Command]-annotated classes onto Velocity's native Brigadier via reflection. The proxy
  * twin of the Paper `AnnotationCommands`. Each `@Subcommand` method becomes a node; the `CommandSource`
  * parameter is injected, `@Arg` params become Brigadier arguments (named via the annotation), and
  * `@Arg(suggests = "method")` wires a no-arg `Collection<String>` suggester. Java reflection only.

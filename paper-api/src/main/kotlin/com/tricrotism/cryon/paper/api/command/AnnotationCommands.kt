@@ -18,7 +18,7 @@ import com.mojang.brigadier.Command as BrigadierCommand
  * Registers [Command]-annotated classes onto a Paper Brigadier [Commands] registrar via reflection.
  * Each `@Subcommand` method becomes a node; the `CommandSender` parameter is injected, `@Arg` params
  * become Brigadier arguments (named via the annotation), and `@Arg(suggests = "method")` wires a
- * no-arg `Collection<String>` suggester. Uses Java reflection only — no kotlin-reflect.
+ * no-arg `Collection<String>` suggester. Uses Java reflection only. No kotlin-reflect.
  */
 /** A built command tree ready to hand to Paper's registrar or splice into the live dispatcher. */
 data class BuiltCommand(
@@ -35,10 +35,10 @@ object AnnotationCommands {
     /**
      * Register [handler]. [available] is AND-ed into every node's access check, so a feature can pass
      * its own enabled-state (`::isEnabled`) and have the whole command tree become unavailable while
-     * the module is disabled, then reappear on re-enable — re-evaluated per dispatch, no re-register.
+     * the module is disabled, then reappear on re-enable. Re-evaluated per dispatch, no re-register.
      *
      * `@JvmOverloads` keeps the `register(Commands, Any)` JVM signature so feature jars built before
-     * `available` was added still link (this is a published API — preserve binary compatibility).
+     * `available` was added still link (this is a published API, so preserve binary compatibility).
      */
     @JvmOverloads
     fun register(registrar: Commands, handler: Any, available: () -> Boolean = { true }) {
@@ -69,7 +69,7 @@ object AnnotationCommands {
     /**
      * Reflect [handler]'s `@Command`/`@Subcommand`/`@Arg` annotations into a display-ready
      * [CommandDescriptor] (name, description, aliases, permission, per-method usage lines), or null if
-     * the class isn't a command. Used by `/cryon info` — it never touches Brigadier.
+     * the class isn't a command. Used by `/cryon info`, it never touches Brigadier.
      */
     fun describe(handler: Any): CommandDescriptor? {
         val type = handler.javaClass

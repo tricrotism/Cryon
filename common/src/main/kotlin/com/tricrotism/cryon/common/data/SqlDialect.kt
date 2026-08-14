@@ -6,14 +6,14 @@ import java.sql.SQLException
  * A secondary index on [columns] of a table, named [name].
  *
  * A type rather than a string because the two backends that take indexes separately and the one that
- * takes them inline need the same three facts spelled two different ways — see
+ * takes them inline need the same three facts spelled two different ways. See
  * [SqlDialect.inlineIndexes] and [SqlDialect.indexStatements].
  */
 data class SqlIndex(val name: String, val columns: List<String>, val unique: Boolean = false)
 
 /**
  * A supported SQL backend. Everything above [SqlDatabase] is plain JDBC and dialect-agnostic; the
- * only things that differ are the driver class and how the JDBC URL is built — the server backends
+ * only things that differ are the driver class and how the JDBC URL is built, and the server backends
  * take a `//host:port/database`, while embedded [H2] takes a file path. Only backends whose driver
  * the core actually ships are listed, so selecting one can never fail with a missing driver.
  *
@@ -66,7 +66,7 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
         override fun createDatabaseSql(config: DatabaseConfig): String =
             "CREATE DATABASE \"${identifier(config.database)}\""
 
-        /** `3D000` is `invalid_catalog_name` — the database in the URL does not exist. */
+        /** `3D000` is `invalid_catalog_name`. The database in the URL does not exist. */
         override fun isMissingDatabase(error: SQLException): Boolean = error.sqlState == "3D000"
     },
 
@@ -79,7 +79,7 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
          * layer asks "did mine win?" and reads the answer as zero-or-not: [upsertIfGreater] returns
          * zero when its guard refused a stale row, and [insertIfAbsent] returns zero when the row was
          * already there. Under the default, a matched-but-unchanged row reports **one**, so both
-         * answers inverted — a stale write reported success and a duplicate insert reported that it
+         * answers inverted, a stale write reported success and a duplicate insert reported that it
          * had created the row. Silently, because a wrong count throws nothing.
          *
          * With this set, MySQL reports 1 for an insert, 2 for an update it applied and 0 for a row it
@@ -110,7 +110,7 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
          *
          * **[guard] is assigned last, and that ordering is load-bearing.** MySQL evaluates these
          * assignments left to right and each one sees the results of the ones before it, so a guard
-         * written first would leave every following `IF` comparing the incoming value against itself —
+         * written first would leave every following `IF` comparing the incoming value against itself,
          * which is never less than itself, so nothing after it would ever update.
          */
         override fun upsertIfGreater(
@@ -129,7 +129,7 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
         override val largeBinary: String get() = "LONGBLOB"
 
         /**
-         * Inline, because MySQL has no `CREATE INDEX IF NOT EXISTS` — a separate statement would
+         * Inline, because MySQL has no `CREATE INDEX IF NOT EXISTS`, a separate statement would
          * throw on every boot after the first, and the alternative is swallowing an error that also
          * covers the ones worth hearing about.
          */
@@ -154,11 +154,13 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
     /**
      * Embedded, zero-setup SQL: [DatabaseConfig.database] is a file path (host/port are ignored).
      * `AUTO_SERVER` lets more than one process share the file; `MODE=PostgreSQL` makes H2 accept the
-     * Postgres-flavoured SQL features write. Local to one process — not shared network-wide state.
+     * Postgres-flavored SQL features write. Local to one process, not shared network-wide state.
      */
     H2("h2", "org.h2.Driver", 0) {
         override fun jdbcUrl(config: DatabaseConfig): String =
             "jdbc:h2:file:${config.database};AUTO_SERVER=TRUE;MODE=PostgreSQL"
+
+        override val longText: String get() = "VARCHAR"
         // No creation members: H2 makes the file on first connect, so a missing database is not a
         // state this backend can be in.
 
@@ -217,16 +219,16 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
 
     /**
      * As [upsert], but an existing row is overwritten **only when the incoming [guard] column is
-     * strictly greater than the stored one** — the portable spelling of an optimistic-concurrency
+     * strictly greater than the stored one**: the portable spelling of an optimistic-concurrency
      * write. [guard] must appear in [columns] and must not be one of the [keys].
      *
      * This is what a version-stamped row needs and what [upsert] cannot express: a plain upsert lets
      * a slow writer's stale copy land on top of a newer one, and the loser is whichever write the
-     * network happened to delay. A monotonic counter is the same shape — guarding on the counter
+     * network happened to delay. A monotonic counter is the same shape. Guarding on the counter
      * itself makes the write a `max`, so a replayed or out-of-order update cannot walk it backwards.
      *
-     * Each backend spells the guard somewhere different — Postgres on the conflict clause, MySQL per
-     * assigned column, H2 on the `WHEN MATCHED` branch — which is exactly why it belongs here.
+     * Each backend spells the guard somewhere different. Postgres on the conflict clause, MySQL per
+     * assigned column, H2 on the `WHEN MATCHED` branch, which is exactly why it belongs here.
      */
     abstract fun upsertIfGreater(
         table: String,
@@ -248,9 +250,21 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
     open val largeBinary: String get() = "BLOB"
 
     /**
+     * Text with no practical length bound, for a value whose width is a property of the data rather
+     * than a choice: an exact decimal ledger entry, a serialized blob of user content.
+     *
+     * A guessed `VARCHAR(n)` on one of those is a silent cap that only shows up as a write failure
+     * once someone reaches it, which for money is the worst possible moment. MySQL's `TEXT` holds
+     * 65535 bytes, comfortably past [com.tricrotism.cryon.common.number.PackedDecimal]'s widest
+     * plain string; Postgres' is unbounded; H2 wants an unqualified `VARCHAR`, which it treats as
+     * its maximum rather than as a one-character column.
+     */
+    open val longText: String get() = "TEXT"
+
+    /**
      * Index clauses to place **inside** `CREATE TABLE`, each with a leading comma, or empty.
      *
-     * Only MySQL takes them there — and it is also the only one of the three without
+     * Only MySQL takes them there, and it is also the only one of the three without
      * `CREATE INDEX IF NOT EXISTS`, so inline is the only spelling that stays idempotent across the
      * reboots that re-run schema creation. The other two get [indexStatements] instead; exactly one
      * of the pair is ever non-empty.
@@ -282,7 +296,7 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
      * Whether [error] means precisely "the database named in the URL does not exist".
      *
      * Deliberately narrow. A refused connection, a bad password and a missing `CREATEDB` grant are
-     * all failures this must answer **false** to — creating a database in response to any of them
+     * all failures this must answer **false** to. Creating a database in response to any of them
      * would replace a clear error with a confusing one.
      */
     open fun isMissingDatabase(error: SQLException): Boolean = false
@@ -309,7 +323,7 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
          *
          * The only guard between `database.database` and a `CREATE DATABASE` statement it is
          * concatenated into. Both backends do support quoted names with punctuation in them, but a
-         * name this narrow is one nobody has to think about — and a database exotic enough to need
+         * name this narrow is one nobody has to think about, and a database exotic enough to need
          * more than this is one an operator should be creating by hand anyway.
          */
         fun identifier(name: String): String =

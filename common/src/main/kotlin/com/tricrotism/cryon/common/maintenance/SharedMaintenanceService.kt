@@ -16,7 +16,7 @@ import java.util.concurrent.CopyOnWriteArrayList
  *
  * Proxy-side only, on either transport. Maintenance is enforced where logins arrive, and a
  * single-server deployment still has exactly one proxy, so its in-process state is already
- * network-wide truth — nothing on Paper reads this service.
+ * network-wide truth, so nothing on Paper reads this service.
  */
 class SharedMaintenanceService(
     private val database: Database?,

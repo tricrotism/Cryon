@@ -28,7 +28,7 @@ interface CommandService {
      *
      * [register] gives an owner exclusive title to a root literal: registering `foo` drops whatever
      * `foo` was there, and [unregister] takes the whole root away. That's right for a module's own
-     * command, and wrong for a namespace several modules are meant to live under — the second
+     * command, and wrong for a namespace several modules are meant to live under. The second
      * contributor would silently evict the first.
      *
      * Here the root literal is shared. Each handler's `@Command` name picks the root to hang under,
@@ -49,7 +49,7 @@ interface CommandService {
     fun registerBranch(owner: String, available: () -> Boolean, handlers: List<Any>)
 
     /**
-     * Remove every command [owner] contributed from the live dispatcher (used when a jar unloads) —
+     * Remove every command [owner] contributed from the live dispatcher (used when a jar unloads),
      * both whole roots from [register] and individual branches from [registerBranch].
      */
     fun unregister(owner: String)

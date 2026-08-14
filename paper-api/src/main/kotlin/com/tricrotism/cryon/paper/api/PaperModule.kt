@@ -10,14 +10,17 @@ import com.tricrotism.cryon.paper.api.scheduler.Schedulers
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask
 import org.bukkit.Location
 import org.bukkit.Server
+import org.bukkit.configuration.file.YamlConfiguration
 import org.bukkit.entity.Entity
 import org.bukkit.event.HandlerList
 import org.bukkit.event.Listener
 import org.bukkit.plugin.Plugin
 import org.slf4j.Logger
+import java.io.File
 import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
+import java.util.jar.JarFile
 
 /**
  * Base class for Paper-side feature modules. Captures the [PaperModuleContext] in [onLoad] and
@@ -49,6 +52,70 @@ abstract class PaperModule : Module {
      * sends nothing, so menus can ask without branching on whether Geyser is installed.
      */
     protected val bedrock: BedrockService get() = services.get<BedrockService>()
+
+    /**
+     * This module's own directory, `plugins/Cryon/data/<id>/`, created on first use.
+     *
+     * Not `plugin.dataFolder`: that is the **core's** folder, and every module writing into it shares
+     * one flat namespace with no owner recorded anywhere. Two modules that both want a `config.yml`
+     * silently get one file, and the second one to load reads the first one's settings.
+     *
+     * Deliberately a sibling of `modules/` rather than a directory inside it. `modules/` is an input
+     * the admin drops jars into and the hot-reload watcher owns; keeping written state out of it means
+     * "clear modules/ and re-copy the jars" cannot take a module's data with it.
+     */
+    protected val dataFolder: File by lazy {
+        File(File(plugin.dataFolder, "data"), id).apply { mkdirs() }
+    }
+
+    /**
+     * Load [name] from [dataFolder], writing the copy bundled in this module's jar the first time.
+     *
+     * Reads the resource through *this module's* classloader, so each jar ships its own defaults and
+     * they cannot collide. Returns a fresh read each call, which is also how you reload: hold the
+     * result in a field, call again on reload, swap the field. There is no hidden cached instance,
+     * because a stale one that nothing invalidates is the bug this is meant to remove.
+     *
+     * ```
+     * private var settings = config()          // onEnable
+     * fun reload() { settings = config() }     // /yourcommand reload
+     * ```
+     */
+    protected fun config(name: String = "config.yml"): YamlConfiguration {
+        val file = File(dataFolder, name)
+        if (!file.exists()) extractDefault(name, file)
+        return YamlConfiguration.loadConfiguration(file)
+    }
+
+    /** Copy this jar's bundled [name] to [file]. Absent is fine: the module then starts from empty. */
+    private fun extractDefault(name: String, file: File) {
+        val bundled = bundledResource(name) ?: return
+        try {
+            file.writeBytes(bundled)
+            logger.info("Wrote default $name for module '$id'")
+        } catch (e: Exception) {
+            logger.error("Could not write the default $name for module '$id'", e)
+        }
+    }
+
+    /**
+     * Read [name] out of **this module's own jar**, rather than through the classloader.
+     *
+     * `getResourceAsStream` delegates to the parent first, and the parent here is the core — whose
+     * jar also contains a `config.yml`. A module asking for its own default would silently be handed
+     * the core's and write that into its folder, which looks like a corrupted default rather than a
+     * lookup landing one classloader too high. Going straight to the code source cannot be ambiguous.
+     */
+    private fun bundledResource(name: String): ByteArray? {
+        val location = runCatching { javaClass.protectionDomain?.codeSource?.location }.getOrNull() ?: return null
+        val source = runCatching { File(location.toURI()) }.getOrNull() ?: return null
+        if (source.isDirectory) return File(source, name).takeIf(File::isFile)?.readBytes()
+        return runCatching {
+            JarFile(source).use { jar ->
+                jar.getJarEntry(name)?.let { entry -> jar.getInputStream(entry).use { it.readBytes() } }
+            }
+        }.getOrNull()
+    }
 
     /** Resolve a required peer service: sugar for `services.get<T>()`. */
     protected inline fun <reified T : Any> service(): T = services.get()
@@ -98,7 +165,7 @@ abstract class PaperModule : Module {
      * Repeating task following [entity], canceled on disable. Null when the entity is already gone.
      *
      * The entity scheduler drops the task when its entity is removed, which covers a player logging
-     * out — but not this module unloading while they are still online, which is what [globalTimer]
+     * out, but not this module unloading while they are still online, which is what [globalTimer]
      * describes.
      */
     protected fun entityTimer(
@@ -111,7 +178,7 @@ abstract class PaperModule : Module {
         Schedulers.entityTimer(entity, delayTicks, periodTicks, retired, task)?.also { tasks += it }
 
     /**
-     * Register a resource closed automatically when this module disables — an `Events` `Subscription`,
+     * Register a resource closed automatically when this module disables: an `Events` `Subscription`,
      * a `ServerRegistry.onChange` or `MaintenanceService.onChange` handle, a client, anything else that
      * lives as long as the module.
      *
@@ -124,7 +191,7 @@ abstract class PaperModule : Module {
      * registration order, after listeners and tasks are already down.
      *
      * **For module-lifetime resources only.** Nothing removes an entry before disable, so tracking a
-     * per-use object — a `ConfirmMenu.Dialog` per click, a window per open — grows this list for the
+     * per-use object, a `ConfirmMenu.Dialog` per click, a window per open. Grows this list for the
      * module's whole life. Those belong in your own collection, keyed by player and pruned when the
      * dialog resolves; close what is left of it in [onDisable].
      */
@@ -154,7 +221,7 @@ abstract class PaperModule : Module {
     }
 
     /**
-     * Register `@Command` [handlers] as branches of a **shared** root — see
+     * Register `@Command` [handlers] as branches of a **shared** root. See
      * [CommandService.registerBranch]. **Call from [onLoad]**, like [registerCommands].
      *
      * Use this, not [registerCommands], when the root literal is a namespace several modules live
@@ -172,7 +239,7 @@ abstract class PaperModule : Module {
 
     /**
      * Register how this module writes one player's state down, so the core can flush it before the
-     * player is handed to another instance — see [PlayerHandoff] for why saving on quit is too late.
+     * player is handed to another instance. See [PlayerHandoff] for why saving on quit is too late.
      * Automatically unregistered on disable.
      *
      * [flush] runs off the main thread, must not touch the Bukkit API, and must be safe to call while
@@ -192,7 +259,7 @@ abstract class PaperModule : Module {
     }
 
     /**
-     * Publish a [PlaceholderProvider] — a `%<identifier>_…%` PlaceholderAPI namespace — through the core
+     * Publish a [PlaceholderProvider], a `%<identifier>_…%` PlaceholderAPI namespace, through the core
      * bridge. A no-op when PlaceholderAPI is absent. Automatically unregistered on disable. Register from
      * [onEnable]; the callback runs on PlaceholderAPI's thread, so keep it cheap and thread-safe.
      */

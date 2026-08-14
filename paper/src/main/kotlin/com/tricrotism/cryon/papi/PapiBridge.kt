@@ -10,7 +10,7 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * The [PlaceholderService] impl: turns each registered [PlaceholderProvider] into a [CryonExpansion]
  * registered with PlaceholderAPI, one per module namespace, and remembers which owner registered which
- * namespace so `/cryon info <id>` can list them. Best-effort — when PlaceholderAPI is absent, [register]
+ * namespace so `/cryon info <id>` can list them. Best-effort. When PlaceholderAPI is absent, [register]
  * still records the namespace (so info stays honest) but installs no expansion, and features never
  * branch on its presence.
  *
@@ -35,7 +35,7 @@ class PapiBridge(private val plugin: Plugin, private val log: Logger) : Placehol
 
         if (!available) return untrack
         val expansion = CryonExpansion(provider, plugin)
-        // A throw here would surface in the calling module's onEnable and mark it FAILED — isolate it.
+        // A throw here would surface in the calling module's onEnable and mark it FAILED. Isolate it.
         val registered = runCatching { expansion.register() }.getOrElse {
             log.warn("Failed to register the '{}' PlaceholderAPI expansion", identifier, it)
             false

@@ -9,7 +9,7 @@ import java.util.*
 /**
  * Locale-aware messaging for Velocity command sources. A player's message renders in their client
  * locale; the console (and any player without one) falls back to the installed default. All proxy
- * command feedback goes through here so nothing is hardcoded English — see the `lang/` bundle.
+ * command feedback goes through here so nothing is hardcoded English. See the `lang/` bundle.
  */
 
 fun CommandSource.resolvedLocale(): Locale =

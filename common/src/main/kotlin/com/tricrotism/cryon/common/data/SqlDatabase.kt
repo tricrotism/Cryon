@@ -3,10 +3,7 @@ package com.tricrotism.cryon.common.data
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import org.slf4j.Logger
-import java.sql.Driver
-import java.sql.PreparedStatement
-import java.sql.ResultSet
-import java.sql.SQLException
+import java.sql.*
 import java.util.*
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
@@ -37,6 +34,23 @@ class SqlDatabase(config: DatabaseConfig) : Database {
     private val executor = Executors.newFixedThreadPool(config.maxPoolSize) { r ->
         Thread(r, "cryon-db-${threadId.incrementAndGet()}").apply { isDaemon = true }
     }
+
+    override fun <T> transaction(body: (SqlSession) -> T): CompletableFuture<T> =
+        CompletableFuture.supplyAsync({
+            dataSource.connection.use { conn ->
+                conn.autoCommit = false
+                try {
+                    val result = body(ConnectionSession(conn))
+                    conn.commit()
+                    result
+                } catch (t: Throwable) {
+                    runCatching { conn.rollback() }
+                    throw t
+                } finally {
+                    runCatching { conn.autoCommit = true }
+                }
+            }
+        }, executor)
 
     override fun <T> query(sql: String, vararg params: Any?, mapper: (ResultSet) -> T): CompletableFuture<List<T>> =
         CompletableFuture.supplyAsync({
@@ -87,6 +101,32 @@ class SqlDatabase(config: DatabaseConfig) : Database {
         for (i in params.indices) stmt.setObject(i + 1, params[i])
     }
 
+    /**
+     * [SqlSession] over one borrowed connection. Blocking, because the caller is already off-thread.
+     */
+    private class ConnectionSession(private val conn: Connection) : SqlSession {
+
+        override fun <T> query(sql: String, vararg params: Any?, mapper: (ResultSet) -> T): List<T> =
+            conn.prepareStatement(sql).use { stmt ->
+                bind(stmt, params)
+                stmt.executeQuery().use { rs ->
+                    val out = ArrayList<T>()
+                    while (rs.next()) out.add(mapper(rs))
+                    out
+                }
+            }
+
+        override fun update(sql: String, vararg params: Any?): Int =
+            conn.prepareStatement(sql).use { stmt ->
+                bind(stmt, params)
+                stmt.executeUpdate()
+            }
+
+        private fun bind(stmt: PreparedStatement, params: Array<out Any?>) {
+            for (i in params.indices) stmt.setObject(i + 1, params[i])
+        }
+    }
+
     companion object {
 
         /** How long [close] waits for in-flight statements before forcing the query threads down. */
@@ -96,14 +136,14 @@ class SqlDatabase(config: DatabaseConfig) : Database {
          * Connect, creating the database first if that is the only thing wrong.
          *
          * A fresh deployment points at a database nobody has created yet, and the failure that
-         * produces is indistinguishable at a glance from the ones that mean something else — so the
+         * produces is indistinguishable at a glance from the ones that mean something else, so the
          * server would come up with no flags, no locale store and no metrics over a missing `CREATE
          * DATABASE`. This closes that gap and nothing else: [SqlDialect.isMissingDatabase] answers
          * true for exactly one error, so a refused connection, a bad password or an absent
          * `CREATEDB` grant still fail the way they always did, with their own message.
          *
          * One retry, never a loop. If the second connect fails the original exception is what
-         * propagates — the creation was a guess and the first error is the one worth reading.
+         * propagates. The creation was a guess and the first error is the one worth reading.
          */
         fun connect(config: DatabaseConfig, logger: Logger): SqlDatabase = try {
             SqlDatabase(config)
@@ -125,7 +165,7 @@ class SqlDatabase(config: DatabaseConfig) : Database {
          * Run the backend's `CREATE DATABASE` against its maintenance URL.
          *
          * The driver is instantiated directly rather than gone through `DriverManager`, which only
-         * sees drivers registered by the caller's own classloader — and these drivers are loaded at
+         * sees drivers registered by the caller's own classloader, and these drivers are loaded at
          * runtime from `plugin.yml` `libraries:`, one loader away. Autocommit is on for a fresh
          * connection, which Postgres requires: it refuses `CREATE DATABASE` inside a transaction.
          */

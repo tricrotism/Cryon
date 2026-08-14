@@ -6,29 +6,29 @@ import java.util.*
 import java.util.concurrent.*
 
 /**
- * [Messenger] confined to this process — what a single-server deployment runs instead of
+ * [Messenger] confined to this process, what a single-server deployment runs instead of
  * [RedisMessenger]. A message reaches this JVM's own subscribers and no further, which is exactly
- * right when the JVM *is* the whole family: the same publish/subscribe code then works unchanged
+ * right when the JVM *is* the whole serverId: the same publish/subscribe code then works unchanged
  * whether one server or ten are listening.
  *
  * Two details make it a faithful stand-in rather than a rough one, and both are load-bearing:
  *
  * 1. **A publisher hears its own message.** Redis pub/sub delivers a publish back to the publisher's
- *    own subscription, and callers lean on it — `SharedServerRegistry` only ever populates its
+ *    own subscription, and callers lean on it: `SharedServerRegistry` only ever populates its
  *    replica from the echo, so a non-echoing loopback would leave the registry permanently empty.
  * 2. **Delivery happens off the caller's thread**, on one ordered daemon thread, mirroring Lettuce's
  *    ordered per-connection delivery. Dispatching inline would run handlers re-entrantly inside
  *    `publish` (and on the main server thread), so code that worked here would deadlock or reorder
- *    against real Redis — a fidelity gap in the worst direction.
+ *    against real Redis, a fidelity gap in the worst direction.
  *
  * [publish]'s future completes once the message is handed to that thread, not once handlers have run
- * — the same promise Redis makes, where a publish completes on server ack rather than on delivery.
+ * the same promise Redis makes, where a publish completes on server ack rather than on delivery.
  */
 class LocalMessenger(private val logger: Logger) : Messenger {
 
     private val handlers = ConcurrentHashMap<String, CopyOnWriteArrayList<(String) -> Unit>>()
-    private val instanceId = UUID.randomUUID().toString()
-    private val replyChannel = "cryon:reply:$instanceId"
+    private val nodeId = UUID.randomUUID().toString()
+    private val replyChannel = "cryon:reply:$nodeId"
     private val pending = ConcurrentHashMap<String, CompletableFuture<String>>()
     private val delivery: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "cryon-local-messenger").apply { isDaemon = true }
@@ -59,7 +59,9 @@ class LocalMessenger(private val logger: Logger) : Messenger {
             val parts = raw.split(SEP, limit = 3)
             if (parts.size != 3) return@subscribe
             val (correlationId, replyTo, payload) = parts
-            responder(payload).thenAccept { reply -> publish(replyTo, "$correlationId$SEP$reply") }
+            responder(payload)
+                .thenAccept { reply -> publish(replyTo, "$correlationId$SEP$reply") }
+                .exceptionally { logger.error("Responder on '{}' failed", channel, it); null }
         }
 
     override fun request(channel: String, message: String, timeout: Duration): CompletableFuture<String> {
@@ -77,10 +79,18 @@ class LocalMessenger(private val logger: Logger) : Messenger {
         return future
     }
 
+    /**
+     * Fail what is still waiting rather than dropping it: see `RedisMessenger.close`.
+     */
     override fun close() {
         delivery.shutdownNow()
         handlers.clear()
-        pending.clear()
+        val iterator = pending.entries.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            iterator.remove()
+            entry.value.completeExceptionally(CancellationException("The messenger was closed"))
+        }
     }
 
     // One failing subscriber must not cost the others their message, nor kill the delivery thread.

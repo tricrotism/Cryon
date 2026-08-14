@@ -10,18 +10,18 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Global feature-flag system: turn features on/off at runtime without restarting servers. Every
  * distinct slice of a feature (a command, a payout path, an event handler) checks its own bare
- * uppercase ID (`SHOP_SELL`, `SKILLS_MINING` — **no** gamemode prefixes; scope via [set]'s scope
+ * uppercase ID (`SHOP_SELL`, `SKILLS_MINING`: **no** gamemode prefixes; scope via [set]'s scope
  * argument instead) at its entry point, so any slice can be killed independently.
  *
- * Where a flag applies — most specific wins:
- *  1. **Player override** — forced on/off for one player ([playerScope]).
- *  2. **Server override** — forced on/off for this server's family ([serverName], from `network.family`),
+ * Where a flag applies. Most specific wins:
+ *  1. **Player override**: forced on/off for one player ([playerScope]).
+ *  2. **Server override**: forced on/off for this server's pool (`network.server`),
  *     so it kills the feature across every instance of the pool at once.
- *  3. **Global override** — forced on/off everywhere ([GLOBAL_SCOPE]).
- *  4. **Default** — enabled.
+ *  3. **Global override**: forced on/off everywhere ([GLOBAL_SCOPE]).
+ *  4. **Default**: enabled.
  *
  * Every change is broadcast over the [Messenger] and applied idempotently, so a toggle reaches every
- * instance of a pool at once — or just this process on a single server, which is the same code
+ * instance of a pool at once, or just this process on a single server, which is the same code
  * reaching the same audience. The `Database` is the source of truth when configured and optional
  * otherwise: without it the flags are in-memory (reset on restart) and everything else is unchanged.
  * Modules [register] their flags on enable so `/cryon flags` lists every kill switch with its default.
@@ -30,7 +30,7 @@ import java.util.concurrent.ConcurrentHashMap
  * the core and shared through the `ServiceRegistry`.
  */
 class FeatureFlags(
-    val serverName: String,
+    val serverId: String,
     private val database: Database?,
     private val messenger: Messenger,
     private val logger: Logger,
@@ -39,16 +39,20 @@ class FeatureFlags(
     // scope -> (feature -> enabled)
     private val flags = ConcurrentHashMap<String, ConcurrentHashMap<String, Boolean>>()
     private val playerOverrides = ConcurrentHashMap<UUID, ConcurrentHashMap<String, Boolean>>()
-    private val serverScope = normalizeScope(serverName)
+    private val serverScope = normalizeScope(serverId)
     private var subscription: MessengerSubscription? = null
 
     @Volatile
     private var hasPlayerOverrides = false
 
+    /** What the last [load] put in [flags], so the next one can tell a deletion from a fresh register. */
+    @Volatile
+    private var loaded: Set<Pair<String, String>> = emptySet()
+
     fun init() {
         val db = database
         if (db == null) {
-            logger.info("Feature flags are in-memory only (no database) — overrides reset on restart")
+            logger.info("Feature flags are in-memory only (no database). Overrides reset on restart")
         } else {
             db.update(
                 """
@@ -85,7 +89,7 @@ class FeatureFlags(
 
     /**
      * Declare [feature] with its [defaultEnabled] state so it exists (and is listed) before its
-     * first check. No-op if the flag is already known — an admin-set value always wins. A flag that
+     * first check. No-op if the flag is already known, an admin-set value always wins. A flag that
      * only applies to one gamemode is scoped via [scope], not an ID prefix.
      */
     fun register(feature: String, defaultEnabled: Boolean = true, scope: String = GLOBAL_SCOPE) {
@@ -164,28 +168,35 @@ class FeatureFlags(
      */
     fun playerScope(player: UUID): String = PLAYER_SCOPE_PREFIX + player
 
+    /**
+     * Apply the stored flags over what is already in memory, dropping only what a previous load saw
+     * and this one did not.
+     *
+     * Not a wholesale replace. This runs on the database thread while modules are still calling
+     * [register] on the main one, and a replace deletes any default registered since the query was
+     * issued: the flag then answers its default correctly but vanishes from `/cryon flags`, so the
+     * admin loses the kill switch for a feature that is running. Tracking what the last load
+     * contributed ([loaded]) keeps a flag deleted on another node from surviving here, without
+     * claiming ownership of entries this process registered itself.
+     */
     private fun load() = database!!
         .query("SELECT scope, feature, enabled FROM $TABLE") {
             Triple(it.getString(1), it.getString(2), it.getBoolean(3))
         }
         .thenAccept { rows ->
-            val fresh = ConcurrentHashMap<String, ConcurrentHashMap<String, Boolean>>()
+            val stored = HashSet<Pair<String, String>>(rows.size)
             for ((scope, feature, enabled) in rows) {
-                fresh.computeIfAbsent(scope) { ConcurrentHashMap() }[feature] = enabled
+                scopeFlags(scope)[feature] = enabled
+                stored += scope to feature
             }
-            val freshPlayers = HashMap<UUID, ConcurrentHashMap<String, Boolean>>()
-            fresh.forEach { (scope, entries) -> playerUuidOf(scope)?.let { freshPlayers[it] = entries } }
-            if (freshPlayers.isNotEmpty()) hasPlayerOverrides = true
-            flags.keys.retainAll(fresh.keys)
-            flags.putAll(fresh)
-            playerOverrides.keys.retainAll(freshPlayers.keys)
-            playerOverrides.putAll(freshPlayers)
+            for ((scope, feature) in loaded - stored) flags[scope]?.remove(feature)
+            loaded = stored
             logger.info("Loaded {} feature flags", rows.size)
         }
         .exceptionally { logger.error("Failed to load feature flags", it); null }
 
     /**
-     * Apply a broadcast from another server (or our own echo — idempotent either way).
+     * Apply a broadcast from another server (or our own echo, idempotent either way).
      */
     private fun onSync(message: String) {
         val parts = message.split(SEPARATOR)

@@ -6,7 +6,7 @@ import java.nio.charset.StandardCharsets
 import java.util.*
 
 /**
- * A [MessageSource] backed by `<dir>/<locale>.properties` files on disk — e.g. a
+ * A [MessageSource] backed by `<dir>/<locale>.properties` files on disk. E.g. a
  * `plugins/Cryon/lang/` folder admins drop translations into. Register it ahead of jar-bundled
  * sources so on-disk overrides win. [reload] re-reads the folder; reads see a consistent snapshot.
  */

@@ -2,8 +2,9 @@ package com.tricrotism.cryon
 
 import com.github.retrooper.packetevents.PacketEvents
 import com.tricrotism.cryon.bedrock.BedrockBridge
-import com.tricrotism.cryon.command.LanguageCommands
-import com.tricrotism.cryon.command.ModuleCommands
+import com.tricrotism.cryon.command.*
+import com.tricrotism.cryon.common.currency.Currencies
+import com.tricrotism.cryon.common.currency.CurrencyService
 import com.tricrotism.cryon.common.data.Database
 import com.tricrotism.cryon.common.data.DatabaseConfig
 import com.tricrotism.cryon.common.data.SqlDatabase
@@ -16,12 +17,13 @@ import com.tricrotism.cryon.common.net.*
 import com.tricrotism.cryon.common.server.*
 import com.tricrotism.cryon.common.text.Mini
 import com.tricrotism.cryon.inventory.DefaultInventorySearch
+import com.tricrotism.cryon.menu.AdminMenu
 import com.tricrotism.cryon.module.CommandRegistry
 import com.tricrotism.cryon.module.ModuleLoader
 import com.tricrotism.cryon.module.ModuleWatcher
 import com.tricrotism.cryon.module.SparkSupport
-import com.tricrotism.cryon.network.InstanceReporter
 import com.tricrotism.cryon.network.NetworkStatus
+import com.tricrotism.cryon.network.NodeReporter
 import com.tricrotism.cryon.network.agones.AgonesClient
 import com.tricrotism.cryon.network.agones.AgonesLifecycle
 import com.tricrotism.cryon.paper.api.CryonPaper
@@ -38,6 +40,7 @@ import com.tricrotism.cryon.papi.CorePlaceholders
 import com.tricrotism.cryon.papi.PapiBridge
 import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask
 import org.bukkit.Server
 import org.bukkit.configuration.file.FileConfiguration
 import org.bukkit.event.EventPriority
@@ -75,22 +78,25 @@ class Cryon : JavaPlugin() {
     private lateinit var modulesDir: File
 
     private lateinit var featureFlags: FeatureFlags
+    private var currencies: Currencies? = null
+    private var leaderboardTask: ScheduledTask? = null
     private var database: Database? = null
     private var localeStore: LocaleStore? = null
     private var registry: ServerRegistry? = null
-    private var reporter: InstanceReporter? = null
+    private var reporter: NodeReporter? = null
     private var agonesLifecycle: AgonesLifecycle? = null
     private var handoff: HandoffCoordinator? = null
     private var corePlaceholders: AutoCloseable? = null
+    private var adminMenu: AdminMenu? = null
     private var bedrockService: AutoCloseable? = null
     private var heartbeatSeconds: Long = 5
     private val subscriptions = ArrayList<Subscription>()
 
-    // The transport. Always installed — Redis when configured, in-process otherwise — so the services
-    // above it have one implementation each and features never branch on the deployment mode.
+    // The transport. Always installed: Redis when configured, in-process otherwise, so the services
+    // above it have one implementation each and features never branch on the deployment shape.
     private lateinit var messenger: Messenger
     private lateinit var store: KeyValueStore
-    private lateinit var identity: InstanceIdentity
+    private lateinit var identity: NodeIdentity
 
     /** Whether the transport reaches other processes. Cross-process-only services hang off this. */
     private var sharedTransport = false
@@ -98,11 +104,11 @@ class Cryon : JavaPlugin() {
     /**
      * Discover the feature jars and give them their one shot at the pre-enable world. Bukkit calls
      * `onLoad` on every plugin before it enables any, so this is the only phase from which a module
-     * can reach a third-party registry that seals itself on enable — WorldGuard's flag registry
+     * can reach a third-party registry that seals itself on enable, WorldGuard's flag registry
      * being the case this exists for. See `Module.preLoad`.
      *
-     * Only jar discovery lives here. Everything that depends on Cryon's own infrastructure — the
-     * database, the transport, commands, placeholders, menus — stays in [onEnable], and so does the
+     * Only jar discovery lives here. Everything that depends on Cryon's own infrastructure (the
+     * database, the transport, commands, placeholders, menus) stays in [onEnable], and so does the
      * `onLoad` → `onEnable` drive that modules actually build on.
      */
     override fun onLoad() {
@@ -164,13 +170,21 @@ class Cryon : JavaPlugin() {
         bedrockService = bedrock as? AutoCloseable
         corePlaceholders = papi.register(CORE_COMMAND_OWNER, CorePlaceholders(identity))
 
+        val menu = AdminMenu(manager, featureFlags, status, bedrock)
+        adminMenu = menu
+
         manager.loadAll(context)
         manager.enableAll()
         manager.postLoadAll()
 
         seedAdminLang(messageService) // after modules so their keys land in the reference file too
 
-        bootstrapCommands(messageService, status, papi) // after modules so the boot flush sees their contributions
+        bootstrapCommands(
+            messageService,
+            status,
+            papi,
+            menu
+        ) // after modules so the boot flush sees their contributions
         startWatchers(modulesDir, apiDir)
         announceReady(services) // only now can this server actually serve the players routed to it
 
@@ -181,7 +195,7 @@ class Cryon : JavaPlugin() {
 
     /**
      * Start the dev hot-reload watchers when enabled. They run when `modules.auto-reload` is true,
-     * which **defaults to `!production`** — so a `production: false` (dev) server watches `modules/`
+     * which **defaults to `!production`**, so a `production: false` (dev) server watches `modules/`
      * (per-jar hot-swap) and `api/` (a full `reloadApi` cascade on any change) automatically, while a
      * production server doesn't. The `/cryon load|unload|scan|reload-api` commands work regardless.
      * Best-effort: a watcher failure degrades to manual hot-swap, never blocks boot.
@@ -235,7 +249,7 @@ class Cryon : JavaPlugin() {
      * Bind InvUI to this plugin and install the shared menu ingredients.
      *
      * Menus are core infrastructure: InvUI is shaded here, so it binds once and feature modules only
-     * build `Gui`s. [InvUI.setPlugin] throws if called twice, so a module must never call it — and it
+     * build `Gui`s. [InvUI.setPlugin] throws if called twice, so a module must never call it, and it
      * has to run before any module can open a window, hence its position at the top of `onEnable`.
      * Not `onLoad`, even though that phase now exists: it belongs to `Module.preLoad`, which is
      * forbidden from touching anything but the third-party registry it came for.
@@ -285,7 +299,7 @@ class Cryon : JavaPlugin() {
     /**
      * Mirror the default locale's keys (core + every module bundle) into the on-disk
      * `plugins/Cryon/lang/<default>.properties`, so admins get a complete, editable reference instead
-     * of an empty folder. Only missing keys are added — existing overrides are preserved — then the
+     * of an empty folder. Only missing keys are added and existing overrides are preserved, then the
      * directory source is reloaded so the file is authoritative. Best-effort: a write failure logs and
      * never blocks boot.
      */
@@ -313,15 +327,21 @@ class Cryon : JavaPlugin() {
         messageService: MessageService,
         status: NetworkStatus,
         placeholders: PlaceholderService,
+        menu: AdminMenu,
     ) {
-        commandRegistry.register(
-            CORE_COMMAND_OWNER,
-            { true },
-            listOf(
-                ModuleCommands(manager, loader, featureFlags, commandRegistry, status, messageService, placeholders),
-                LanguageCommands(messageService),
+        val menuFirst = config.getBoolean("commands.menu", true)
+        val handlers = mutableListOf<Any>(
+            ModuleCommands(
+                manager, loader, featureFlags, commandRegistry, status, messageService, placeholders, menu, menuFirst,
             ),
+            LanguageCommands(messageService),
         )
+        currencies?.let { service ->
+            handlers += BalanceCommand(service, messageService)
+            handlers += PayCommand(service, messageService)
+            handlers += CurrencyAdminCommands(service, messageService)
+        }
+        commandRegistry.register(CORE_COMMAND_OWNER, { true }, handlers)
         lifecycleManager.registerEventHandler(LifecycleEvents.COMMANDS) { event ->
             try {
                 commandRegistry.flushBoot(event.registrar())
@@ -362,12 +382,14 @@ class Cryon : JavaPlugin() {
         setupTransport(services, cfg)
 
         identity = resolveIdentity(cfg)
-        services.register<InstanceIdentity>(identity) // so a feature can ask who it is
+        services.register<NodeIdentity>(identity) // so a feature can ask who it is
         heartbeatSeconds = cfg.getLong("network.heartbeat-seconds", 5).coerceAtLeast(1)
 
-        featureFlags = FeatureFlags(identity.family, database, messenger, log)
+        featureFlags = FeatureFlags(identity.serverId, database, messenger, log)
         featureFlags.init()
         services.register<FeatureFlags>(featureFlags)
+
+        setupCurrency(services, cfg)
 
         services.register<InventorySearch>(DefaultInventorySearch())
 
@@ -382,7 +404,7 @@ class Cryon : JavaPlugin() {
                 log.info("Persistent player locale enabled")
             }
         } else {
-            log.info("Player locale overrides are in-memory only (no database) — they reset on restart")
+            log.info("Player locale overrides are in-memory only (no database), they reset on restart")
             MemoryLocaleStore()
         }
         localeStore = locale
@@ -390,8 +412,34 @@ class Cryon : JavaPlugin() {
     }
 
     /**
+     * Stand up the currency ledger, if `currency.enabled` says this server has an economy.
+     *
+     * **Off unless asked for.** A ledger nobody spends through is a table, a broadcast channel and
+     * three commands that only get in the way, and the servers that want one say so; the ones that
+     * don't should not have to turn it off. Off, no [CurrencyService] is registered and the
+     * `/balance`, `/pay` and `/currency` commands are never contributed, so a feature resolving it
+     * with `find` gets null and has to say so rather than spend against a service that isn't there.
+     * Nothing is destroyed either way: the table keeps its rows and they are exactly where they were
+     * when it is switched on again.
+     */
+    private fun setupCurrency(services: ServiceRegistry, cfg: FileConfiguration) {
+        if (!cfg.getBoolean("currency.enabled", false)) {
+            log.info("Currencies are off; set currency.enabled=true in config.yml to register the service")
+            return
+        }
+        val service = Currencies(identity.serverId, database, messenger, log)
+        service.init()
+        currencies = service
+        services.register<CurrencyService>(service)
+        val rankSeconds = cfg.getLong("currency.leaderboard-refresh-seconds", 300).coerceAtLeast(30)
+        leaderboardTask = Schedulers.asyncTimer(rankSeconds, rankSeconds, TimeUnit.SECONDS) {
+            service.refreshLeaderboards()
+        }
+    }
+
+    /**
      * Install the [Messenger] + [KeyValueStore] every other service is built on. Redis when it is
-     * configured *and* reachable, this process otherwise — either way both are registered, so nothing
+     * configured *and* reachable, this process otherwise. Either way both are registered, so nothing
      * downstream has to cope with their absence. A Redis that fails to connect falls back rather than
      * half-installing: a live messenger beside a dead store is the one state no caller expects.
      */
@@ -399,10 +447,10 @@ class Cryon : JavaPlugin() {
         if (cfg.getBoolean("redis.enabled")) {
             try {
                 val redisConfig = RedisConfig(cfg.getString("redis.uri", "redis://localhost:6379/0")!!)
-                messenger = RedisMessenger(redisConfig)
+                messenger = RedisMessenger(redisConfig, log)
                 store = RedisKeyValueStore(redisConfig)
                 sharedTransport = true
-                log.info("Redis connected — state is shared across the network")
+                log.info("Redis connected. State is shared across the network")
             } catch (e: Exception) {
                 log.error("Failed to initialize Redis... falling back to in-process state", e)
                 closeQuietly()
@@ -411,7 +459,7 @@ class Cryon : JavaPlugin() {
         if (!sharedTransport) {
             messenger = LocalMessenger(log)
             store = MemoryKeyValueStore()
-            log.info("State is in-process only (no redis) — correct for a single server, not for a pool")
+            log.info("State is in-process only (no redis). Correct for a single server, not for a pool")
         }
         services.register<Messenger>(messenger)
         services.register<KeyValueStore>(store)
@@ -423,23 +471,48 @@ class Cryon : JavaPlugin() {
         if (::store.isInitialized) runCatching { store.close() }
     }
 
-    /** Resolve this process's network identity, env-first, falling back to config and Paper's own values. */
-    private fun resolveIdentity(cfg: FileConfiguration): InstanceIdentity = InstanceIdentity.resolve(
-        configFamily = cfg.getString("network.family")?.takeIf { it.isNotBlank() } ?: cfg.getString("server-name"),
-        configInstanceId = cfg.getString("network.instance-id"),
+    /**
+     * Resolve this process's network identity, env-first, falling back to config and Paper's own
+     * values.
+     *
+     * `network.family`/`network.instance-id`/`network.mode` are the names these keys had before they
+     * were renamed to match what operators call them, and are still read so an existing config keeps
+     * working. Deprecated: they are announced once at boot and go away next release.
+     */
+    private fun resolveIdentity(cfg: FileConfiguration): NodeIdentity = NodeIdentity.resolve(
+        configServerId = cfg.legacy("network.server", "network.family") ?: cfg.getString("server-name"),
+        configNodeId = cfg.legacy("network.node", "network.instance-id"),
         configAddress = cfg.getString("network.address"),
         configPort = cfg.getInt("network.port", 0),
         fallbackPort = server.port,
         configMaxPlayers = cfg.getInt("network.max-players", 0),
         fallbackMaxPlayers = server.maxPlayers,
-        configMode = cfg.getString("network.mode"),
-        onUnknownMode = { log.error("Unknown network.mode '{}' — falling back to single", it) },
+        configExpectation = cfg.legacy("network.expect", "network.mode"),
+        onUnknownExpectation = { log.error("Unknown network.expect '{}'. Falling back to one-node", it) },
     )
+
+    /**
+     * Read [key], falling back to the name it used to have and saying so once.
+     *
+     * Warns rather than failing: an operator who has not read the changelog should get a running
+     * server and a line telling them what to rename, not a boot failure over a word.
+     */
+    private fun FileConfiguration.legacy(key: String, former: String): String? {
+        if (isSet(key)) return getString(key)?.takeIf { it.isNotBlank() }
+        if (isSet(former)) {
+            val old = getString(former)?.takeIf { it.isNotBlank() }
+            if (old != null) {
+                log.warn("config.yml: '{}' has been renamed to '{}'. Still honoured, but rename it", former, key)
+                return old
+            }
+        }
+        return getString(key)?.takeIf { it.isNotBlank() }
+    }
 
     /**
      * Wire the services features resolve during load: the registry, the router, and player handoff.
      * Runs **before** modules load, so a module can register its flush and read the registry in
-     * `onLoad`/`onEnable` — but deliberately stops short of announcing this server as ready, which is
+     * `onLoad`/`onEnable`, but deliberately stops short of announcing this server as ready, which is
      * [announceReady]'s job once the modules that will actually serve players are enabled.
      *
      * The registry is installed on either transport: over the in-process one it simply contains this
@@ -458,7 +531,7 @@ class Cryon : JavaPlugin() {
         services.register<ServerRegistry>(reg)
 
         if (sharedTransport) services.register<PlayerRouter>(DefaultPlayerRouter(reg, messenger))
-        reporter = InstanceReporter(reg, identity, server, Duration.ofSeconds(heartbeatSeconds), log)
+        reporter = NodeReporter(reg, identity, server, Duration.ofSeconds(heartbeatSeconds), log)
             .also { it.register() }
     }
 
@@ -467,7 +540,7 @@ class Cryon : JavaPlugin() {
      * module's own quit handler has finished updating its state before we write that state down.
      */
     private fun setupHandoff(services: ServiceRegistry) {
-        val coordinator = HandoffCoordinator(identity.instanceId, messenger, log)
+        val coordinator = HandoffCoordinator(identity.nodeId, messenger, log)
         coordinator.init()
         handoff = coordinator
         services.register<PlayerHandoff>(coordinator)
@@ -480,10 +553,10 @@ class Cryon : JavaPlugin() {
         val rep = reporter ?: return
         val reg = registry ?: return
         rep.ready()
-        setupAgones(services, identity.family, rep, reg)
+        setupAgones(services, identity.serverId, rep, reg)
     }
 
-    /** Say what this server is, and make any disagreement with `network.mode` impossible to miss. */
+    /** Say what this server is, and make any disagreement with `network.expect` impossible to miss. */
     private fun reportNetwork(services: ServiceRegistry): NetworkStatus {
         val status = NetworkStatus(identity, sharedTransport, database != null) { registry }
         services.register<NetworkStatus>(status)
@@ -494,13 +567,13 @@ class Cryon : JavaPlugin() {
     /** Attach the Agones lifecycle when running under a sidecar; a no-op anywhere else. */
     private fun setupAgones(
         services: ServiceRegistry,
-        family: String,
-        reporter: InstanceReporter,
+        serverId: String,
+        reporter: NodeReporter,
         registry: ServerRegistry
     ) {
         val agones = AgonesClient.detect(log) ?: return
-        // shutdown-when-empty differs per family (persistent shards reclaim; ephemeral self-shutdown on
-        // match end), so it's env-first — one shared config file, per-Fleet env override.
+        // shutdown-when-empty differs per serverId (persistent shards reclaim; ephemeral self-shutdown on
+        // match end), so it's env-first, one shared config file, per-Fleet env override.
         val shutdownWhenEmpty = System.getenv("CRYON_AGONES_SHUTDOWN_WHEN_EMPTY")?.toBooleanStrictOrNull()
             ?: config.getBoolean("network.agones.shutdown-when-empty", false)
         val options = AgonesLifecycle.Options(
@@ -509,7 +582,7 @@ class Cryon : JavaPlugin() {
             emptyGraceSeconds = config.getLong("network.agones.empty-grace-seconds", 60),
             minInstances = config.getInt("network.agones.min-instances", 1),
         )
-        val life = AgonesLifecycle(agones, reporter::currentPlayers, { registry.family(family).size }, options, log)
+        val life = AgonesLifecycle(agones, reporter::currentPlayers, { registry.nodesOf(serverId).size }, options, log)
         agonesLifecycle = life
         services.register<AgonesLifecycle>(life)
         life.start()
@@ -520,6 +593,8 @@ class Cryon : JavaPlugin() {
         watchers.clear()
         subscriptions.forEach { runCatching { it.unregister() } }
         subscriptions.clear()
+        adminMenu?.let { runCatching { it.close() } }
+        adminMenu = null
         SparkSupport.uninstall(log)
         agonesLifecycle?.let { runCatching { it.stop() } }
         reporter?.let { runCatching { it.drain() } }
@@ -531,6 +606,10 @@ class Cryon : JavaPlugin() {
         if (::loader.isInitialized) loader.close()
         registry?.let { runCatching { it.close() } }
         handoff?.let { runCatching { it.close() } }
+        leaderboardTask?.let { runCatching { it.cancel() } }
+        leaderboardTask = null
+        currencies?.close()
+        currencies = null
         if (::featureFlags.isInitialized) featureFlags.close()
         localeStore?.close()
         if (::messenger.isInitialized) messenger.close()
@@ -554,7 +633,7 @@ class Cryon : JavaPlugin() {
         log.info("Flushing {} online player(s) before shutdown", online.size)
         val flushes = online.map { coordinator.flush(it) }.toTypedArray()
         runCatching { CompletableFuture.allOf(*flushes).orTimeout(FLUSH_TIMEOUT_SECONDS, TimeUnit.SECONDS).join() }
-            .onFailure { log.error("Timed out flushing players on shutdown — some state may be lost", it) }
+            .onFailure { log.error("Timed out flushing players on shutdown, some state may be lost", it) }
     }
 
     private class CryonContext(
@@ -568,7 +647,7 @@ class Cryon : JavaPlugin() {
         /** Owner key the core's own commands register under in the [CommandRegistry]. */
         const val CORE_COMMAND_OWNER = "cryon"
 
-        /** Whether InvUI is already bound in this classloader — see [initMenus]. */
+        /** Whether InvUI is already bound in this classloader. See [initMenus]. */
         @Volatile
         var menusBound = false
 

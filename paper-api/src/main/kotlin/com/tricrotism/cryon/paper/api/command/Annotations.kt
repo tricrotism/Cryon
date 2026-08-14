@@ -1,7 +1,7 @@
 package com.tricrotism.cryon.paper.api.command
 
 /**
- * Annotation command model registered onto Paper's native Brigadier via [AnnotationCommands] — a
+ * Annotation command model registered onto Paper's native Brigadier via [AnnotationCommands], a
  * thin, Cloud-free layer that works on bleeding-edge Paper.
  *
  * ```
@@ -24,13 +24,13 @@ annotation class Command(val name: String, val description: String = "", vararg 
 @Retention(AnnotationRetention.RUNTIME)
 annotation class Subcommand(vararg val value: String)
 
-/** Permission gate — on the class (whole command) or a single method. */
+/** Permission gate, on the class (whole command) or a single method. */
 @Target(AnnotationTarget.CLASS, AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class Permission(val value: String)
 
 /**
- * A command argument. [value] is the Brigadier argument name (required — Java doesn't retain
+ * A command argument. [value] is the Brigadier argument name (required, Java doesn't retain
  * parameter names). [suggests], if set, names a public no-arg method returning `Collection<String>`
  * used for tab completion. Supported parameter types: `String`, `Int`, `Boolean`.
  */

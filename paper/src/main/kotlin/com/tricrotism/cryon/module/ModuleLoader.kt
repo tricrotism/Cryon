@@ -8,7 +8,9 @@ import com.tricrotism.cryon.common.module.ModuleContext
 import com.tricrotism.cryon.common.module.ModuleManager
 import com.tricrotism.cryon.common.module.ModuleState
 import com.tricrotism.cryon.paper.api.command.CommandService
+import com.tricrotism.cryon.paper.api.scheduler.Schedulers
 import org.slf4j.Logger
+import xyz.xenondevs.invui.window.WindowManager
 import java.io.File
 import java.net.URL
 import java.net.URLClassLoader
@@ -21,11 +23,11 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * Each feature jar in `plugins/Cryon/modules/` is **copied into a private cache dir and loaded from
  * the copy**, so the original stays unlocked on Windows and can be deleted or replaced while the
- * feature is running — the basis for hot add/remove/reload. Closing a jar's [URLClassLoader] frees
+ * feature is running. The basis for hot add/remove/reload. Closing a jar's [URLClassLoader] frees
  * its file handle and lets its lang bundle and listeners go; reclaiming the classes themselves still
  * depends on the module not leaking references of its own (same caveat as any plugin reload).
  *
- * Main-thread only — boot, the command, and the watcher's main-thread hops all drive it; not safe
+ * Main-thread only. Boot, the command, and the watcher's main-thread hops all drive it; not safe
  * for concurrent mutation.
  */
 class ModuleLoader(
@@ -33,7 +35,7 @@ class ModuleLoader(
     private val messageService: MessageService,
     private val context: ModuleContext,
     private val log: Logger,
-    /** `plugins/Cryon/modules/` — the originals admins add, replace, and delete. */
+    /** `plugins/Cryon/modules/`. The originals admins add, replace, and delete. */
     val modulesDir: File,
     /** Private copies we actually class-load, so the originals never lock. */
     private val cacheDir: File,
@@ -77,7 +79,7 @@ class ModuleLoader(
     /**
      * Load every jar in the shared `api/` contract layer into one [URLClassLoader] that parents all
      * feature loaders (so cross-repo contracts resolve to the same type). Unchanged when `api/` is
-     * empty. Hot-swappable only via [reloadApi] (a full cascade) — never on its own, because every
+     * empty. Hot-swappable only via [reloadApi] (a full cascade), never on its own, because every
      * loaded module is linked against these classes.
      */
     fun loadSharedApi(dir: File) {
@@ -167,7 +169,7 @@ class ModuleLoader(
 
     fun isLoaded(source: File): Boolean = jars.containsKey(key(source))
 
-    /** Jar files sitting in `modules/` that aren't loaded yet — for the `/cryon load` suggester. */
+    /** Jar files sitting in `modules/` that aren't loaded yet, for the `/cryon load` suggester. */
     fun loadableJarNames(): List<String> = jarFiles().filterNot(::isLoaded).map(File::getName)
 
     /**
@@ -179,7 +181,7 @@ class ModuleLoader(
     fun sourceName(loader: ClassLoader?): String? = loader?.let { loaderSources[it]?.name }
 
     /**
-     * [name] if any live module loader has already *defined* it, else null — [SparkSupport]'s
+     * [name] if any live module loader has already *defined* it, else null. [SparkSupport]'s
      * class-finder fallback. spark can only attribute a sampled class it can find, and Paper's own
      * lookup can't see into these isolated loaders. Uses `findLoadedClass` (a native class-table read:
      * no parent delegation, no fresh load) so it never blocks on Paper's classloader-group lock the way
@@ -193,7 +195,7 @@ class ModuleLoader(
         return null
     }
 
-    /** Snapshot of every loaded jar's source info — spark's "known sources" metadata. */
+    /** Snapshot of every loaded jar's source info. Spark's "known sources" metadata. */
     fun sources(): Collection<ModuleSource> = loaderSources.values.toList()
 
     /** Close every loader (modules before the shared parent) and clear the cache. For plugin disable. */
@@ -212,7 +214,7 @@ class ModuleLoader(
 
     /**
      * Copy [source] into the cache, class-load it, register its [Module]s and lang bundle, and track
-     * the jar. Returns the registered ids, or null if the jar is broken or declares nothing — every
+     * the jar. Returns the registered ids, or null if the jar is broken or declares nothing. Every
      * partial step is cleaned up so a failed read leaves no loader, copy, or registration behind.
      */
     private fun readJar(source: File): List<String>? {
@@ -264,6 +266,7 @@ class ModuleLoader(
 
     private fun unloadByKey(jarKey: String): List<String>? {
         val jar = jars[jarKey] ?: return null
+        closeOpenMenus()
         jars = LinkedHashMap(jars).apply { remove(jarKey) }
         loaderSources.remove(jar.loader)
         val commands = context.services.find<CommandService>()
@@ -281,6 +284,35 @@ class ModuleLoader(
         jar.cache.delete()
         log.info("Unloaded {} module(s) from {}", jar.moduleIds.size, jar.source.name)
         return jar.moduleIds
+    }
+
+    /**
+     * Close every open InvUI window before a jar's classes go away.
+     *
+     * A window outlives the frame that opened it and holds that frame's code: InvUI keeps strong
+     * references to the `Item`s, which close over the module's own classes. One left open through an
+     * unload strands that module's classloader for the rest of the server's uptime and keeps
+     * dispatching clicks into code that is gone. `PaperModule` cannot cover this the way it covers
+     * listeners and tasks, because a window is not registered with the module at all.
+     *
+     * Deliberately closes *all* of them rather than only the unloaded jar's. InvUI is bound to the
+     * core, so every window in the JVM belongs to some Cryon module, and telling them apart would mean
+     * walking each `Gui`'s slot elements for a defining classloader: fragile against InvUI internals,
+     * and wrong for a window that mixes items from two modules. Unloading is an admin action, so
+     * closing a few extra menus is the cheaper side of that trade.
+     *
+     * Each close runs on its viewer's own scheduler, so it lands a tick later, after the loader has
+     * closed. That is safe because the handler classes are already linked: a closed `URLClassLoader`
+     * refuses new loads rather than unlinking what it has defined, and the `runCatching` covers a
+     * handler that reaches for a class it never touched before.
+     */
+    private fun closeOpenMenus() {
+        val windows = runCatching { WindowManager.getInstance().windows.toList() }.getOrElse { return }
+        if (windows.isEmpty()) return
+        for (window in windows) {
+            Schedulers.entity(window.viewer) { runCatching { window.close() } }
+        }
+        log.info("Closing {} open menu(s) before the module change", windows.size)
     }
 
     private fun jarFiles(): List<File> =

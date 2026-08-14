@@ -1,12 +1,6 @@
 package com.tricrotism.cryon.common.text
 
-import com.tricrotism.cryon.common.text.FontWidth.BOLD_EXTRA
-import com.tricrotism.cryon.common.text.FontWidth.DEFAULT
-import com.tricrotism.cryon.common.text.FontWidth.SPACE
 import com.tricrotism.cryon.common.text.FontWidth.WIDTHS
-import com.tricrotism.cryon.common.text.FontWidth.advance
-import com.tricrotism.cryon.common.text.FontWidth.of
-import com.tricrotism.cryon.common.text.FontWidth.ofLegacy
 
 
 /**
@@ -33,7 +27,7 @@ object FontWidth {
     const val SPACE = 4
 
     /**
-     * Advance of any glyph not in [WIDTHS] — most letters, digits, and accented Latin forms.
+     * Advance of any glyph not in [WIDTHS]: most letters, digits, and accented Latin forms.
      */
     const val DEFAULT = 6
 

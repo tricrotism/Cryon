@@ -1,6 +1,5 @@
 package com.tricrotism.cryon.common.locale
 
-import com.tricrotism.cryon.common.locale.LangScanner.fromJar
 import java.io.File
 import java.io.InputStreamReader
 import java.nio.charset.StandardCharsets
@@ -9,7 +8,7 @@ import java.util.jar.JarFile
 
 /**
  * Discovers `lang/<locale>.properties` bundles automatically, so features don't register sources by
- * hand — they just bundle the files, and the loader scans them in. [fromJar] reads the entries
+ * hand, they just bundle the files, and the loader scans them in. [fromJar] reads the entries
  * **directly from the jar** (never via a classloader), so a feature's bundle can't be shadowed by a
  * same-named resource in the core or another jar. A `plugins/Cryon/lang/` folder is covered by
  * [DirectoryMessageSource].

@@ -18,10 +18,10 @@ import java.util.concurrent.CopyOnWriteArrayList
  * locale → its language) and basic count-based pluralization. Created once by the core and shared
  * through the module `ServiceRegistry`.
  *
- * **A module adds its source in `onEnable` and removes it on disable** — `PaperModule.track` does the
+ * **A module adds its source in `onEnable` and removes it on disable**: `PaperModule.track` does the
  * second half. Not `onLoad`: a reload is disable-then-enable and never re-runs `onLoad`, so a source
  * added there could not be removed without leaving the reloaded module with no strings at all. And it
- * has to be removed, for two reasons that both outlive the jar — this list belongs to the core, so a
+ * has to be removed, for two reasons that both outlive the jar, this list belongs to the core, so a
  * source left in it holds the module's classloader for the rest of the server's uptime, and [template]
  * takes the **first** match in registration order, so a stale copy silently shadows the new jar's
  * strings after every reload.
@@ -58,8 +58,8 @@ class MessageService(defaultLocale: Locale = Locale.US) {
     fun keys(locale: Locale): Set<String> = sources.flatMapTo(sortedSetOf()) { it.keys(locale) }
 
     /**
-     * Append every enumerable [locale] key not already in [file] — valued by the resolved default
-     * template — so admins get a complete, editable bundle without hand-copying it out of the jars.
+     * Append every enumerable [locale] key not already in [file], valued by the resolved default
+     * template, so admins get a complete, editable bundle without hand-copying it out of the jars.
      * Existing entries are **never** rewritten (a deliberate override must survive), so the file's
      * comments and order stay intact and new keys are appended in sorted order. Read and written UTF-8
      * to match [DirectoryMessageSource]. Returns how many keys were written.
@@ -73,7 +73,7 @@ class MessageService(defaultLocale: Locale = Locale.US) {
         file.parentFile?.mkdirs()
         OutputStreamWriter(FileOutputStream(file, true), StandardCharsets.UTF_8).use { out ->
             if (file.length() > 0L) out.write("\n")
-            out.write("# Added automatically; edit freely — existing keys are never overwritten.\n")
+            out.write("# Added automatically; edit freely. Existing keys are never overwritten.\n")
             for (key in missing) {
                 val value = template(locale, key) ?: continue
                 out.write("$key=${escapeValue(value)}\n")

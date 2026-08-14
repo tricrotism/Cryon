@@ -19,11 +19,11 @@ import java.util.concurrent.ConcurrentHashMap
  * Once a handoff flush succeeds the player is marked, and the quit that follows moments later skips
  * its flush: by then the player is on the new instance, and writing our now-stale copy again would
  * undo whatever they have done since. The mark expires ([HANDOFF_WINDOW_MILLIS]) rather than being
- * cleared on quit, because a transfer can *fail* — the player then stays here and keeps playing, and
+ * cleared on quit, because a transfer can *fail*: the player then stays here and keeps playing, and
  * their eventual real quit must still save.
  */
 class HandoffCoordinator(
-    private val instanceId: String,
+    private val nodeId: String,
     private val messenger: Messenger,
     private val logger: Logger,
 ) : PlayerHandoff {
@@ -39,7 +39,7 @@ class HandoffCoordinator(
 
     /** Start answering handoff requests addressed to this instance. */
     fun init() {
-        subscription = messenger.handle(channel(instanceId)) { payload ->
+        subscription = messenger.handle(channel(nodeId)) { payload ->
             val player = runCatching { UUID.fromString(payload) }.getOrNull()
                 ?: return@handle CompletableFuture.completedFuture(REPLY)
             flush(player).thenApply {
@@ -65,7 +65,7 @@ class HandoffCoordinator(
      *
      * Parallel within a stage, sequential between stages: features that own their own state have no
      * ordering between them, but one that hands state back to another has to land before that other
-     * one saves — see [PlayerHandoff.onFlush]. A flush that fails is logged and treated as done, and
+     * one saves. See [PlayerHandoff.onFlush]. A flush that fails is logged and treated as done, and
      * a whole stage failing still lets the next one run: one broken feature must not strand the
      * player mid-transfer, and must not take the rest of their state down with it.
      */
@@ -104,8 +104,8 @@ class HandoffCoordinator(
     }
 
     companion object {
-        /** The request channel for the instance with [instanceId]. */
-        fun channel(instanceId: String): String = "cryon:handoff:$instanceId"
+        /** The request channel for the instance with [nodeId]. */
+        fun channel(nodeId: String): String = "cryon:handoff:$nodeId"
 
         /** The acknowledgement body; the proxy only waits for *a* reply, never reads it. */
         const val REPLY = "ok"

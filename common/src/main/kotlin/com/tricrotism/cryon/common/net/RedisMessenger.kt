@@ -4,6 +4,7 @@ import io.lettuce.core.RedisClient
 import io.lettuce.core.api.StatefulRedisConnection
 import io.lettuce.core.pubsub.RedisPubSubAdapter
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection
+import org.slf4j.Logger
 import java.time.Duration
 import java.util.*
 import java.util.concurrent.*
@@ -13,15 +14,15 @@ import java.util.concurrent.*
  * a request carries a correlation id + this instance's private reply channel; [handle]rs publish the
  * response back there, and pending futures are completed by correlation id (or timed out).
  */
-class RedisMessenger(config: RedisConfig) : Messenger {
+class RedisMessenger(config: RedisConfig, private val logger: Logger) : Messenger {
 
     private val client: RedisClient = RedisClient.create(config.uri)
     private val publishConn: StatefulRedisConnection<String, String> = client.connect()
     private val pubSubConn: StatefulRedisPubSubConnection<String, String> = client.connectPubSub()
 
     private val handlers = ConcurrentHashMap<String, CopyOnWriteArrayList<(String) -> Unit>>()
-    private val instanceId = UUID.randomUUID().toString()
-    private val replyChannel = "cryon:reply:$instanceId"
+    private val nodeId = UUID.randomUUID().toString()
+    private val replyChannel = "cryon:reply:$nodeId"
     private val pending = ConcurrentHashMap<String, CompletableFuture<String>>()
     private val timeouts = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "cryon-redis-timeout").apply { isDaemon = true }
@@ -38,10 +39,11 @@ class RedisMessenger(config: RedisConfig) : Messenger {
         publishConn.async().publish(channel, message).toCompletableFuture().thenAccept { }
 
     override fun subscribe(channel: String, handler: (String) -> Unit): MessengerSubscription {
-        val fresh = CopyOnWriteArrayList<(String) -> Unit>()
-        val list = handlers.computeIfAbsent(channel) { fresh }
-        if (list === fresh) pubSubConn.async().subscribe(channel)
-        list.add(handler)
+        var created = false
+        val list = handlers.compute(channel) { _, existing ->
+            (existing ?: CopyOnWriteArrayList<(String) -> Unit>().also { created = true }).apply { add(handler) }
+        }!!
+        if (created) pubSubConn.async().subscribe(channel)
         return MessengerSubscription {
             list.remove(handler)
             if (list.isEmpty() && handlers.remove(channel, list)) {
@@ -55,8 +57,9 @@ class RedisMessenger(config: RedisConfig) : Messenger {
             val parts = raw.split(SEP, limit = 3)
             if (parts.size != 3) return@subscribe
             val (correlationId, replyTo, payload) = parts
-            // Reply once the responder settles, so a slow answer never blocks the Lettuce I/O thread.
-            responder(payload).thenAccept { reply -> publish(replyTo, "$correlationId$SEP$reply") }
+            responder(payload)
+                .thenAccept { reply -> publish(replyTo, "$correlationId$SEP$reply") }
+                .exceptionally { logger.error("Responder on '{}' failed", channel, it); null }
         }
 
     override fun request(channel: String, message: String, timeout: Duration): CompletableFuture<String> {
@@ -72,15 +75,33 @@ class RedisMessenger(config: RedisConfig) : Messenger {
         return future
     }
 
+    /**
+     * Fail whatever is still waiting before the transport goes away. The timeout thread is what would
+     * otherwise have completed these, so dropping it silently leaves every in-flight request pending
+     * forever, and a caller that parked a connection behind one never resumes.
+     */
     override fun close() {
         timeouts.shutdownNow()
+        failPending()
         pubSubConn.close()
         publishConn.close()
         client.shutdown()
     }
 
+    private fun failPending() {
+        val iterator = pending.entries.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            iterator.remove()
+            entry.value.completeExceptionally(CancellationException("The messenger was closed"))
+        }
+    }
+
     private fun dispatch(channel: String, message: String) {
-        handlers[channel]?.forEach { it(message) }
+        handlers[channel]?.forEach { handler ->
+            runCatching { handler(message) }
+                .onFailure { logger.error("Subscriber on '{}' failed", channel, it) }
+        }
     }
 
     private fun onReply(message: String) {

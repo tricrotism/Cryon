@@ -1,14 +1,14 @@
 # Cryon proxy config.
 #
-# With redis on, this proxy reads the shared server registry to route players and register backends as
-# game servers come and go, and it holds each transfer open until the server being left has saved the
-# player. That is the instanced deployment.
+# With redis on, this proxy reads the shared registry to route players and register backends as nodes
+# come and go, and it holds each transfer open until the node being left has saved the player. That is
+# a many-nodes deployment.
 #
-# With redis off, none of that applies: configure your backend in velocity.toml as usual. That is the
-# single-server deployment, and it is a supported one — maintenance mode still works, because this
-# proxy is the only one there is.
+# With redis off, none of that applies: configure your backend in velocity.toml as usual. That is a
+# one-node deployment, and it is a supported one — maintenance mode still works, because this proxy is
+# the only one there is.
 #
-# The database is optional here (only game servers write the family catalog); without it, maintenance
+# The database is optional here (only game servers write the server catalog); without it, maintenance
 # state resets when the proxy restarts.
 
 database:
@@ -36,6 +36,10 @@ network:
     # A player who moves beats a player stuck on a failed transfer, so this fails open; the flush then
     # still happens on quit. Raise it only if your saves are genuinely slower than this.
     handoff-timeout-seconds: 5
+    # Servers a player may only enter while holding cryon.server.<id>. Names are server ids (the pool
+    # name, e.g. `prison`), not node ids, and the check covers every way into a backend: /server, a
+    # module routing a player, a forced host, and the initial join. Everything not listed is open.
+    restricted-servers: [ ]
 
 # Network-wide maintenance mode. Toggle at runtime with /maintenance on|off [message] (permission
 # cryon.maintenance); the state syncs to every proxy over Redis. While on, the server list shows the

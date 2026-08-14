@@ -12,7 +12,7 @@ import kotlin.math.roundToInt
  * The server-list MOTD, composed of a top and bottom line, each built from three MiniMessage segments
  * anchored **left**, **center**, and **right**. Segments are positioned by measuring their pixel width
  * ([FontWidth]) and padding with spaces, so the center segment sits centered and the right segment
- * ends at [MotdSettings.width]. Read from the proxy `config.yml` and reloadable at runtime — [reload]
+ * ends at [MotdSettings.width]. Read from the proxy `config.yml` and reloadable at runtime. [reload]
  * re-parses the file, so `/motd reload` picks up edits without a proxy restart.
  */
 class Motd(private val configFile: Path) {

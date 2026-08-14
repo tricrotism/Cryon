@@ -20,7 +20,7 @@ interface Bucket<E> : MutableSet<E> {
     /** The partition at [index]. */
     fun partition(index: Int): BucketPartition<E>
 
-    /** A shared, thread-safe rotating cursor over [partitions] — `cycle().next()` each tick. */
+    /** A shared, thread-safe rotating cursor over [partitions], `cycle().next()` each tick. */
     fun cycle(): Cycle<BucketPartition<E>>
 }
 

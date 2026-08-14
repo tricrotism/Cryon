@@ -8,10 +8,11 @@ import com.tricrotism.cryon.paper.api.CryonPaper
 import org.bukkit.entity.Player
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import java.util.logging.Level
 
 /**
- * Functional packet subscription — the `Events` builder's twin for the protocol layer, over
+ * Functional packet subscription. The `Events` builder's twin for the protocol layer, over
  * PacketEvents (shaded into the core unrelocated, so a feature `compileOnly`s it and never shades it).
  *
  * ```
@@ -22,7 +23,7 @@ import java.util.logging.Level
  *
  * [PacketSubscriptionBuilder.handler] returns a [PacketSubscription] that is [AutoCloseable], so it
  * goes straight into `PaperModule.track(…)` and dies with the module. Handler exceptions are logged,
- * never propagated — an exception escaping onto a Netty thread can drop the player's connection.
+ * never propagated, an exception escaping onto a Netty thread can drop the player's connection.
  *
  * **Handlers run on a Netty I/O thread, never a region or global thread.** No Bukkit API call is legal
  * inside one: no entities, no inventories, no `sendMessage`. This is not a Folia-only rule, it holds on
@@ -83,7 +84,7 @@ class PacketSubscriptionBuilder<T : ProtocolPacketEvent> internal constructor(
         val types = this.types
         val filters = this.filters.toTypedArray()
         val expiry = this.expiry
-        lateinit var subscription: PacketSubscription
+        val subscription = AtomicReference<PacketSubscription>()
 
         fun dispatch(event: T) {
             if (!active.get()) return
@@ -99,7 +100,7 @@ class PacketSubscriptionBuilder<T : ProtocolPacketEvent> internal constructor(
                 plugin.logger.log(Level.SEVERE, "Error in packet handler for ${event.packetType}", t)
                 return
             }
-            if (expiry > 0 && count.incrementAndGet() >= expiry) subscription.unregister()
+            if (expiry > 0 && count.incrementAndGet() >= expiry) subscription.get()?.unregister()
         }
 
         @Suppress("UNCHECKED_CAST")
@@ -114,8 +115,9 @@ class PacketSubscriptionBuilder<T : ProtocolPacketEvent> internal constructor(
         }
 
         val handle = api.eventManager.registerListener(listener, priority)
-        subscription = PacketSubscription(handle, active)
-        return subscription
+        val registered = PacketSubscription(handle, active)
+        subscription.set(registered)
+        return registered
     }
 }
 

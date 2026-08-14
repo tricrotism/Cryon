@@ -6,7 +6,7 @@ import org.bukkit.OfflinePlayer
  * A module's PlaceholderAPI namespace. Registered through [PlaceholderService] (usually via
  * `PaperModule.registerPlaceholders`); the core turns each provider into a PlaceholderAPI expansion
  * whose identifier is [identifier], so a provider owning `"warps"` answers `%warps_<params>%`. Modules
- * never touch PlaceholderAPI classes — only the core does — which keeps the single PAPI dependency in
+ * never touch PlaceholderAPI classes. Only the core does, which keeps the single PAPI dependency in
  * `:paper` and sidesteps the isolated module classloaders.
  *
  * [onRequest] is called by PlaceholderAPI, potentially frequently and potentially off the main thread,

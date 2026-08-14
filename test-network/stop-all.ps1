@@ -1,4 +1,4 @@
-# Kills the test network: both Paper backends, the Velocity proxy, and Redis.
+# Kills the test network: both Paper backends, the Velocity proxy, the pack host, and Redis.
 # Matches java processes launched from this test-network folder plus redis-server.exe.
 $root = $PSScriptRoot
 
@@ -6,6 +6,13 @@ Get-CimInstance Win32_Process -Filter "Name = 'java.exe'" |
         Where-Object { $_.CommandLine -and $_.CommandLine -match [regex]::Escape($root) } |
         ForEach-Object {
             Write-Host "Stopping java PID $( $_.ProcessId )" -ForegroundColor Yellow
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+
+Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" |
+        Where-Object { $_.CommandLine -and $_.CommandLine -match [regex]::Escape("$root\pack-host") } |
+        ForEach-Object {
+            Write-Host "Stopping pack host PID $( $_.ProcessId )" -ForegroundColor Yellow
             Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
         }
 

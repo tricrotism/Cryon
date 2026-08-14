@@ -14,6 +14,6 @@ enum class ModuleState {
     /** Disabled at runtime; can be re-enabled. */
     DISABLED,
 
-    /** `onLoad`/`onEnable` threw — left out of the live set. */
+    /** `onLoad`/`onEnable` threw. Left out of the live set. */
     FAILED,
 }
