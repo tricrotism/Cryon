@@ -6,7 +6,6 @@ import com.tricrotism.cryon.common.data.SqlSession
 import com.tricrotism.cryon.common.number.PackedDecimal
 import java.math.BigDecimal
 import java.util.*
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -24,22 +23,22 @@ import java.util.concurrent.ConcurrentHashMap
  */
 internal interface CurrencyStore {
 
-    fun init(): CompletableFuture<Void>
+    suspend fun init()
 
     /** The stored balance, or null when the player has no account in this currency. */
-    fun balance(scope: String, currency: String, player: UUID): CompletableFuture<BigDecimal?>
+    suspend fun balance(scope: String, currency: String, player: UUID): BigDecimal?
 
     /** Every stored balance for [player] in [scope], keyed by currency id. */
-    fun balances(scope: String, player: UUID): CompletableFuture<Map<String, BigDecimal>>
+    suspend fun balances(scope: String, player: UUID): Map<String, BigDecimal>
 
     /** Create the account at [starting] if absent. No-op when it already exists. */
-    fun open(
+    suspend fun open(
         scope: String,
         currency: String,
         player: UUID,
         starting: BigDecimal,
         ranked: Boolean,
-    ): CompletableFuture<Void>
+    )
 
     /**
      * Store [next] only if the stored balance is still exactly [expected].
@@ -48,13 +47,13 @@ internal interface CurrencyStore {
      * its arithmetic. An unconditional write would silently discard whatever landed in between,
      * which for money is a lost deposit or a free purchase.
      */
-    fun compareAndSet(
+    suspend fun compareAndSet(
         scope: String,
         currency: String,
         player: UUID,
         expected: BigDecimal,
         next: BigDecimal,
-    ): CompletableFuture<Boolean>
+    ): Boolean
 
     /**
      * Overwrite unconditionally, answering the balance that was there. Administration only, every
@@ -64,10 +63,10 @@ internal interface CurrencyStore {
      * whatever the read cache happened to hold, which on a node the player has not touched is the
      * currency's starting balance rather than their actual one.
      */
-    fun set(scope: String, currency: String, player: UUID, amount: BigDecimal): CompletableFuture<BigDecimal?>
+    suspend fun set(scope: String, currency: String, player: UUID, amount: BigDecimal): BigDecimal?
 
     /** The [size] highest ranked balances, descending. */
-    fun top(scope: String, currency: String, size: Int): CompletableFuture<List<Pair<UUID, BigDecimal>>>
+    suspend fun top(scope: String, currency: String, size: Int): List<Pair<UUID, BigDecimal>>
 
     /**
      * Move [amount] from one account to the other, **all or nothing**.
@@ -78,7 +77,7 @@ internal interface CurrencyStore {
      * because the gap between them is not an error path — a process killed there leaves the money
      * gone with nothing thrown and nothing to log.
      */
-    fun transfer(
+    suspend fun transfer(
         scope: String,
         currency: String,
         from: UUID,
@@ -86,7 +85,7 @@ internal interface CurrencyStore {
         amount: BigDecimal,
         starting: BigDecimal,
         allowNegative: Boolean,
-    ): CompletableFuture<TransferMove?>
+    ): TransferMove?
 }
 
 /** The four balances a completed [CurrencyStore.transfer] moved between, for the change events. */
@@ -133,8 +132,9 @@ internal object ExactBalance {
  */
 internal class SqlCurrencyStore(private val database: Database) : CurrencyStore {
 
-    override fun init(): CompletableFuture<Void> = database.update(
-        """
+    override suspend fun init() {
+        database.update(
+            """
         CREATE TABLE IF NOT EXISTS $TABLE (
             scope VARCHAR(96) NOT NULL,
             currency VARCHAR(64) NOT NULL,
@@ -147,53 +147,57 @@ internal class SqlCurrencyStore(private val database: Database) : CurrencyStore 
             PRIMARY KEY (scope, currency, uuid)${database.dialect.inlineIndexes(INDEXES)}
         )
         """.trimIndent()
-    ).thenCompose { database.createIndexes(TABLE, INDEXES) }
+        )
+        database.createIndexes(TABLE, INDEXES)
+    }
 
-    override fun balance(scope: String, currency: String, player: UUID): CompletableFuture<BigDecimal?> =
+    override suspend fun balance(scope: String, currency: String, player: UUID): BigDecimal? =
         database.query(
             "SELECT exact FROM $TABLE WHERE scope = ? AND currency = ? AND uuid = ?",
             scope, currency, player.toString(),
-        ) { ExactBalance.decode(it.getString(1)) }.thenApply { it.firstOrNull() }
+        ) { ExactBalance.decode(it.getString(1)) }.firstOrNull()
 
-    override fun balances(scope: String, player: UUID): CompletableFuture<Map<String, BigDecimal>> =
+    override suspend fun balances(scope: String, player: UUID): Map<String, BigDecimal> =
         database.query(
             "SELECT currency, exact FROM $TABLE WHERE scope = ? AND uuid = ?",
             scope, player.toString(),
-        ) { it.getString(1) to ExactBalance.decode(it.getString(2)) }.thenApply { it.toMap() }
+        ) { it.getString(1) to ExactBalance.decode(it.getString(2)) }.toMap()
 
-    override fun open(
+    override suspend fun open(
         scope: String,
         currency: String,
         player: UUID,
         starting: BigDecimal,
         ranked: Boolean,
-    ): CompletableFuture<Void> = database.insertIfAbsent(
-        TABLE, KEYS, COLUMNS,
-        scope, currency, player.toString(), *derived(starting), ranked,
-    ).thenApply { null }
+    ) {
+        database.insertIfAbsent(
+            TABLE, KEYS, COLUMNS,
+            scope, currency, player.toString(), *derived(starting), ranked,
+        )
+    }
 
-    override fun compareAndSet(
+    override suspend fun compareAndSet(
         scope: String,
         currency: String,
         player: UUID,
         expected: BigDecimal,
         next: BigDecimal,
-    ): CompletableFuture<Boolean> = database.update(
+    ): Boolean = database.update(
         "UPDATE $TABLE SET exact = ?, packed = ?, magnitude = ?, positive = ? " +
                 "WHERE scope = ? AND currency = ? AND uuid = ? AND exact = ?",
         *derived(next), scope, currency, player.toString(), ExactBalance.encode(expected),
-    ).thenApply { it > 0 }
+    ) > 0
 
     /**
      * Read and overwrite in one transaction, so the value reported back is the one this write
      * replaced rather than one an interleaving write had already moved on from.
      */
-    override fun set(
+    override suspend fun set(
         scope: String,
         currency: String,
         player: UUID,
         amount: BigDecimal,
-    ): CompletableFuture<BigDecimal?> = database.transaction { session ->
+    ): BigDecimal? = database.transaction { session ->
         val previous = read(session, scope, currency, player)
         session.update(
             database.dialect.upsert(TABLE, KEYS, VALUE_COLUMNS),
@@ -202,11 +206,11 @@ internal class SqlCurrencyStore(private val database: Database) : CurrencyStore 
         previous
     }
 
-    override fun top(
+    override suspend fun top(
         scope: String,
         currency: String,
         size: Int,
-    ): CompletableFuture<List<Pair<UUID, BigDecimal>>> = database.query(
+    ): List<Pair<UUID, BigDecimal>> = database.query(
         "SELECT uuid, exact FROM $TABLE " +
                 "WHERE scope = ? AND currency = ? AND ranked = ? AND positive = ? " +
                 "ORDER BY magnitude DESC, packed DESC LIMIT $size",
@@ -222,7 +226,7 @@ internal class SqlCurrencyStore(private val database: Database) : CurrencyStore 
      * by uuid keeps concurrent opposite-direction transfers from deadlocking each other; the retry
      * covers the case the backend detects one anyway and aborts us.
      */
-    override fun transfer(
+    override suspend fun transfer(
         scope: String,
         currency: String,
         from: UUID,
@@ -230,9 +234,19 @@ internal class SqlCurrencyStore(private val database: Database) : CurrencyStore 
         amount: BigDecimal,
         starting: BigDecimal,
         allowNegative: Boolean,
-    ): CompletableFuture<TransferMove?> = attemptTransfer(scope, currency, from, to, amount, starting, allowNegative, 0)
+    ): TransferMove? {
+        repeat(MAX_TRANSFER_ATTEMPTS) {
+            when (val outcome = attemptTransfer(scope, currency, from, to, amount, starting, allowNegative)) {
+                Refused -> return null
+                Contended -> Unit
+                else -> return outcome as TransferMove
+            }
+        }
 
-    private fun attemptTransfer(
+        throw IllegalStateException("Gave up moving $currency from $from to $to after contention")
+    }
+
+    private suspend fun attemptTransfer(
         scope: String,
         currency: String,
         from: UUID,
@@ -240,8 +254,7 @@ internal class SqlCurrencyStore(private val database: Database) : CurrencyStore 
         amount: BigDecimal,
         starting: BigDecimal,
         allowNegative: Boolean,
-        attempt: Int,
-    ): CompletableFuture<TransferMove?> = database.transaction { session ->
+    ): Any? = database.transaction { session ->
         val insert = database.dialect.insertIfAbsent(TABLE, KEYS, COLUMNS)
         for (player in listOf(from, to).sortedBy(UUID::toString)) {
             session.update(insert, scope, currency, player.toString(), *derived(starting), true)
@@ -264,16 +277,6 @@ internal class SqlCurrencyStore(private val database: Database) : CurrencyStore 
         if (credited == 0) return@transaction Contended
 
         TransferMove(fromBefore, fromAfter, toBefore, toAfter)
-    }.thenCompose { outcome ->
-        when (outcome) {
-            Refused -> CompletableFuture.completedFuture(null)
-            Contended ->
-                if (attempt >= MAX_TRANSFER_ATTEMPTS) CompletableFuture.failedFuture(
-                    IllegalStateException("Gave up moving $currency from $from to $to after contention")
-                ) else attemptTransfer(scope, currency, from, to, amount, starting, allowNegative, attempt + 1)
-
-            else -> CompletableFuture.completedFuture(outcome as TransferMove)
-        }
     }
 
     private fun read(session: SqlSession, scope: String, currency: String, player: UUID): BigDecimal? =
@@ -330,81 +333,76 @@ internal class MemoryCurrencyStore : CurrencyStore {
     /** "scope|currency" -> (player -> account). */
     private val books = ConcurrentHashMap<String, ConcurrentHashMap<UUID, Account>>()
 
-    override fun init(): CompletableFuture<Void> = CompletableFuture.completedFuture(null)
+    override suspend fun init() = Unit
 
-    override fun balance(scope: String, currency: String, player: UUID): CompletableFuture<BigDecimal?> =
-        CompletableFuture.completedFuture(book(scope, currency)[player]?.balance)
+    override suspend fun balance(scope: String, currency: String, player: UUID): BigDecimal? =
+        book(scope, currency)[player]?.balance
 
-    override fun balances(scope: String, player: UUID): CompletableFuture<Map<String, BigDecimal>> {
+    override suspend fun balances(scope: String, player: UUID): Map<String, BigDecimal> {
         val prefix = "$scope|"
-        val out = books.entries
+        return books.entries
             .filter { it.key.startsWith(prefix) }
             .mapNotNull { (key, accounts) ->
                 accounts[player]?.let { key.removePrefix(prefix) to it.balance }
             }
-        return CompletableFuture.completedFuture(out.toMap())
+            .toMap()
     }
 
-    override fun open(
+    override suspend fun open(
         scope: String,
         currency: String,
         player: UUID,
         starting: BigDecimal,
         ranked: Boolean,
-    ): CompletableFuture<Void> {
+    ) {
         book(scope, currency).putIfAbsent(player, Account(starting, ranked))
-        return CompletableFuture.completedFuture(null)
     }
 
-    override fun compareAndSet(
+    override suspend fun compareAndSet(
         scope: String,
         currency: String,
         player: UUID,
         expected: BigDecimal,
         next: BigDecimal,
-    ): CompletableFuture<Boolean> {
+    ): Boolean {
         var won = false
         book(scope, currency).computeIfPresent(player) { _, account ->
             if (account.balance.compareTo(expected) != 0) return@computeIfPresent account
             won = true
             account.copy(balance = next)
         }
-        return CompletableFuture.completedFuture(won)
+        return won
     }
 
-    override fun set(
+    override suspend fun set(
         scope: String,
         currency: String,
         player: UUID,
         amount: BigDecimal,
-    ): CompletableFuture<BigDecimal?> {
+    ): BigDecimal? {
         var previous: BigDecimal? = null
         book(scope, currency).compute(player) { _, account ->
             previous = account?.balance
             account?.copy(balance = amount) ?: Account(amount, true)
         }
-        return CompletableFuture.completedFuture(previous)
+        return previous
     }
 
-    override fun top(
+    override suspend fun top(
         scope: String,
         currency: String,
         size: Int,
-    ): CompletableFuture<List<Pair<UUID, BigDecimal>>> {
-        val ranked = book(scope, currency).entries
-            .filter { it.value.ranked && it.value.balance.signum() >= 0 }
-            .sortedByDescending { it.value.balance }
-            .take(size)
-            .map { it.key to it.value.balance }
-        return CompletableFuture.completedFuture(ranked)
-    }
+    ): List<Pair<UUID, BigDecimal>> = book(scope, currency).entries
+        .filter { it.value.ranked && it.value.balance.signum() >= 0 }
+        .sortedByDescending { it.value.balance }
+        .take(size)
+        .map { it.key to it.value.balance }
 
     /**
      * Both sides under one lock on the book, which is this store's whole transaction story: nothing
      * here can observe or interleave with a half-applied move.
      */
-    @Synchronized
-    override fun transfer(
+    override suspend fun transfer(
         scope: String,
         currency: String,
         from: UUID,
@@ -412,17 +410,35 @@ internal class MemoryCurrencyStore : CurrencyStore {
         amount: BigDecimal,
         starting: BigDecimal,
         allowNegative: Boolean,
-    ): CompletableFuture<TransferMove?> {
+    ): TransferMove? = moveLocked(scope, currency, from, to, amount, starting, allowNegative)
+
+    /**
+     * The monitor sits on this non-suspending helper rather than on [transfer].
+     *
+     * A monitor cannot be held across a suspension point: the coroutine may resume on a different
+     * thread, which would then try to release a lock it never took. Nothing in here suspends or does
+     * I/O, so the hold is bounded by a handful of map operations.
+     */
+    @Synchronized
+    private fun moveLocked(
+        scope: String,
+        currency: String,
+        from: UUID,
+        to: UUID,
+        amount: BigDecimal,
+        starting: BigDecimal,
+        allowNegative: Boolean,
+    ): TransferMove? {
         val accounts = book(scope, currency)
         val fromBefore = accounts[from]?.balance ?: starting
         val fromAfter = fromBefore.subtract(amount)
-        if (!allowNegative && fromAfter.signum() < 0) return CompletableFuture.completedFuture(null)
+        if (!allowNegative && fromAfter.signum() < 0) return null
 
         val toBefore = accounts[to]?.balance ?: starting
         val toAfter = toBefore.add(amount)
         accounts.compute(from) { _, account -> account?.copy(balance = fromAfter) ?: Account(fromAfter, true) }
         accounts.compute(to) { _, account -> account?.copy(balance = toAfter) ?: Account(toAfter, true) }
-        return CompletableFuture.completedFuture(TransferMove(fromBefore, fromAfter, toBefore, toAfter))
+        return TransferMove(fromBefore, fromAfter, toBefore, toAfter)
     }
 
     private fun book(scope: String, currency: String) =

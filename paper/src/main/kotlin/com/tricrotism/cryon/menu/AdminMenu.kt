@@ -11,6 +11,7 @@ import com.tricrotism.cryon.paper.api.extension.toItem
 import com.tricrotism.cryon.paper.api.menu.MenuTree
 import com.tricrotism.cryon.paper.api.menu.branch
 import com.tricrotism.cryon.paper.api.scheduler.Schedulers
+import kotlinx.coroutines.CoroutineScope
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder
 import org.bukkit.Material
@@ -39,6 +40,7 @@ class AdminMenu(
     private val flags: FeatureFlags,
     private val network: NetworkStatus,
     private val bedrock: BedrockService,
+    private val scope: CoroutineScope,
 ) : AutoCloseable {
 
     /**
@@ -65,7 +67,7 @@ class AdminMenu(
     }
 
     private fun show(player: Player, root: com.tricrotism.cryon.paper.api.menu.MenuBranch) {
-        sessions.put(player.uniqueId, MenuTree.open(player, root))?.close()
+        sessions.put(player.uniqueId, MenuTree.open(player, root, scope))?.close()
     }
 
     private fun tree() = branch("cryon", title("Cryon"), Material.COMMAND_BLOCK) {

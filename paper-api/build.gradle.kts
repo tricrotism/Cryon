@@ -10,6 +10,7 @@ repositories {
 
 dependencies {
     compileOnly(libs.paper.api)
+    compileOnly(libs.kotlinx.coroutines)
     compileOnly(libs.invui)
     compileOnly(libs.packetevents)
 

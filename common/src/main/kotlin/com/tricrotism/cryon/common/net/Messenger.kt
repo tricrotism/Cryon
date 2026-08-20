@@ -1,7 +1,6 @@
 package com.tricrotism.cryon.common.net
 
 import java.time.Duration
-import java.util.concurrent.CompletableFuture
 
 /** Connection settings for the cross-server transport. [uri] e.g. `redis://:password@host:6379/0`. */
 data class RedisConfig(val uri: String)
@@ -18,20 +17,38 @@ data class RedisConfig(val uri: String)
 interface Messenger {
 
     /** Broadcast [message] on [channel] to every subscriber, this process included. */
-    fun publish(channel: String, message: String): CompletableFuture<Void>
+    suspend fun publish(channel: String, message: String)
 
-    /** Receive every message on [channel]. Returns a handle to stop listening. */
+    /**
+     * Receive every message on [channel]. Returns a handle to stop listening.
+     *
+     * **The handler is not suspending, and runs on the transport's delivery thread.** That is the
+     * ordering guarantee: messages on a connection arrive in the order they were sent, and one
+     * ordered thread is what preserves it. Launching each message into a scope would deliver them
+     * concurrently and quietly reorder anything that depended on the sequence. So keep the handler
+     * cheap — read the payload, hand it on — and where it must do I/O, `launch` into your own
+     * module scope, which is an explicit choice to give up ordering rather than an accidental one.
+     */
     fun subscribe(channel: String, handler: (String) -> Unit): MessengerSubscription
 
     /**
-     * Answer requests on [channel]; whatever the returned future completes with is sent back to the
-     * requester. The future keeps the responder off the transport's delivery thread, so answering
-     * may take as long as it needs (flushing a player to SQL, say) without stalling other channels.
+     * Answer requests on [channel]; whatever [responder] returns is sent back to the requester.
+     *
+     * Suspending, and run in the messenger's own scope rather than on the delivery thread, so
+     * answering may take as long as it needs (flushing a player to SQL, say) without stalling other
+     * channels. Unlike [subscribe] there is no ordering to preserve — requests carry their own
+     * correlation ids — so concurrent responders are correct here.
      */
-    fun handle(channel: String, responder: (String) -> CompletableFuture<String>): MessengerSubscription
+    fun handle(channel: String, responder: suspend (String) -> String): MessengerSubscription
 
-    /** Send a request on [channel] and complete with the first reply, or fail after [timeout]. */
-    fun request(channel: String, message: String, timeout: Duration): CompletableFuture<String>
+    /**
+     * Send a request on [channel] and return the first reply.
+     *
+     * Throws [java.util.concurrent.TimeoutException] if no reply arrives within [timeout] — a real
+     * failure rather than a cancellation, so a caller's `try`/`catch` sees it and the surrounding
+     * coroutine is not torn down by a peer that simply went away.
+     */
+    suspend fun request(channel: String, message: String, timeout: Duration): String
 
     fun close()
 }

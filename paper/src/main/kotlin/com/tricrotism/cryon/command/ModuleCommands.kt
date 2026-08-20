@@ -1,9 +1,12 @@
 package com.tricrotism.cryon.command
 
+import com.tricrotism.cryon.common.diagnostic.Retention
 import com.tricrotism.cryon.common.flag.FeatureFlags
 import com.tricrotism.cryon.common.locale.MessageService
 import com.tricrotism.cryon.common.module.ModuleManager
 import com.tricrotism.cryon.common.module.ModuleState
+import com.tricrotism.cryon.common.module.remote.RemoteModules
+import com.tricrotism.cryon.common.module.remote.UpdateResult
 import com.tricrotism.cryon.common.text.CommonMessages
 import com.tricrotism.cryon.common.text.Mini
 import com.tricrotism.cryon.menu.AdminMenu
@@ -12,6 +15,8 @@ import com.tricrotism.cryon.network.NetworkStatus
 import com.tricrotism.cryon.paper.api.command.*
 import com.tricrotism.cryon.paper.api.placeholder.PlaceholderService
 import com.tricrotism.cryon.paper.api.scheduler.Schedulers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.event.ClickEvent
 import net.kyori.adventure.text.event.HoverEvent
@@ -57,7 +62,94 @@ class ModuleCommands(
     private val placeholders: PlaceholderService,
     private val menu: AdminMenu,
     private val menuFirst: Boolean,
+    private val retention: Retention,
+    private val remote: RemoteModules?,
+    private val scope: CoroutineScope,
 ) {
+
+    /**
+     * What the remote poller is tracking and what it has already fetched.
+     *
+     * Reads only the recorded state, so it answers instantly and says nothing about the network.
+     * `remote check` is the one that goes and looks.
+     */
+    @Subcommand("remote")
+    fun remote(sender: CommandSender) {
+        val poller = remote ?: run {
+            sender.sendMessage(
+                CommonMessages.info(
+                    Mini.format("<off_white>Remote modules are off. Set <highlight>remote.enabled</highlight> in config.yml.")
+                )
+            )
+            return
+        }
+        sender.sendMessage(CommonMessages.info(Mini.format("<off_white>Remote modules:")))
+        for (artifact in poller.artifacts) {
+            val installed = poller.installedRevision(artifact)
+            sender.sendMessage(
+                Mini.format(
+                    "<off_white> <highlight><id></highlight> <gray>(<version>)</gray> <state>",
+                    Placeholder.unparsed("id", artifact.id),
+                    Placeholder.unparsed("version", artifact.resolvedVersion),
+                    Placeholder.parsed(
+                        "state",
+                        if (installed == null) "<scarlet>never fetched" else "<emerald>fetched",
+                    ),
+                )
+            )
+        }
+    }
+
+    /**
+     * Poll every configured artifact now instead of waiting for the timer.
+     *
+     * Whether anything downloaded then *runs* is still `modules.auto-reload`'s decision, so the
+     * reply distinguishes a build that swapped from one that is merely on disk. The work is
+     * launched rather than awaited because it is network I/O and the caller is on a region thread.
+     */
+    @Subcommand("remote", "check")
+    fun remoteCheck(sender: CommandSender) {
+        val poller = remote ?: run {
+            sender.sendMessage(CommonMessages.error(Mini.format("<off_white>Remote modules are off.")))
+            return
+        }
+        sender.sendMessage(CommonMessages.info(Mini.format("<off_white>Checking for module updates...")))
+        scope.launch {
+            val results = poller.pollAll()
+            val installed = results.filterIsInstance<UpdateResult.Installed>()
+            val failed = results.filterIsInstance<UpdateResult.Failed>()
+            Schedulers.global {
+                for ((artifact, reason) in failed) {
+                    sender.sendMessage(
+                        CommonMessages.error(
+                            Mini.format(
+                                "<off_white><id>: <reason>",
+                                Placeholder.unparsed("id", artifact.id),
+                                Placeholder.unparsed("reason", reason),
+                            )
+                        )
+                    )
+                }
+                if (installed.isEmpty()) {
+                    sender.sendMessage(
+                        CommonMessages.info(Mini.format("<off_white>Everything is already up to date."))
+                    )
+                    return@global
+                }
+                for ((artifact) in installed) {
+                    sender.sendMessage(
+                        CommonMessages.success(
+                            Mini.format(
+                                "<off_white>Downloaded <highlight><id></highlight> <gray>(<jar>)</gray>",
+                                Placeholder.unparsed("id", artifact.id),
+                                Placeholder.unparsed("jar", artifact.fileName),
+                            )
+                        )
+                    )
+                }
+            }
+        }
+    }
 
     /**
      * Bare `/cryon`. A player gets whichever surface `commands.menu` makes primary; console always
@@ -369,6 +461,51 @@ class ModuleCommands(
                 )
             )
         )
+    }
+
+    /**
+     * What the collector has and has not reclaimed, per unloaded jar.
+     *
+     * The check nothing else can do for a loader framework: a jar's classes stay resident until its
+     * classloader is collected, and a module that left a listener, a task or a captured lambda
+     * behind pins it forever. Server-wide tooling cannot attribute this — every module is
+     * `com.tricrotism.cryon.*` to a package-prefix heap histogram — so the only honest evidence is
+     * watching the loader itself go away.
+     *
+     * **Read the trend, not one number.** A live count of 1 immediately after an unload usually just
+     * means no collection has run yet; suggest a GC and re-check. A count that climbs with each
+     * reload of the same jar is the leak.
+     */
+    @Subcommand("retention")
+    fun retention(sender: CommandSender) {
+        val report = retention.report()
+        if (report.isEmpty()) {
+            sender.sendMessage(
+                CommonMessages.info(Mini.format("<off_white>Nothing unloaded yet, so nothing to watch."))
+            )
+            return
+        }
+        sender.sendMessage(CommonMessages.info(Mini.format("<off_white>Classloader retention since boot:")))
+        for ((key, retained) in report.entries.sortedByDescending { it.value.live }) {
+            val colour = if (retained.live > 0) "<scarlet>" else "<emerald>"
+            sender.sendMessage(
+                Mini.format(
+                    "  <slate_gray><key></slate_gray> $colour<live></> live, <off_white><collected></off_white> collected of <off_white><total></off_white>",
+                    Placeholder.unparsed("key", key.removePrefix("module-jar:")),
+                    Placeholder.unparsed("live", retained.live.toString()),
+                    Placeholder.unparsed("collected", retained.collected.toString()),
+                    Placeholder.unparsed("total", retained.registered.toString()),
+                )
+            )
+        }
+        if (report.values.any { it.live > 0 }) {
+            sender.sendMessage(
+                Mini.format(
+                    "<slate_gray>A live count right after an unload is normal — no collection has run. " +
+                            "One that climbs across reloads of the same jar is a leak."
+                )
+            )
+        }
     }
 
     @Subcommand("flags")
@@ -831,6 +968,8 @@ class ModuleCommands(
             HelpEntry("Jars", "cryon unload <id>", "Unload the jar a module came from"),
             HelpEntry("Jars", "cryon scan", "Load every jar in modules/ that is not loaded yet"),
             HelpEntry("Jars", "cryon reload-api", "Reload the api/ layer and every module with it"),
+            HelpEntry("Jars", "cryon remote", "Feature jars tracked in a remote Maven repository"),
+            HelpEntry("Jars", "cryon remote check", "Poll the repository for new builds now"),
             HelpEntry("Flags", "cryon flags [scope]", "Feature flags, all scopes or one"),
             HelpEntry("Flags", "cryon flag enable <feature> [scope]", "Turn a feature on"),
             HelpEntry("Flags", "cryon flag disable <feature> [scope]", "Turn a feature off"),
@@ -838,6 +977,7 @@ class ModuleCommands(
             HelpEntry("Flags", "cryon flag status <feature> [player]", "The layered breakdown"),
             HelpEntry("Flags", "cryon flag reload", "Re-read the flags from the database"),
             HelpEntry("Server", "cryon network", "This server's deployment shape"),
+            HelpEntry("Server", "cryon retention", "Whether unloaded module jars were actually collected"),
             HelpEntry("Server", "cryon menu", "The same actions as a menu"),
             HelpEntry("Server", "cryon lang reload", "Re-read the language files from disk"),
         )

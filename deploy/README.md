@@ -52,6 +52,12 @@ docker build -f deploy/images/geyser.Dockerfile   -t <registry>/cryon-geyser .
 # docker push each
 ```
 
+The Velocity and Geyser images are multi-stage: they build `:velocity:shadowJar` / `:geyser:shadowJar`
+from the repo checkout and copy the result into the runtime layer, so a code change needs no manual jar step. All three
+images run on `eclipse-temurin:25-jre`, matching the JDK 25 toolchain the jars are compiled with. A 21 JRE would load
+Geyser fine and then fail the Cryon extension with
+`UnsupportedClassVersionError`, so keep the runtime and the toolchain in step.
+
 ## Install
 
 Edit `helm/cryon/values.yaml` (registry, redis/postgres endpoints, families, resources, replicas),
@@ -77,8 +83,12 @@ helm upgrade --install cryon deploy/helm/cryon -n cryon
 - **Maintenance**: `/maintenance on|off [message]` on any proxy (permission `cryon.maintenance`) flips
   every proxy over Redis; players see the message and an unjoinable protocol, bypass via
   `cryon.maintenance.bypass`.
-- **Bedrock**: Geyser terminates UDP and speaks Java to the Velocity Service; the shared Floodgate key
-  gives each Bedrock player a stable UUID the registry/flags/locale already key on.
+- **Bedrock**: Geyser terminates UDP and speaks Java to the Velocity Service; the shared Floodgate key gives each
+  Bedrock player a stable UUID the registry/flags/locale already key on. The Cryon Geyser extension is baked into the
+  image at `extensions/cryon-geyser.jar` and reads its own config from
+  `extensions/cryon/config.yml`, which the entrypoint writes from the `cryon-geyser-config` ConfigMap with the DB
+  password injected from the `cryon-postgres` Secret. That is the same ConfigMap that carries Geyser's own `config.yml`,
+  mounted twice under different keys.
 
 ## Stand-up order
 
@@ -88,7 +98,11 @@ helm upgrade --install cryon deploy/helm/cryon -n cryon
    proxy and lands on a hub shard, and that killing a shard drops its backend within ~3 heartbeats.
 4. Add `skyblock` (persistent) and confirm least-loaded routing + empty reclaim.
 5. Add ephemeral families once a matchmaker module is deployed (the `Matchmaker` seam).
-6. Enable Geyser and verify a Bedrock client routes across families with a consistent identity.
+6. Enable Geyser. It reaches Redis and Postgres like every other Cryon process, so bring it up after both are reachable
+   and after the `cryon-postgres` Secret exists. Confirm the extension loaded (Geyser logs its extensions on boot)
+   before testing Bedrock, then verify a Bedrock client routes across families with a consistent identity. An extension
+   change needs a pod restart; Geyser loads
+   `extensions/` once at startup.
 
 ## Decisions to make / risks
 
@@ -100,3 +114,7 @@ helm upgrade --install cryon deploy/helm/cryon -n cryon
   players present before going live.
 - The `paper-global.yml` here is a minimal overlay; verify Paper accepts it (modern forwarding on,
   the same secret as the proxy) on your exact build.
+- The config ConfigMaps still spell the network block the old way (`server-name`, `network.family`,
+  `network.instance-id`). Those are read as aliases for one more release and log a rename warning at boot; the current
+  names are `network.server`, `network.node` and `network.expect`. Rename them before the aliases go, and note that
+  `network.expect` has no old spelling at all, so a pool currently declares no intent and gets no validation banner.

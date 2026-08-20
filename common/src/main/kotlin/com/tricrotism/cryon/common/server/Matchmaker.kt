@@ -1,7 +1,6 @@
 package com.tricrotism.cryon.common.server
 
 import java.util.*
-import java.util.concurrent.CompletableFuture
 
 /**
  * Claims an instance of an ephemeral [serverId] (a minigame match) for a set of players, allocating a
@@ -10,5 +9,5 @@ import java.util.concurrent.CompletableFuture
  * servers. Persistent servers never need it (they route via [ServerRegistry.bestNode]).
  */
 interface Matchmaker {
-    fun claim(serverId: String, players: Set<UUID>): CompletableFuture<Node>
+    suspend fun claim(serverId: String, players: Set<UUID>): Node
 }

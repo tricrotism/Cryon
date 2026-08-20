@@ -8,7 +8,7 @@ data:
         database:
             enabled: true
             host: "{{ .Values.postgres.host }}"
-            port: { { .Values.postgres.port } }
+            port: {{ .Values.postgres.port }}
             database: "{{ .Values.postgres.database }}"
             username: "{{ .Values.postgres.username }}"
             password: "__DB_PASSWORD__"

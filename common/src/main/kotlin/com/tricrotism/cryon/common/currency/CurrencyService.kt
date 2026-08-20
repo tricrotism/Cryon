@@ -2,7 +2,6 @@ package com.tricrotism.cryon.common.currency
 
 import com.tricrotism.cryon.common.number.PackedDecimal
 import java.util.*
-import java.util.concurrent.CompletableFuture
 
 /**
  * Balances, for any number of currencies, scoped per serverId or network-wide.
@@ -38,10 +37,10 @@ interface CurrencyService {
     fun all(): Collection<Currency>
 
     /** The authoritative balance, or the currency's starting value if the player has no account yet. */
-    fun balance(currency: Currency, player: UUID): CompletableFuture<PackedDecimal>
+    suspend fun balance(currency: Currency, player: UUID): PackedDecimal
 
     /** Every registered currency's balance for [player], in one round trip per scope. */
-    fun balances(player: UUID): CompletableFuture<Map<Currency, PackedDecimal>>
+    suspend fun balances(player: UUID): Map<Currency, PackedDecimal>
 
     /**
      * The last known balance without touching the store, or null when this process has not seen one.
@@ -57,12 +56,12 @@ interface CurrencyService {
      * Add [amount] and answer with the balance afterwards. [amount] must be positive. Use [withdraw]
      * to take, so that every removal goes through the guarded path.
      */
-    fun deposit(
+    suspend fun deposit(
         currency: Currency,
         player: UUID,
         amount: PackedDecimal,
         reason: String = "unspecified",
-    ): CompletableFuture<PackedDecimal>
+    ): PackedDecimal
 
     /**
      * Take [amount] **atomically**, answering whether the player had it.
@@ -71,20 +70,20 @@ interface CurrencyService {
      * beforehand is a prediction, and by the time it is acted on it may be describing money that has
      * already been spent elsewhere in the same tick.
      */
-    fun withdraw(
+    suspend fun withdraw(
         currency: Currency,
         player: UUID,
         amount: PackedDecimal,
         reason: String = "unspecified",
-    ): CompletableFuture<Boolean>
+    ): Boolean
 
     /** Overwrite the balance outright. For administration; ordinary flows use [deposit]/[withdraw]. */
-    fun set(
+    suspend fun set(
         currency: Currency,
         player: UUID,
         amount: PackedDecimal,
         reason: String = "unspecified",
-    ): CompletableFuture<Void>
+    )
 
     /**
      * Move [amount] from one player to another, taking before giving.
@@ -95,13 +94,13 @@ interface CurrencyService {
      * ours, and a caller that collapses them tells the sender they were short at the one moment that
      * is untrue.
      */
-    fun transfer(
+    suspend fun transfer(
         currency: Currency,
         from: UUID,
         to: UUID,
         amount: PackedDecimal,
         reason: String = "transfer",
-    ): CompletableFuture<TransferResult>
+    ): TransferResult
 
     /**
      * Create [player]'s account at the currency's starting balance if they have none.
@@ -109,7 +108,7 @@ interface CurrencyService {
      * Only needed to opt an account **out** of rankings, a shared faction or shop account that would
      * otherwise sit at the top of a player leaderboard. Ordinary accounts are created on first use.
      */
-    fun openAccount(currency: Currency, player: UUID, ranked: Boolean = true): CompletableFuture<Void>
+    suspend fun openAccount(currency: Currency, player: UUID, ranked: Boolean = true)
 
     /**
      * The most recent ranking for [currency], newest-first, or empty when it has no [Leaderboard] or
@@ -123,7 +122,7 @@ interface CurrencyService {
      * Driven by the platform rather than a timer in here, because this module is platform-neutral and
      * has no scheduler of its own. The core calls it on an interval.
      */
-    fun refreshLeaderboards(): CompletableFuture<Void>
+    suspend fun refreshLeaderboards()
 
     /** Watch every balance change made on this instance. Close the handle to stop watching. */
     fun onChange(listener: (CurrencyChange) -> Unit): AutoCloseable

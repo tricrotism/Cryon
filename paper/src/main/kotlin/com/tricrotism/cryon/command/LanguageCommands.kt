@@ -11,6 +11,8 @@ import com.tricrotism.cryon.paper.api.command.Subcommand
 import com.tricrotism.cryon.paper.api.extension.clearLanguage
 import com.tricrotism.cryon.paper.api.extension.resolvedLocale
 import com.tricrotism.cryon.paper.api.extension.setLanguage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder
 import org.bukkit.Sound
@@ -25,7 +27,10 @@ import java.util.*
  * confirms in the client locale. Messages live in the core's `lang/` bundles.
  */
 @Command("language", "Set your language preference", "lang")
-class LanguageCommands(private val messages: MessageService) {
+class LanguageCommands(
+    private val messages: MessageService,
+    private val scope: CoroutineScope,
+) {
 
     private val log = LoggerFactory.getLogger("Cryon")
 
@@ -70,7 +75,11 @@ class LanguageCommands(private val messages: MessageService) {
             }
             return
         }
-        player.setLanguage(locale).exceptionally { log.warn("Failed to persist locale for {}", player.name, it); null }
+
+        scope.launch {
+            runCatching { player.setLanguage(locale) }
+                .onFailure { log.warn("Failed to persist locale for {}", player.name, it) }
+        }
         player.sendMessage(
             CommonMessages.success(
                 messages.render(
@@ -86,7 +95,10 @@ class LanguageCommands(private val messages: MessageService) {
     @Subcommand("clear")
     fun clear(sender: CommandSender) {
         val player = player(sender) ?: return
-        player.clearLanguage().exceptionally { log.warn("Failed to clear locale for {}", player.name, it); null }
+        scope.launch {
+            runCatching { player.clearLanguage() }
+                .onFailure { log.warn("Failed to clear locale for {}", player.name, it) }
+        }
         player.sendMessage(CommonMessages.success(messages.render(player.locale(), "language.cleared")))
         player.playSound(player.location, Sound.UI_BUTTON_CLICK, 1f, 1f)
     }

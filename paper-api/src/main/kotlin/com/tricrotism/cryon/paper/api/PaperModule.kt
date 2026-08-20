@@ -6,8 +6,10 @@ import com.tricrotism.cryon.paper.api.bedrock.BedrockService
 import com.tricrotism.cryon.paper.api.command.CommandService
 import com.tricrotism.cryon.paper.api.placeholder.PlaceholderProvider
 import com.tricrotism.cryon.paper.api.placeholder.PlaceholderService
+import com.tricrotism.cryon.paper.api.scheduler.CryonDispatchers
 import com.tricrotism.cryon.paper.api.scheduler.Schedulers
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask
+import kotlinx.coroutines.*
 import org.bukkit.Location
 import org.bukkit.Server
 import org.bukkit.configuration.file.YamlConfiguration
@@ -17,8 +19,8 @@ import org.bukkit.event.Listener
 import org.bukkit.plugin.Plugin
 import org.slf4j.Logger
 import java.io.File
+import java.lang.Runnable
 import java.util.*
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.jar.JarFile
 
@@ -36,6 +38,9 @@ abstract class PaperModule : Module {
 
     private lateinit var moduleContext: PaperModuleContext
     private val listeners = ArrayList<Listener>()
+
+    @Volatile
+    private var scopeStarted = false
     private val flushes = ArrayList<AutoCloseable>()
     private val placeholders = ArrayList<AutoCloseable>()
     private val tasks = ArrayList<ScheduledTask>()
@@ -115,6 +120,41 @@ abstract class PaperModule : Module {
                 jar.getJarEntry(name)?.let { entry -> jar.getInputStream(entry).use { it.readBytes() } }
             }
         }.getOrNull()
+    }
+
+    /**
+     * This module's coroutine scope, canceled when the module disables.
+     *
+     * **Launch every coroutine here, never in `GlobalScope` or an ad-hoc `CoroutineScope`.** A
+     * coroutine is a live reference to the code that started it, so one still suspended after
+     * `/cryon unload` — parked on a database call, waiting out a `delay`, sitting in a `Mutex` queue
+     * — holds this module's classloader open and eventually resumes into classes that are gone. That
+     * is the same leak [track] exists for, and the scope is how the suspending half of the module
+     * gets it: cancelling the parent cancels every child, transitively, in one move.
+     *
+     * Dispatches on [CryonDispatchers.Global] by default, so a `launch { }` body may touch the
+     * Bukkit API for server-wide state; `withContext(CryonDispatchers.Async)` for I/O, and
+     * `withContext(CryonDispatchers.entity(player))` for one player's own state. A [SupervisorJob]
+     * parents it, so one failed coroutine does not take its siblings down with it, and an uncaught
+     * failure is logged against this module rather than reaching a default handler that cannot say
+     * which module it came from.
+     *
+     * **Cancellation is cooperative.** It unblocks anything suspended at a suspension point, but a
+     * thread already inside a blocking JDBC or Redis call runs to completion — teardown that must
+     * *finish* rather than merely stop belongs in [onDisable] before the super call, not in a
+     * coroutine racing it.
+     */
+    protected val scope: CoroutineScope by lazy {
+        scopeStarted = true
+        CoroutineScope(
+            SupervisorJob() +
+                    CryonDispatchers.Global +
+                    CoroutineName(id) +
+                    CoroutineExceptionHandler { _, error ->
+                        if (error is CancellationException) return@CoroutineExceptionHandler
+                        logger.error("Unhandled failure in a coroutine of module '$id'", error)
+                    }
+        )
     }
 
     /** Resolve a required peer service: sugar for `services.get<T>()`. */
@@ -244,11 +284,16 @@ abstract class PaperModule : Module {
      *
      * [flush] runs off the main thread, must not touch the Bukkit API, and must be safe to call while
      * the player is still online. Register from [onEnable].
+     *
+     * It suspends, and the transfer waits on it: returning before the write lands defeats the point,
+     * and never returning stalls the player on the loading screen. It is invoked by the core rather
+     * than from this module's [scope], so it keeps running through a disable — which is deliberate,
+     * since the last flush has to survive teardown.
      */
     protected fun onFlush(
         name: String,
         stage: Int = PlayerHandoff.DEFAULT_STAGE,
-        flush: (UUID) -> CompletableFuture<Void>,
+        flush: suspend (UUID) -> Unit,
     ) {
         val handoff = services.find<PlayerHandoff>()
         if (handoff == null) {
@@ -273,6 +318,7 @@ abstract class PaperModule : Module {
     }
 
     override fun onDisable() {
+        if (scopeStarted) runCatching { scope.cancel("Module '$id' disabled") }
         tasks.forEach { runCatching { it.cancel() } }
         tasks.clear()
         listeners.forEach(HandlerList::unregisterAll)

@@ -1,10 +1,9 @@
 package com.tricrotism.cryon.common.net
 
 import java.time.Duration
-import java.util.concurrent.CompletableFuture
 
 /**
- * Minimal async key/value surface with TTLs, complementing [Messenger]'s pub/sub. Exists because live
+ * Minimal suspending key/value surface with TTLs, complementing [Messenger]'s pub/sub. Exists because live
  * server-registry state needs expiry-based liveness (a dead node's key must expire on its own), which
  * neither [Messenger] nor the SQL `Database` provides. String values, so encode structure yourself.
  *
@@ -15,10 +14,10 @@ import java.util.concurrent.CompletableFuture
 interface KeyValueStore {
 
     /** Set [key] to [value], expiring after [ttl]. */
-    fun set(key: String, value: String, ttl: Duration): CompletableFuture<Void>
+    suspend fun set(key: String, value: String, ttl: Duration)
 
     /** The value at [key], or null if it is absent/expired. */
-    fun get(key: String): CompletableFuture<String?>
+    suspend fun get(key: String): String?
 
     /**
      * Remove [key], reporting whether it was actually there.
@@ -28,7 +27,37 @@ interface KeyValueStore {
      * answer the same one-shot request get exactly one true between them. Callers that only want
      * the key gone can ignore it.
      */
-    fun delete(key: String): CompletableFuture<Boolean>
+    suspend fun delete(key: String): Boolean
+
+
+    /**
+     * Set [key] to [value] expiring after [ttl], **only if it is not already set**. True if this
+     * caller created it.
+     *
+     * The claim primitive: on Redis this is one `SET NX PX`, so of any number of callers racing for
+     * the same key exactly one is told true. [set] cannot be used for this — it overwrites, so every
+     * racer would "succeed" and they would all believe they hold the same thing.
+     */
+    suspend fun setIfAbsent(key: String, value: String, ttl: Duration): Boolean
+
+    /**
+     * Remove [key], but **only if it still holds [value]**. True if this caller removed it.
+     *
+     * The release half of the claim, and the reason [delete] is not good enough for one. A holder
+     * whose TTL lapsed no longer owns the key — someone else may already have claimed it — and an
+     * unconditional delete at that point releases *their* claim, silently letting two callers into a
+     * section that is supposed to admit one. Comparing the value first makes a late release a no-op
+     * instead, which is the only safe way for it to fail.
+     */
+    suspend fun deleteIfEqual(key: String, value: String): Boolean
+
+    /**
+     * Push [key]'s expiry out by [ttl], but **only if it still holds [value]**. True if it did.
+     *
+     * False is the signal a holder must not ignore: it means the claim lapsed and may now belong to
+     * somebody else, so whatever was being done under it has to stop rather than run on unprotected.
+     */
+    suspend fun refreshIfEqual(key: String, value: String, ttl: Duration): Boolean
 
     /**
      * Every key matching [pattern] (glob, e.g. `prefix*`), gathered without ever blocking the store.
@@ -38,10 +67,10 @@ interface KeyValueStore {
      * store rather than to the number of matches. For a group of related entries that is read as a
      * unit, prefer a hash ([hset]/[hgetAll]) and pay one O(size-of-group) lookup instead.
      */
-    fun keys(pattern: String): CompletableFuture<List<String>>
+    suspend fun keys(pattern: String): List<String>
 
     /** The values for [keys], in order; a missing key maps to null. */
-    fun mget(keys: Collection<String>): CompletableFuture<List<String?>>
+    suspend fun mget(keys: Collection<String>): List<String?>
 
     /**
      * Set [field] within the hash at [key], and set the whole hash to expire after [ttl].
@@ -56,10 +85,21 @@ interface KeyValueStore {
      * needs its own deadline, carry a timestamp in the value and discard stale ones on read; treat
      * this [ttl] as the backstop that stops an abandoned hash living forever.
      */
-    fun hset(key: String, field: String, value: String, ttl: Duration): CompletableFuture<Void>
+    suspend fun hset(key: String, field: String, value: String, ttl: Duration)
+
+    /**
+     * Set [field] within the hash at [key] **only if that field is not already there**, answering
+     * whether this caller created it. The hash's TTL is pushed to [ttl] only on a successful claim.
+     *
+     * The hash counterpart to [setIfAbsent], and the reason it exists rather than callers doing
+     * [hgetAll] then [hset]: that pair is a check-then-act, so two callers racing the same field both
+     * read it absent and both believe they claimed it. One round trip instead of two, and the boolean
+     * is a real claim rather than a prediction — safe to gate a reward on.
+     */
+    suspend fun hsetIfAbsent(key: String, field: String, value: String, ttl: Duration): Boolean
 
     /** Every live field of the hash at [key]; empty when it is absent or expired. */
-    fun hgetAll(key: String): CompletableFuture<Map<String, String>>
+    suspend fun hgetAll(key: String): Map<String, String>
 
     /**
      * Remove [field] from the hash at [key], reporting whether it was actually there.
@@ -67,20 +107,20 @@ interface KeyValueStore {
      * The boolean carries the same weight as [delete]'s: removal is atomic, so a true return is
      * proof *this* caller took the field, which makes it usable as a claim between racing callers.
      */
-    fun hdel(key: String, field: String): CompletableFuture<Boolean>
+    suspend fun hdel(key: String, field: String): Boolean
 
     /**
      * Atomically hold a slot under [key] for [member] until [ttl] lapses, so concurrent callers across
      * the network can't overshoot a capacity. Expired holds are pruned first; the hold is granted only
      * if [baseline] (occupancy already counted elsewhere) plus the live holds stays below [limit].
      */
-    fun tryHold(
+    suspend fun tryHold(
         key: String,
         member: String,
         ttl: Duration,
         limit: Int,
         baseline: Int,
-    ): CompletableFuture<Boolean>
+    ): Boolean
 
     /**
      * Extend [member]'s existing hold under [key] by [ttl], reporting whether it still had one.
@@ -93,7 +133,7 @@ interface KeyValueStore {
      * False means the hold lapsed and somebody else may have taken it, so the caller must stop acting
      * as though it owns the thing.
      */
-    fun refresh(key: String, member: String, ttl: Duration): CompletableFuture<Boolean>
+    suspend fun refresh(key: String, member: String, ttl: Duration): Boolean
 
     fun close()
 }

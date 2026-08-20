@@ -12,5 +12,5 @@ metadata:
 spec:
     replicas: { { .replicas } }
     template:
-  { { include "cryon.gameServerTemplate" (dict "root" $ "family" .name "resources" .resources "shutdownWhenEmpty" .shutdownWhenEmpty) | indent 4 } }
+  { { include "cryon.gameServerTemplate" (dict "root" $ "family" .name "resources" .resources "shutdownWhenEmpty" .shutdownWhenEmpty) | indent 8 } }
   { { - end } }

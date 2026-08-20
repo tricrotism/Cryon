@@ -26,9 +26,18 @@ spec:
                         -   name: bedrock
                             containerPort: 19132
                             protocol: UDP
+                    env:
+                        -   name: CRYON_DB_PASSWORD
+                            valueFrom:
+                                secretKeyRef:
+                                    name: { { .Values.secrets.postgres } }
+                                    key: password
                     volumeMounts:
                         -   name: geyser-config
                             mountPath: /geyser-config
+                            readOnly: true
+                        -   name: cryon-config
+                            mountPath: /cryon-config
                             readOnly: true
                         -   name: floodgate
                             mountPath: /floodgate
@@ -37,6 +46,17 @@ spec:
                 -   name: geyser-config
                     configMap:
                         name: cryon-geyser-config
+                        items:
+                            -   key: config.yml
+                                path: config.yml
+                # The same ConfigMap mounted a second time, so the extension config lands on the path
+                # the entrypoint expects. /cryon-config is what the proxy image uses too.
+                -   name: cryon-config
+                    configMap:
+                        name: cryon-geyser-config
+                        items:
+                            -   key: cryon-config.yml
+                                path: config.yml
                 -   name: floodgate
                     secret:
                         secretName: { { .Values.secrets.floodgate } }

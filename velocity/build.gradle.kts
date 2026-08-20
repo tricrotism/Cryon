@@ -5,15 +5,18 @@ plugins {
 
 repositories {
     maven("https://repo.papermc.io/repository/maven-public/")
+    maven("https://repo.opencollab.dev/main/")
 }
 
 dependencies {
     compileOnly(libs.velocity.api)
+    compileOnly(libs.floodgate)
 
     implementation(libs.lettuce)
     implementation(libs.caffeine)
     implementation(libs.snakeyaml)
     implementation(libs.bundles.sql)
+    implementation(libs.kotlinx.coroutines)
     implementation(project(":common"))
     implementation(project(":velocity-api"))
 }

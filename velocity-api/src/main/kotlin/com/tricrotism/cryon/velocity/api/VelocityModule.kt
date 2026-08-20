@@ -1,6 +1,7 @@
 package com.tricrotism.cryon.velocity.api
 
 import com.tricrotism.cryon.common.module.*
+import com.tricrotism.cryon.velocity.api.bedrock.BedrockService
 import com.velocitypowered.api.proxy.ProxyServer
 import com.velocitypowered.api.scheduler.ScheduledTask
 import org.slf4j.Logger
@@ -25,6 +26,12 @@ abstract class VelocityModule : Module {
     protected val proxy: ProxyServer get() = moduleContext.proxy
     protected val services: ServiceRegistry get() = moduleContext.services
     protected val logger: Logger get() = moduleContext.logger
+
+    /**
+     * Bedrock-client identity. Always present, with no Floodgate every player reports as Java, so a
+     * feature can ask without branching on whether Geyser is installed.
+     */
+    protected val bedrock: BedrockService get() = services.get<BedrockService>()
 
     /**
      * This module's own directory, `plugins/cryon/data/<id>/`, created on first use. The proxy twin

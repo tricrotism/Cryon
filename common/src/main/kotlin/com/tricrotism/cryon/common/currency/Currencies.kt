@@ -6,11 +6,14 @@ import com.tricrotism.cryon.common.data.Database
 import com.tricrotism.cryon.common.net.Messenger
 import com.tricrotism.cryon.common.net.MessengerSubscription
 import com.tricrotism.cryon.common.number.PackedDecimal
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import org.slf4j.Logger
 import java.math.BigDecimal
 import java.time.Duration
 import java.util.*
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -82,11 +85,17 @@ class Currencies(
 
     private var subscription: MessengerSubscription? = null
 
-    fun init() {
+    suspend fun init() {
         if (!hasDatabase) {
             logger.warn("Currencies are in-memory only (no database), every balance resets on restart")
         }
-        store.init().exceptionally { logger.error("Failed to initialize currency storage", it); null }
+        try {
+            store.init()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error("Failed to initialize currency storage", e)
+        }
         subscription = messenger.subscribe(CHANNEL, ::onSync)
     }
 
@@ -115,80 +124,74 @@ class Currencies(
 
     override fun all(): Collection<Currency> = currencies.values.toList()
 
-    override fun balance(currency: Currency, player: UUID): CompletableFuture<PackedDecimal> =
-        store.balance(scopeOf(currency), currency.id, player)
-            .thenApply { stored ->
-                val balance = PackedDecimal.of(stored ?: startingOf(currency))
-                remember(currency, player, balance)
-                balance
-            }
-            .whenComplete { _, error ->
-                if (error != null) logger.error("Failed to read {} for {}", currency.id, player, error)
-            }
+    override suspend fun balance(currency: Currency, player: UUID): PackedDecimal = try {
+        val stored = store.balance(scopeOf(currency), currency.id, player)
+        PackedDecimal.of(stored ?: startingOf(currency)).also { remember(currency, player, it) }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        logger.error("Failed to read {} for {}", currency.id, player, e)
+        throw e
+    }
 
-    override fun balances(player: UUID): CompletableFuture<Map<Currency, PackedDecimal>> {
+    override suspend fun balances(player: UUID): Map<Currency, PackedDecimal> = try {
         val scopes = currencies.values.map(::scopeOf).distinct()
-        val reads = scopes.map { scope -> store.balances(scope, player).thenApply { scope to it } }
-        return CompletableFuture.allOf(*reads.toTypedArray())
-            .thenApply {
-                val byScope = reads.mapNotNull { it.getNow(null) }.toMap()
-                currencies.values.associateWith { currency ->
-                    val exact = byScope[scopeOf(currency)]?.get(currency.id) ?: startingOf(currency)
-                    val balance = PackedDecimal.of(exact)
-                    remember(currency, player, balance)
-                    balance
-                }
-            }
-            .exceptionally { logger.error("Failed to read balances for {}", player, it); emptyMap() }
+        val byScope = coroutineScope {
+            scopes.map { scope -> async { scope to store.balances(scope, player) } }.awaitAll()
+        }.toMap()
+        currencies.values.associateWith { currency ->
+            val exact = byScope[scopeOf(currency)]?.get(currency.id) ?: startingOf(currency)
+            PackedDecimal.of(exact).also { remember(currency, player, it) }
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        logger.error("Failed to read balances for {}", player, e)
+        emptyMap()
     }
 
     override fun cachedBalance(currency: Currency, player: UUID): PackedDecimal? =
         cache[key(currency)]?.getIfPresent(player)
 
-    override fun deposit(
+    override suspend fun deposit(
         currency: Currency,
         player: UUID,
         amount: PackedDecimal,
         reason: String,
-    ): CompletableFuture<PackedDecimal> {
+    ): PackedDecimal {
         require(amount.signum() > 0) { "deposit amount must be positive, got $amount" }
-        return locks.withLock(account(currency, player)) { depositLocked(currency, player, amount, reason) }
+        return locks.withLock(account(currency, player)) {
+            try {
+                ensureAccount(currency, player)
+                val after = mutate(currency, player, reason) { before -> before.add(amount.toBigDecimal()) }
+                checkNotNull(after) { "deposit for ${currency.id} produced no balance" }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.error("Failed to deposit {} {} for {}", amount, currency.id, player, e)
+                throw e
+            }
+        }
     }
 
-    private fun depositLocked(
+    override suspend fun withdraw(
         currency: Currency,
         player: UUID,
         amount: PackedDecimal,
         reason: String,
-    ): CompletableFuture<PackedDecimal> = ensureAccount(currency, player)
-        .thenCompose { mutate(currency, player, reason, 0) { before -> before.add(amount.toBigDecimal()) } }
-        .thenApply { after ->
-            checkNotNull(after) { "deposit for ${currency.id} produced no balance" }
-        }
-        .whenComplete { _, error ->
-            if (error != null) logger.error("Failed to deposit {} {} for {}", amount, currency.id, player, error)
-        }
-
-    override fun withdraw(
-        currency: Currency,
-        player: UUID,
-        amount: PackedDecimal,
-        reason: String,
-    ): CompletableFuture<Boolean> {
+    ): Boolean {
         require(amount.signum() > 0) { "withdraw amount must be positive, got $amount" }
-        return locks.withLock(account(currency, player)) { withdrawLocked(currency, player, amount, reason) }
-    }
-
-    private fun withdrawLocked(
-        currency: Currency,
-        player: UUID,
-        amount: PackedDecimal,
-        reason: String,
-    ): CompletableFuture<Boolean> = debit(currency, player, amount, reason)
-        .exceptionally {
-            logger.error("Failed to withdraw {} {} from {}", amount, currency.id, player, it)
-            false
+        return locks.withLock(account(currency, player)) {
+            try {
+                debit(currency, player, amount, reason)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.error("Failed to withdraw {} {} from {}", amount, currency.id, player, e)
+                false
+            }
         }
+    }
 
     /**
      * The debit itself, with the failure left on the future.
@@ -197,19 +200,18 @@ class Currencies(
      * goods over", and both answers to that are no. [transfer] needs the two apart: it has to tell
      * the sender whether they were short or whether the store is down.
      */
-    private fun debit(
+    private suspend fun debit(
         currency: Currency,
         player: UUID,
         amount: PackedDecimal,
         reason: String,
-    ): CompletableFuture<Boolean> = ensureAccount(currency, player)
-        .thenCompose {
-            mutate(currency, player, reason, 0) { before ->
-                val next = before.subtract(amount.toBigDecimal())
-                if (!currency.allowNegative && next.signum() < 0) null else next
-            }
-        }
-        .thenApply { it != null }
+    ): Boolean {
+        ensureAccount(currency, player)
+        return mutate(currency, player, reason) { before ->
+            val next = before.subtract(amount.toBigDecimal())
+            if (!currency.allowNegative && next.signum() < 0) null else next
+        } != null
+    }
 
     /**
      * Read, compute, write-if-unchanged, retry.
@@ -218,84 +220,78 @@ class Currencies(
      * refusal and an exhausted retry are deliberately different outcomes: the first is "they could
      * not afford it", the second is a failure, and a caller must not hand over goods for either.
      */
-    private fun mutate(
+    private suspend fun mutate(
         currency: Currency,
         player: UUID,
         reason: String,
-        attempt: Int,
         change: (BigDecimal) -> BigDecimal?,
-    ): CompletableFuture<PackedDecimal?> {
+    ): PackedDecimal? {
         val scope = scopeOf(currency)
-        return store.balance(scope, currency.id, player).thenCompose { stored ->
-            val before = stored ?: startingOf(currency)
-            val next = change(before)
-                ?: return@thenCompose CompletableFuture.completedFuture<PackedDecimal?>(null)
-            store.compareAndSet(scope, currency.id, player, before, next).thenCompose { won ->
-                when {
-                    won -> {
-                        val after = PackedDecimal.of(next)
-                        remember(currency, player, after)
-                        announce(currency, player)
-                        fire(
-                            CurrencyChange(
-                                currency, player,
-                                PackedDecimal.of(before), after,
-                                PackedDecimal.of(next.subtract(before)), reason,
-                            )
-                        )
-                        CompletableFuture.completedFuture(after)
-                    }
-
-                    attempt >= MAX_ATTEMPTS -> CompletableFuture.failedFuture(
-                        IllegalStateException(
-                            "Gave up rewriting ${currency.id} for $player after $MAX_ATTEMPTS attempts"
-                        )
+        repeat(MAX_ATTEMPTS) {
+            val before = store.balance(scope, currency.id, player) ?: startingOf(currency)
+            val next = change(before) ?: return null
+            if (store.compareAndSet(scope, currency.id, player, before, next)) {
+                val after = PackedDecimal.of(next)
+                remember(currency, player, after)
+                announce(currency, player)
+                fire(
+                    CurrencyChange(
+                        currency, player,
+                        PackedDecimal.of(before), after,
+                        PackedDecimal.of(next.subtract(before)), reason,
                     )
-
-                    else -> mutate(currency, player, reason, attempt + 1, change)
-                }
+                )
+                return after
             }
         }
+
+        throw IllegalStateException("Gave up rewriting ${currency.id} for $player after $MAX_ATTEMPTS attempts")
     }
 
-    override fun set(
+    override suspend fun set(
         currency: Currency,
         player: UUID,
         amount: PackedDecimal,
         reason: String,
-    ): CompletableFuture<Void> {
+    ) {
         require(amount.signum() >= 0 || currency.allowNegative) {
             "currency '${currency.id}' cannot hold a negative balance"
         }
-        return locks.withLock(account(currency, player)) {
-            store.set(scopeOf(currency), currency.id, player, amount.toBigDecimal())
-        }.thenAccept { previous ->
-            settle(currency, player, previous ?: startingOf(currency), amount.toBigDecimal(), reason)
-        }.whenComplete { _, error ->
-            if (error != null) logger.error("Failed to set {} for {}", currency.id, player, error)
+        try {
+            locks.withLock(account(currency, player)) {
+                val previous = store.set(scopeOf(currency), currency.id, player, amount.toBigDecimal())
+                settle(currency, player, previous ?: startingOf(currency), amount.toBigDecimal(), reason)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error("Failed to set {} for {}", currency.id, player, e)
+            throw e
         }
     }
 
-    override fun transfer(
+    override suspend fun transfer(
         currency: Currency,
         from: UUID,
         to: UUID,
         amount: PackedDecimal,
         reason: String,
-    ): CompletableFuture<TransferResult> {
+    ): TransferResult {
         require(from != to) { "cannot transfer to the same player" }
         require(amount.signum() > 0) { "transfer amount must be positive, got $amount" }
         return locks.withLocks(account(currency, from), account(currency, to)) {
-            store.transfer(
-                scopeOf(currency), currency.id, from, to,
-                amount.toBigDecimal(), startingOf(currency), currency.allowNegative,
-            ).thenApply { move ->
-                if (move == null) return@thenApply TransferResult.INSUFFICIENT
+            try {
+                val move = store.transfer(
+                    scopeOf(currency), currency.id, from, to,
+                    amount.toBigDecimal(), startingOf(currency), currency.allowNegative,
+                ) ?: return@withLocks TransferResult.INSUFFICIENT
                 settle(currency, from, move.fromBefore, move.fromAfter, "$reason/out")
                 settle(currency, to, move.toBefore, move.toAfter, "$reason/in")
                 TransferResult.COMPLETED
-            }.exceptionally {
-                logger.error("Failed to move {} {} from {} to {}", amount, currency.id, from, to, it)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.error("Failed to move {} {} from {} to {}", amount, currency.id, from, to, e)
                 TransferResult.FAILED
             }
         }
@@ -304,7 +300,13 @@ class Currencies(
     /**
      * Cache, broadcast and announce one side of a completed move.
      */
-    private fun settle(currency: Currency, player: UUID, before: BigDecimal, after: BigDecimal, reason: String) {
+    private suspend fun settle(
+        currency: Currency,
+        player: UUID,
+        before: BigDecimal,
+        after: BigDecimal,
+        reason: String,
+    ) {
         val packed = PackedDecimal.of(after)
         remember(currency, player, packed)
         announce(currency, player)
@@ -317,41 +319,57 @@ class Currencies(
         )
     }
 
-    override fun openAccount(currency: Currency, player: UUID, ranked: Boolean): CompletableFuture<Void> =
-        ensureAccount(currency, player, ranked)
-            .exceptionally { null }
+    override suspend fun openAccount(currency: Currency, player: UUID, ranked: Boolean) {
+        runCatching { ensureAccount(currency, player, ranked) }
+    }
 
     /**
      * Open the account and let a failure through.
      *
-     * The public [openAccount] absorbs the failure because a caller that ignores its future is only
-     * asking for the row to exist. The mutating paths cannot: a missing row makes every
+     * The public [openAccount] absorbs the failure because a caller of it is only asking for the row
+     * to exist. The mutating paths cannot: a missing row makes every
      * [compareAndSet] match zero rows, so the retry loop would spend all [MAX_ATTEMPTS] round trips
      * rediscovering a fault the store already reported, at the moment the store can least afford it.
      */
-    private fun ensureAccount(currency: Currency, player: UUID, ranked: Boolean = true): CompletableFuture<Void> =
-        store.open(scopeOf(currency), currency.id, player, startingOf(currency), ranked)
-            .whenComplete { _, error ->
-                if (error != null) logger.error("Failed to open {} account for {}", currency.id, player, error)
-            }
+    private suspend fun ensureAccount(currency: Currency, player: UUID, ranked: Boolean = true) {
+        try {
+            store.open(scopeOf(currency), currency.id, player, startingOf(currency), ranked)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error("Failed to open {} account for {}", currency.id, player, e)
+            throw e
+        }
+    }
 
     override fun leaderboard(currency: Currency): List<Ranking> = leaderboards[key(currency)] ?: emptyList()
 
-    override fun refreshLeaderboards(): CompletableFuture<Void> {
+    /**
+     * Every ranked currency refreshed together, and one failure does not cost the others their
+     * ranking — each `async` absorbs its own, so a single bad query cannot cancel the siblings the
+     * way an escaping exception inside `coroutineScope` would.
+     */
+    override suspend fun refreshLeaderboards() {
         val ranked = currencies.values.filter { it.leaderboard != null }
-        if (ranked.isEmpty()) return CompletableFuture.completedFuture(null)
-        val refreshes = ranked.map { currency ->
-            store.top(scopeOf(currency), currency.id, currency.leaderboard!!.size)
-                .thenAccept { rows ->
-                    leaderboards[key(currency)] = Collections.unmodifiableList(
-                        rows.mapIndexed { index, (player, balance) ->
-                            Ranking(index + 1, player, PackedDecimal.of(balance))
-                        }
-                    )
+        if (ranked.isEmpty()) return
+        coroutineScope {
+            ranked.map { currency ->
+                async {
+                    try {
+                        val rows = store.top(scopeOf(currency), currency.id, currency.leaderboard!!.size)
+                        leaderboards[key(currency)] = Collections.unmodifiableList(
+                            rows.mapIndexed { index, (player, balance) ->
+                                Ranking(index + 1, player, PackedDecimal.of(balance))
+                            }
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        logger.error("Failed to rank currency '{}'", currency.id, e)
+                    }
                 }
-                .exceptionally { logger.error("Failed to rank currency '{}'", currency.id, it); null }
+            }.awaitAll()
         }
-        return CompletableFuture.allOf(*refreshes.toTypedArray())
     }
 
     override fun onChange(listener: (CurrencyChange) -> Unit): AutoCloseable {
@@ -386,7 +404,7 @@ class Currencies(
     /**
      * Tell the other instances that this account moved, so their cached copy is dropped.
      */
-    private fun announce(currency: Currency, player: UUID) {
+    private suspend fun announce(currency: Currency, player: UUID) {
         messenger.publish(CHANNEL, "${key(currency)}$SEPARATOR$player$SEPARATOR$origin")
     }
 

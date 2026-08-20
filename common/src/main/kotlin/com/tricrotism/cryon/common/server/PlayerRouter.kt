@@ -1,7 +1,6 @@
 package com.tricrotism.cryon.common.server
 
 import java.util.*
-import java.util.concurrent.CompletableFuture
 
 /**
  * Sends a player to a server by serverId or by instance, without the caller needing a proxy handle.
@@ -16,10 +15,10 @@ import java.util.concurrent.CompletableFuture
 interface PlayerRouter {
 
     /** Route [player] to the best node of [serverId] (matchmaking one if that server is ephemeral). */
-    fun route(player: UUID, serverId: String): CompletableFuture<RouteResult>
+    suspend fun route(player: UUID, serverId: String): RouteResult
 
     /** Route [player] to a specific [nodeId]. */
-    fun routeToInstance(player: UUID, nodeId: String): CompletableFuture<RouteResult>
+    suspend fun routeToInstance(player: UUID, nodeId: String): RouteResult
 }
 
 /** Outcome of a routing request. */

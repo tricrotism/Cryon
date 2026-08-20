@@ -1,6 +1,7 @@
 package com.tricrotism.cryon.velocity
 
 import com.google.inject.Inject
+import com.tricrotism.cryon.common.concurrent.CryonIO
 import com.tricrotism.cryon.common.data.Database
 import com.tricrotism.cryon.common.data.DatabaseConfig
 import com.tricrotism.cryon.common.data.SqlDatabase
@@ -18,7 +19,9 @@ import com.tricrotism.cryon.common.server.DefaultPlayerRouter
 import com.tricrotism.cryon.common.server.PlayerRouter
 import com.tricrotism.cryon.common.server.ServerRegistry
 import com.tricrotism.cryon.common.server.SharedServerRegistry
+import com.tricrotism.cryon.velocity.api.bedrock.BedrockService
 import com.tricrotism.cryon.velocity.api.command.AnnotationCommands
+import com.tricrotism.cryon.velocity.bedrock.BedrockBridge
 import com.tricrotism.cryon.velocity.config.VelocityConfig
 import com.tricrotism.cryon.velocity.maintenance.MaintenanceCommand
 import com.tricrotism.cryon.velocity.maintenance.MaintenanceListener
@@ -34,6 +37,10 @@ import com.velocitypowered.api.event.proxy.ProxyInitializeEvent
 import com.velocitypowered.api.event.proxy.ProxyShutdownEvent
 import com.velocitypowered.api.plugin.annotation.DataDirectory
 import com.velocitypowered.api.proxy.ProxyServer
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import org.slf4j.Logger
 import java.io.File
 import java.nio.file.Files
@@ -60,6 +67,19 @@ class CryonVelocityPlugin @Inject constructor(
     private var manager: ModuleManager? = null
     private var loader: VelocityModuleLoader? = null
 
+    /**
+     * The proxy's coroutine scope, canceled on shutdown.
+     *
+     * The proxy twin of `PaperModule.scope`: Velocity's event and command APIs are not suspending,
+     * so the places that call into `:common`'s suspending services bridge through this — `launch`
+     * for fire-and-forget, `future` where Velocity wants a `CompletionStage` to resume on.
+     */
+    private val scope = CoroutineScope(
+        SupervisorJob() + CryonIO.dispatcher + CoroutineExceptionHandler { _, error ->
+            logger.error("Unhandled failure in a Cryon proxy coroutine", error)
+        }
+    )
+
     // The transport, mirroring the Paper core: always installed, Redis when configured and in-process
     // otherwise, so everything above it has exactly one implementation.
     private lateinit var messenger: Messenger
@@ -75,6 +95,7 @@ class CryonVelocityPlugin @Inject constructor(
         setupNetwork(services, cfg)
         setupMaintenance(services, cfg)
         setupServerAccess(cfg)
+        setupBedrock(services)
         setupMotd(services)
         setupModules(services)
         logger.info("Cryon proxy loader enabled")
@@ -82,6 +103,7 @@ class CryonVelocityPlugin @Inject constructor(
 
     @Subscribe
     fun onProxyShutdown(event: ProxyShutdownEvent) {
+        scope.cancel("The proxy is shutting down")
         manager?.disableAll()
         loader?.close()
         backendSync?.stop()
@@ -92,6 +114,7 @@ class CryonVelocityPlugin @Inject constructor(
         if (::messenger.isInitialized) messenger.close()
         if (::store.isInitialized) store.close()
         database?.close()
+        CryonIO.shutdown()
     }
 
     private fun loadConfig(): VelocityConfig {
@@ -197,7 +220,7 @@ class CryonVelocityPlugin @Inject constructor(
         // Hold each backend switch open until the server being left has saved the player. See
         // HandoffListener. Only meaningful once a player can move between nodes at all.
         val timeout = Duration.ofSeconds(cfg.long("network.handoff-timeout-seconds", 5).coerceAtLeast(1))
-        proxy.eventManager.register(this, HandoffListener(messenger, reg, timeout, logger))
+        proxy.eventManager.register(this, HandoffListener(messenger, reg, timeout, logger, scope))
         logger.info("Player handoff on. Transfers wait up to {}s for the source server to flush", timeout.toSeconds())
     }
 
@@ -212,13 +235,14 @@ class CryonVelocityPlugin @Inject constructor(
             messenger,
             cfg.string("maintenance.default-message", "The network is under maintenance."),
             logger,
+            Duration.ofSeconds(cfg.long("maintenance.refresh-seconds", 30)),
         ).also { it.init() }
         maintenance = service
         services.register<MaintenanceService>(service)
         val listener = MaintenanceListener(service, cfg.int("maintenance.ping-protocol", -1))
         maintenanceListener = listener
         proxy.eventManager.register(this, listener)
-        AnnotationCommands.register(proxy.commandManager, MaintenanceCommand(service, proxy))
+        AnnotationCommands.register(proxy.commandManager, MaintenanceCommand(service, proxy, scope))
         logger.info("Maintenance mode available (/maintenance on|off [message], add|remove|list)")
     }
 
@@ -235,6 +259,15 @@ class CryonVelocityPlugin @Inject constructor(
         if (restricted.isNotEmpty()) {
             logger.info("Access-restricted servers: {} (permission cryon.server.<id>)", restricted.joinToString())
         }
+    }
+
+    /**
+     * Bedrock identity, always registered so a proxy feature never branches on whether Geyser is
+     * installed. Identity only: nothing on the proxy asks a player a question, so the Cumulus form
+     * machinery stays on Paper where the menus are.
+     */
+    private fun setupBedrock(services: ServiceRegistry) {
+        services.register<BedrockService>(BedrockBridge.create(proxy, logger))
     }
 
     /** The MOTD system: a top/bottom line of left/center/right anchored segments, `/motd reload`able. */

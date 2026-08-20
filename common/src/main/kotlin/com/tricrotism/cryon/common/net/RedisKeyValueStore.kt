@@ -2,13 +2,14 @@ package com.tricrotism.cryon.common.net
 
 import io.lettuce.core.*
 import io.lettuce.core.api.StatefulRedisConnection
+import kotlinx.coroutines.future.await
 import java.time.Duration
-import java.util.concurrent.CompletableFuture
 
 /**
  * [KeyValueStore] over Lettuce, the transport that reaches every process in the network. One
- * connection, async commands throughout, so every call runs off the caller's thread. Constructed like
- * [RedisMessenger] (its own [RedisClient]); kept independent so enabling/disabling either is isolated.
+ * connection, async commands throughout, awaited rather than blocked on, so a caller is released
+ * while the round trip is in flight. Constructed like [RedisMessenger] (its own [RedisClient]); kept
+ * independent so enabling/disabling either is isolated.
  *
  * [tryHold] is the only place Lua lives: the interface exposes the capability, not the scripting
  * engine, so [MemoryKeyValueStore] can honour the same contract in-process.
@@ -19,38 +20,53 @@ class RedisKeyValueStore(config: RedisConfig) : KeyValueStore {
     private val connection: StatefulRedisConnection<String, String> = client.connect()
     private val commands = connection.async()
 
-    override fun set(key: String, value: String, ttl: Duration): CompletableFuture<Void> =
-        commands.set(key, value, SetArgs.Builder.px(ttl.toMillis())).toCompletableFuture().thenAccept { }
-
-    override fun get(key: String): CompletableFuture<String?> =
-        commands.get(key).toCompletableFuture().thenApply { it }
-
-    override fun delete(key: String): CompletableFuture<Boolean> =
-        commands.del(key).toCompletableFuture().thenApply { it > 0 }
-
-    override fun keys(pattern: String): CompletableFuture<List<String>> {
-        val result = CompletableFuture<List<String>>()
-        val found = ArrayList<String>()
-        val args = ScanArgs.Builder.matches(pattern).limit(SCAN_BATCH)
-        fun step(cursor: ScanCursor) {
-            commands.scan(cursor, args).toCompletableFuture().whenComplete { page, error ->
-                when {
-                    error != null -> result.completeExceptionally(error)
-                    else -> {
-                        found.addAll(page.keys)
-                        if (page.isFinished) result.complete(found) else step(page)
-                    }
-                }
-            }
-        }
-        step(ScanCursor.INITIAL)
-        return result
+    override suspend fun set(key: String, value: String, ttl: Duration) {
+        commands.set(key, value, SetArgs.Builder.px(ttl.toMillis())).toCompletableFuture().await()
     }
 
-    override fun mget(keys: Collection<String>): CompletableFuture<List<String?>> {
-        if (keys.isEmpty()) return CompletableFuture.completedFuture(emptyList())
-        return commands.mget(*keys.toTypedArray()).toCompletableFuture()
-            .thenApply { values -> values.map { if (it.hasValue()) it.value else null } }
+    override suspend fun get(key: String): String? =
+        commands.get(key).toCompletableFuture().await()
+
+    override suspend fun delete(key: String): Boolean =
+        commands.del(key).toCompletableFuture().await() > 0
+
+
+    override suspend fun setIfAbsent(key: String, value: String, ttl: Duration): Boolean =
+        commands.set(key, value, SetArgs.Builder.nx().px(ttl.toMillis())).toCompletableFuture().await() == "OK"
+
+    override suspend fun deleteIfEqual(key: String, value: String): Boolean =
+        commands.eval<Long>(
+            DELETE_IF_EQUAL,
+            ScriptOutputType.INTEGER,
+            arrayOf(key),
+            value,
+        ).toCompletableFuture().await() == 1L
+
+    override suspend fun refreshIfEqual(key: String, value: String, ttl: Duration): Boolean =
+        commands.eval<Long>(
+            REFRESH_IF_EQUAL,
+            ScriptOutputType.INTEGER,
+            arrayOf(key),
+            value,
+            ttl.toMillis().toString(),
+        ).toCompletableFuture().await() == 1L
+
+    override suspend fun keys(pattern: String): List<String> {
+        val found = ArrayList<String>()
+        val args = ScanArgs.Builder.matches(pattern).limit(SCAN_BATCH)
+        var cursor: ScanCursor = ScanCursor.INITIAL
+        while (true) {
+            val page = commands.scan(cursor, args).toCompletableFuture().await()
+            found.addAll(page.keys)
+            if (page.isFinished) return found
+            cursor = page
+        }
+    }
+
+    override suspend fun mget(keys: Collection<String>): List<String?> {
+        if (keys.isEmpty()) return emptyList()
+        return commands.mget(*keys.toTypedArray()).toCompletableFuture().await()
+            .map { if (it.hasValue()) it.value else null }
     }
 
     /**
@@ -59,24 +75,34 @@ class RedisKeyValueStore(config: RedisConfig) : KeyValueStore {
      * is a competing writer's expiry winning, and both are asking for the same [ttl] from roughly the
      * same instant.
      */
-    override fun hset(key: String, field: String, value: String, ttl: Duration): CompletableFuture<Void> =
-        commands.hset(key, field, value).toCompletableFuture()
-            .thenCompose { commands.pexpire(key, ttl.toMillis()).toCompletableFuture() }
-            .thenAccept { }
+    override suspend fun hset(key: String, field: String, value: String, ttl: Duration) {
+        commands.hset(key, field, value).toCompletableFuture().await()
+        commands.pexpire(key, ttl.toMillis()).toCompletableFuture().await()
+    }
 
-    override fun hgetAll(key: String): CompletableFuture<Map<String, String>> =
-        commands.hgetall(key).toCompletableFuture().thenApply { it ?: emptyMap() }
+    override suspend fun hsetIfAbsent(key: String, field: String, value: String, ttl: Duration): Boolean =
+        commands.eval<Long>(
+            HSET_IF_ABSENT,
+            ScriptOutputType.INTEGER,
+            arrayOf(key),
+            field,
+            value,
+            ttl.toMillis().toString(),
+        ).toCompletableFuture().await() == 1L
 
-    override fun hdel(key: String, field: String): CompletableFuture<Boolean> =
-        commands.hdel(key, field).toCompletableFuture().thenApply { it > 0 }
+    override suspend fun hgetAll(key: String): Map<String, String> =
+        commands.hgetall(key).toCompletableFuture().await() ?: emptyMap()
 
-    override fun tryHold(
+    override suspend fun hdel(key: String, field: String): Boolean =
+        commands.hdel(key, field).toCompletableFuture().await() > 0
+
+    override suspend fun tryHold(
         key: String,
         member: String,
         ttl: Duration,
         limit: Int,
         baseline: Int,
-    ): CompletableFuture<Boolean> {
+    ): Boolean {
         val now = System.currentTimeMillis()
         val holdMillis = ttl.toMillis()
         return commands.eval<Long>(
@@ -89,10 +115,10 @@ class RedisKeyValueStore(config: RedisConfig) : KeyValueStore {
             baseline.toString(),
             member,
             holdMillis.toString(),
-        ).toCompletableFuture().thenApply { it == 1L }
+        ).toCompletableFuture().await() == 1L
     }
 
-    override fun refresh(key: String, member: String, ttl: Duration): CompletableFuture<Boolean> {
+    override suspend fun refresh(key: String, member: String, ttl: Duration): Boolean {
         val now = System.currentTimeMillis()
         val holdMillis = ttl.toMillis()
         return commands.eval<Long>(
@@ -103,7 +129,7 @@ class RedisKeyValueStore(config: RedisConfig) : KeyValueStore {
             (now + holdMillis).toString(),
             member,
             holdMillis.toString(),
-        ).toCompletableFuture().thenApply { it == 1L }
+        ).toCompletableFuture().await() == 1L
     }
 
     override fun close() {
@@ -113,6 +139,28 @@ class RedisKeyValueStore(config: RedisConfig) : KeyValueStore {
 
     private companion object {
         private const val SCAN_BATCH = 256L
+
+        // KEYS[1]=hash, ARGV[1]=field, ARGV[2]=value, ARGV[3]=ttl millis. Claims the field or not.
+        private val HSET_IF_ABSENT = """
+            if redis.call('HSETNX', KEYS[1], ARGV[1], ARGV[2]) == 1 then
+                redis.call('PEXPIRE', KEYS[1], ARGV[3])
+                return 1
+            end
+            return 0
+        """.trimIndent()
+
+        // KEYS[1]=key, ARGV[1]=expected value. Deletes only what this caller still owns.
+        private val DELETE_IF_EQUAL = """
+            if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end
+            return 0
+        """.trimIndent()
+
+        // KEYS[1]=key, ARGV[1]=expected value, ARGV[2]=new ttl in millis.
+        private val REFRESH_IF_EQUAL = """
+            if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], ARGV[2]) end
+            return 0
+        """.trimIndent()
+
 
         // Atomic capacity hold over a sorted set of {member -> expiry}. Prunes expired holds, rejects if
         // the baseline plus live holds would meet the limit, else records the hold (score = expiry) and

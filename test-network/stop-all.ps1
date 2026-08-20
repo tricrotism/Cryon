@@ -1,4 +1,4 @@
-# Kills the test network: both Paper backends, the Velocity proxy, the pack host, and Redis.
+# Kills the test network: both Paper backends, the Velocity proxy, Geyser, the pack host, and Redis.
 # Matches java processes launched from this test-network folder plus redis-server.exe.
 $root = $PSScriptRoot
 

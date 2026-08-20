@@ -1,7 +1,6 @@
 package com.tricrotism.cryon.common.server
 
 import java.util.*
-import java.util.concurrent.CompletableFuture
 
 /**
  * The network's shared directory of live game-server instances. Each game server owns and heartbeats
@@ -17,13 +16,13 @@ import java.util.concurrent.CompletableFuture
 interface ServerRegistry {
 
     /** Publish this process's node and start it in the network. */
-    fun register(instance: Node): CompletableFuture<Void>
+    suspend fun register(instance: Node)
 
     /** Refresh an owned instance's player count + state, resetting its liveness TTL. */
-    fun heartbeat(nodeId: String, playerCount: Int, state: NodeState): CompletableFuture<Void>
+    suspend fun heartbeat(nodeId: String, playerCount: Int, state: NodeState)
 
     /** Remove an owned instance immediately (graceful shutdown), rather than waiting for TTL expiry. */
-    fun deregister(nodeId: String): CompletableFuture<Void>
+    suspend fun deregister(nodeId: String)
 
     /** The replica entry for [nodeId], or null. */
     fun node(nodeId: String): Node?
@@ -43,7 +42,7 @@ interface ServerRegistry {
      * self-expiring (the player is counted by the next heartbeat). Returns false if the shard is
      * unknown or already at capacity once in-flight reservations are counted.
      */
-    fun tryReserve(nodeId: String, player: UUID): CompletableFuture<Boolean>
+    suspend fun tryReserve(nodeId: String, player: UUID): Boolean
 
     /** Observe topology changes (proxies register/unregister backends off these). Close to stop. */
     fun onChange(listener: (ServerRegistryEvent) -> Unit): AutoCloseable

@@ -1,10 +1,14 @@
 package com.tricrotism.cryon.common.locale
 
+import com.tricrotism.cryon.common.concurrent.CryonIO
 import com.tricrotism.cryon.common.data.Database
 import com.tricrotism.cryon.common.net.Messenger
 import com.tricrotism.cryon.common.net.MessengerSubscription
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import java.util.*
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -21,18 +25,27 @@ class PlayerLocaleStore(
 ) : LocaleStore {
     // present-value = override; present-empty = no override; absent = this player isn't on this server.
     private val cache = ConcurrentHashMap<UUID, Optional<Locale>>()
+
+    /**
+     * Runs the re-reads an invalidation triggers. The subscription handler is not suspending — it
+     * runs on the transport's ordered delivery thread — so the SQL read it needs has to be launched
+     * rather than awaited, and this is what owns and cancels those.
+     */
+    private val scope = CoroutineScope(SupervisorJob() + CryonIO.dispatcher)
+
     private val subscription: MessengerSubscription = messenger.subscribe(CHANNEL, ::onInvalidate)
 
     /** Create the backing table. */
-    fun init(): CompletableFuture<Void> =
+    suspend fun init() {
         database.update(
             "CREATE TABLE IF NOT EXISTS $TABLE (uuid VARCHAR(36) PRIMARY KEY, locale VARCHAR(35) NOT NULL)"
-        ).thenAccept { }
+        )
+    }
 
     /** Load [uuid]'s stored override into the cache. Call on join. */
-    fun load(uuid: UUID): CompletableFuture<Void> {
+    suspend fun load(uuid: UUID) {
         cache.putIfAbsent(uuid, Optional.empty())
-        return reread(uuid)
+        reread(uuid)
     }
 
     /**
@@ -42,13 +55,10 @@ class PlayerLocaleStore(
      * nothing about that, and their quit can land between the check and the read. Everything else
      * here writes through `computeIfPresent` for the same reason.
      */
-    private fun reread(uuid: UUID): CompletableFuture<Void> {
-        return database
-            .query("SELECT locale FROM $TABLE WHERE uuid = ?", uuid.toString()) { it.getString(1) }
-            .thenAccept { rows ->
-                val stored = Optional.ofNullable(rows.firstOrNull()?.let(LangScanner::parseLocale))
-                cache.computeIfPresent(uuid) { _, _ -> stored }
-            }
+    private suspend fun reread(uuid: UUID) {
+        val rows = database.query("SELECT locale FROM $TABLE WHERE uuid = ?", uuid.toString()) { it.getString(1) }
+        val stored = Optional.ofNullable(rows.firstOrNull()?.let(LangScanner::parseLocale))
+        cache.computeIfPresent(uuid) { _, _ -> stored }
     }
 
     /** Evict [uuid] from the cache. Call on quit. */
@@ -60,28 +70,27 @@ class PlayerLocaleStore(
     override fun cached(uuid: UUID): Locale? = cache[uuid]?.orElse(null)
 
     /** Set [uuid]'s override, persist it, and invalidate other servers. */
-    override fun set(uuid: UUID, locale: Locale): CompletableFuture<Void> =
+    override suspend fun set(uuid: UUID, locale: Locale) {
         database.upsert(TABLE, KEYS, COLUMNS, uuid.toString(), locale.toString())
-            .thenCompose {
-                cache.computeIfPresent(uuid) { _, _ -> Optional.of(locale) }
-                messenger.publish(CHANNEL, uuid.toString())
-            }
+        cache.computeIfPresent(uuid) { _, _ -> Optional.of(locale) }
+        messenger.publish(CHANNEL, uuid.toString())
+    }
 
     /** Clear [uuid]'s override. */
-    override fun clear(uuid: UUID): CompletableFuture<Void> =
+    override suspend fun clear(uuid: UUID) {
         database.update("DELETE FROM $TABLE WHERE uuid = ?", uuid.toString())
-            .thenCompose {
-                cache.computeIfPresent(uuid) { _, _ -> Optional.empty() }
-                messenger.publish(CHANNEL, uuid.toString())
-            }
+        cache.computeIfPresent(uuid) { _, _ -> Optional.empty() }
+        messenger.publish(CHANNEL, uuid.toString())
+    }
 
     override fun close() {
         subscription.unsubscribe()
+        scope.cancel("The locale store was closed")
     }
 
     private fun onInvalidate(message: String) {
         val uuid = runCatching { UUID.fromString(message) }.getOrNull() ?: return
-        if (cache.containsKey(uuid)) reread(uuid)
+        if (cache.containsKey(uuid)) scope.launch { reread(uuid) }
     }
 
     private companion object {

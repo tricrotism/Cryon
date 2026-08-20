@@ -9,4 +9,4 @@ pluginManagement {
 
 rootProject.name = "Cryon"
 
-include("common", "paper-api", "paper", "velocity-api", "velocity")
+include("common", "paper-api", "paper", "velocity-api", "velocity", "geyser-api", "geyser")

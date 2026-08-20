@@ -1,7 +1,6 @@
 package com.tricrotism.cryon.common.server
 
 import java.util.*
-import java.util.concurrent.CompletableFuture
 
 /**
  * Where a feature says how to write one player's state down, so the core can decide *when*.
@@ -43,7 +42,7 @@ interface PlayerHandoff {
      * land in Storage before Storage saves, and running the two together is a coin flip over whether
      * the hand-back beats the snapshot.
      */
-    fun onFlush(id: String, stage: Int = DEFAULT_STAGE, flush: (UUID) -> CompletableFuture<Void>): AutoCloseable
+    fun onFlush(id: String, stage: Int = DEFAULT_STAGE, flush: suspend (UUID) -> Unit): AutoCloseable
 
     companion object {
 

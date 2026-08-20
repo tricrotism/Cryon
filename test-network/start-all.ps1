@@ -1,4 +1,4 @@
-# Opens Redis, both Paper backends, and Velocity each in its own PowerShell window, in order.
+# Opens Redis, both Paper backends, Velocity, and Geyser each in its own PowerShell window, in order.
 # Close a window (or Ctrl+C in it) to stop that process. Use stop-all.ps1 to kill everything.
 $root = $PSScriptRoot
 
@@ -32,6 +32,11 @@ Start-Sleep -Seconds 8
 Write-Host "Starting Velocity ..." -ForegroundColor Cyan
 Launch "cryon-velocity" "start-velocity.ps1"
 
+# Geyser pings the proxy on boot for its MOTD, so give Velocity a moment to bind.
+Start-Sleep -Seconds 4
+Write-Host "Starting Geyser (Bedrock, UDP 19132) ..." -ForegroundColor Cyan
+Launch "cryon-geyser" "start-geyser.ps1"
+
 Write-Host ""
-Write-Host "All five windows launched. Connect a Minecraft client to localhost:25565." -ForegroundColor Green
+Write-Host "All six windows launched. Java clients: localhost:25565. Bedrock: localhost:19132." -ForegroundColor Green
 Write-Host "Stop everything with: .\stop-all.ps1" -ForegroundColor Yellow

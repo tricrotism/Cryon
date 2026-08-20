@@ -1,7 +1,5 @@
 package com.tricrotism.cryon.common.maintenance
 
-import java.util.concurrent.CompletableFuture
-
 /**
  * Network-wide maintenance toggle, shared across every proxy. When on, proxies show an "under
  * maintenance" server-list entry (with a protocol number no client matches) and deny non-bypass
@@ -19,7 +17,7 @@ interface MaintenanceService {
     fun message(): String
 
     /** Toggle maintenance and, optionally, update the message. Persists and broadcasts to every proxy. */
-    fun set(enabled: Boolean, message: String? = null): CompletableFuture<Void>
+    suspend fun set(enabled: Boolean, message: String? = null)
 
     /**
      * Player names (lowercased) allowed to join while maintenance is on, independent of the

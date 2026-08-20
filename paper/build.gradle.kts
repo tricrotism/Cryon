@@ -24,6 +24,7 @@ dependencies {
     compileOnly(libs.floodgate)
 
     implementation(libs.packetevents)
+    implementation(libs.kotlinx.coroutines)
 
     paperweight.paperDevBundle(libs.versions.paperDevBundle.get())
 }
@@ -33,6 +34,14 @@ runPaper.folia.registerTask()
 tasks {
     build {
         dependsOn(shadowJar)
+    }
+
+    shadowJar {
+        // Append rather than overwrite same-named META-INF/services files. Nothing bundled today
+        // actually ships one — coroutines-core carries its wiring in code, not as a service — so this
+        // changes no current output; it is here so that adding a dependency that *does* use the
+        // ServiceLoader cannot silently lose every provider but the last jar merged.
+        mergeServiceFiles()
     }
 
     runServer {

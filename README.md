@@ -8,7 +8,7 @@ without taking the rest of the server down.
 
 Stack: **JDK 25**, **Kotlin 2.4.20-Beta1**, Paper dev bundle **26.2**, Velocity.
 
-Feature modules live in a **separate repo** — see
+Feature modules live in a **separate repo**. See
 [`../Cryon-Modules`](../Cryon-Modules) for a working example set (economy, skills, shop, spawn,
 jumppads, visibility/vanish, and the Ashvale gamemode). This repo is the **core / loader** only.
 
@@ -18,11 +18,11 @@ jumppads, visibility/vanish, and the Ashvale gamemode). This repo is the **core 
 
 | Module              | What it is                                                                                                                                                                                                                                                                                                      | Published |
 |---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|
-| **`:common`**       | Platform-neutral framework: module system, `number` (`PackedDecimal`, …), `text` (`Mini`, palette, messages), `locale` (i18n), `data`/`net` (SQL + `Messenger`/`KeyValueStore` transport, Redis or in-process), `server` (deployment mode, server registry, player routing, handoff). No Bukkit/Velocity types. | ✅         |
-| **`:paper-api`**    | What Paper feature repos compile against: `PaperModule`/`PaperModuleContext`, `ItemBuilder`, `Schedulers` (Folia-aware), `Events`, the `@Command` annotation framework. Bukkit `compileOnly`.                                                                                                                   | ✅         |
-| **`:paper`**        | The core plugin / **loader** (`com.tricrotism.cryon.Cryon`). Bundles `:common` + `:paper-api` + kotlin-stdlib for loaded features. paperweight.userdev + Shadow + run-paper.                                                                                                                                    | —         |
-| **`:velocity-api`** | What Velocity feature repos compile against: `VelocityModule`/`VelocityModuleContext`. Velocity `compileOnly`.                                                                                                                                                                                                  | ✅         |
-| **`:velocity`**     | The proxy **loader** (`com.tricrotism.cryon.velocity.CryonVelocityPlugin`). Reads the shared server registry to route players and register backends live. Shades `:common` + `:velocity-api` + the cross-server client libs.                                                                                    | —         |
+| **`:common`**       | Platform-neutral framework: module system, `number` (`PackedDecimal`, …), `text` (`Mini`, palette, messages), `locale` (i18n), `data`/`net` (SQL + `Messenger`/`KeyValueStore` transport, Redis or in-process), `server` (deployment mode, server registry, player routing, handoff). No Bukkit/Velocity types. | ✅        |
+| **`:paper-api`**    | What Paper feature repos compile against: `PaperModule`/`PaperModuleContext`, `ItemBuilder`, `Schedulers` (Folia-aware), `Events`, the `@Command` annotation framework. Bukkit `compileOnly`.                                                                                                                   | ✅        |
+| **`:paper`**        | The core plugin / **loader** (`com.tricrotism.cryon.Cryon`). Bundles `:common` + `:paper-api` + kotlin-stdlib for loaded features. paperweight.userdev + Shadow + run-paper.                                                                                                                                    | n/a       |
+| **`:velocity-api`** | What Velocity feature repos compile against: `VelocityModule`/`VelocityModuleContext`. Velocity `compileOnly`.                                                                                                                                                                                                  | ✅        |
+| **`:velocity`**     | The proxy **loader** (`com.tricrotism.cryon.velocity.CryonVelocityPlugin`). Reads the shared server registry to route players and register backends live. Shades `:common` + `:velocity-api` + the cross-server client libs.                                                                                    | n/a       |
 
 The published artifacts (`:common`, `:paper-api`, `:velocity-api`) are the contract feature repos
 depend on; the two loaders (`:paper`, `:velocity`) are what you deploy.
@@ -36,18 +36,18 @@ depend on; the two loaders (`:paper`, `:velocity`) are what you deploy.
   it. Features can't see each other's classes; they expose behaviour only by registering an
   implementation of a shared API interface into the `ServiceRegistry`.
 - **Two-phase lifecycle.** Every module's `onLoad(context)` (publish services) runs before any
-  `onEnable()` (consume peers), so peer services are always available — no declared load order.
+  `onEnable()` (consume peers), so peer services are always available. No declared load order.
 - **Failure isolation.** Every seam where the framework invokes feature code catches `Throwable`. A
   broken feature is marked `FAILED` and the server keeps running.
 - **Hot-swap.** Jars are loaded from private cache copies (so the original is never file-locked), and
   can be added/removed at runtime: `/cryon load|unload|scan|reload-api`, plus an optional dev
   file-watcher that auto-reloads on change (gated by `modules.auto-reload`, default `!production`).
 - **Cross-server.** `:common` ships a `Messenger` + `KeyValueStore` transport (Redis when configured,
-  else in-process), a live server registry, player routing/reservation, maintenance mode, and player
-  handoff — all with exactly one implementation each, so feature code never branches on deployment mode.
+  else in-process), a live server registry, player routing/reservation, maintenance mode, and player handoff, all with
+  exactly one implementation each, so feature code never branches on deployment mode.
 
-For the full design (module system, command registration, spark attribution, sharding, handoff,
-deployment modes), read **[`CLAUDE.md`](CLAUDE.md)** — it is the authoritative developer guide.
+For the full design (module system, command registration, spark attribution, sharding, handoff, deployment modes), read
+**[`CLAUDE.md`](CLAUDE.md)**. It is the authoritative developer guide.
 
 ---
 
@@ -67,8 +67,8 @@ Requires **JDK 25**.
 ./gradlew :common:publishToMavenLocal :paper-api:publishToMavenLocal :velocity-api:publishToMavenLocal
 ```
 
-Production publishes/consumes the API from `repo.striveservices.org` rather than mavenLocal. There are
-no unit tests — verify on a local server.
+Production publishes/consumes the API from `repo.striveservices.org` rather than mavenLocal. There are no unit tests,
+verify on a local server.
 
 A ready-made local stack (Velocity + 2 Paper instances + Redis + Postgres, instanced mode) lives in
 [`test-network/`](test-network).
@@ -118,8 +118,8 @@ family jar sets, and a Helm chart of Agones Fleets + autoscalers for a Kubernete
 
 A deployment is one of two shapes, declared in `network.mode`:
 
-- **`single`** — this server is the whole family (a proxy still fronts it). Redis optional.
-- **`instanced`** — one of N interchangeable instances of `network.family`, players load-balanced onto
+- **`single`**. This server is the whole family (a proxy still fronts it). Redis optional.
+- **`instanced`**. One of N interchangeable instances of `network.family`, players load-balanced onto
   the healthiest. Redis + Postgres required.
 
 The mode declares intent only; whether state actually crosses processes is decided by `redis.enabled`.

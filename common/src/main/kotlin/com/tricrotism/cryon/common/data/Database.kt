@@ -1,7 +1,6 @@
 package com.tricrotism.cryon.common.data
 
 import java.sql.ResultSet
-import java.util.concurrent.CompletableFuture
 
 /**
  * One transaction's connection, handed to [Database.transaction]'s body.
@@ -15,6 +14,20 @@ interface SqlSession {
     fun <T> query(sql: String, vararg params: Any?, mapper: (ResultSet) -> T): List<T>
 
     fun update(sql: String, vararg params: Any?): Int
+
+    /**
+     * Run one statement once per row in [rows], as a single JDBC batch. Returns rows affected.
+     *
+     * The difference from a loop of [update] is round trips: a batch ships every parameter set in one
+     * exchange with the backend instead of one each, which is the whole reason a write-behind flush
+     * can afford to write two thousand dirty entries at a checkpoint. Each element of [rows] binds in
+     * the statement's parameter order, exactly as [update]'s varargs do.
+     *
+     * An empty [rows] issues nothing and answers 0. Drivers may report `SUCCESS_NO_INFO` for a row
+     * they applied without counting, so the total is a lower bound: compare it against zero, never
+     * against `rows.size`.
+     */
+    fun batch(sql: String, rows: List<Array<out Any?>>): Int
 }
 
 /** Connection settings for the SQL backend. [dialect] selects which backend and driver to use. */
@@ -29,9 +42,14 @@ data class DatabaseConfig(
 )
 
 /**
- * Async SQL access, every call returns a [CompletableFuture] run off the main thread, so callers
- * never block the server. A thin primitive over a pooled connection (no ORM); features run their own
- * SQL. Shared via the module `ServiceRegistry` when `database.enabled` is set.
+ * Async SQL access: every call is a `suspend` function that runs its statement on the query
+ * executor, so callers never block a server thread. A thin primitive over a pooled connection (no
+ * ORM); features run their own SQL. Shared via the module `ServiceRegistry` when `database.enabled`
+ * is set.
+ *
+ * **Suspending, not blocking.** A caller is released while the statement runs and resumed when it
+ * lands, so there is no future to forget to consume and no `.get()` to accidentally park a region
+ * thread on. Call these from a module's `scope`, never from a raw scheduler callback.
  */
 interface Database {
 
@@ -50,7 +68,11 @@ interface Database {
      *
      * The session is **synchronous**: [body] already runs on the query executor, so the statements
      * are plain blocking calls in order. Returning normally commits, throwing rolls back, and the
-     * exception is what the future completes with.
+     * exception propagates to the caller.
+     *
+     * [body] is **not** a suspending block, deliberately. A suspension inside a transaction would let
+     * the coroutine be resumed on a different thread while the connection — and every row lock it
+     * holds — stays bound to this one, which is both a JDBC violation and an unbounded lock hold.
      *
      * Two things a caller has to know. A transaction holds row locks until it ends, so keep [body]
      * short and put no scheduler hop, no future wait, and no lock acquisition inside it. And two
@@ -58,13 +80,13 @@ interface Database {
      * aborts one, which surfaces here as an exception, so anything that could interleave that way
      * needs a bounded retry rather than a single attempt.
      */
-    fun <T> transaction(body: (SqlSession) -> T): CompletableFuture<T>
+    suspend fun <T> transaction(body: (SqlSession) -> T): T
 
     /** Run a query and map each row, off-thread. Trailing-lambda friendly: `query(sql, a, b) { rs -> … }`. */
-    fun <T> query(sql: String, vararg params: Any?, mapper: (ResultSet) -> T): CompletableFuture<List<T>>
+    suspend fun <T> query(sql: String, vararg params: Any?, mapper: (ResultSet) -> T): List<T>
 
     /** Run an INSERT/UPDATE/DELETE/DDL and return the affected row count, off-thread. */
-    fun update(sql: String, vararg params: Any?): CompletableFuture<Int>
+    suspend fun update(sql: String, vararg params: Any?): Int
 
     /**
      * Insert a row into [table], overwriting the non-key columns of one whose [keys] already match.
@@ -78,14 +100,14 @@ interface Database {
      * this interface stops being portable: Postgres spells it `ON CONFLICT`, MySQL
      * `ON DUPLICATE KEY UPDATE`, and H2 accepts neither in any mode. A hand-written upsert therefore
      * works on exactly the backend it was written against and throws a syntax error on the other two,
-     * at runtime, inside a fire-and-forget future where nothing is waiting to notice.
+     * at runtime, often inside a launched coroutine where nothing is waiting to notice.
      */
-    fun upsert(
+    suspend fun upsert(
         table: String,
         keys: List<String>,
         columns: List<String>,
         vararg params: Any?,
-    ): CompletableFuture<Int> = update(dialect.upsert(table, keys, columns), *params)
+    ): Int = update(dialect.upsert(table, keys, columns), *params)
 
     /**
      * As [upsert], but an existing row is left exactly as it is.
@@ -94,12 +116,12 @@ interface Database {
      * means it was already there. That makes this usable as a first-writer gate. See the portability
      * note on [upsertIfGreater] before comparing the number to anything but zero.
      */
-    fun insertIfAbsent(
+    suspend fun insertIfAbsent(
         table: String,
         keys: List<String>,
         columns: List<String>,
         vararg params: Any?,
-    ): CompletableFuture<Int> = update(dialect.insertIfAbsent(table, keys, columns), *params)
+    ): Int = update(dialect.insertIfAbsent(table, keys, columns), *params)
 
     /**
      * As [upsert], but an existing row is overwritten only when the incoming [guard] column is
@@ -117,13 +139,13 @@ interface Database {
      * JDBC URL. Connector/J's default reports rows *matched*, under which a refused write is
      * indistinguishable from an applied one. Do not drop that parameter.
      */
-    fun upsertIfGreater(
+    suspend fun upsertIfGreater(
         table: String,
         keys: List<String>,
         columns: List<String>,
         guard: String,
         vararg params: Any?,
-    ): CompletableFuture<Int> = update(dialect.upsertIfGreater(table, keys, columns, guard), *params)
+    ): Int = update(dialect.upsertIfGreater(table, keys, columns, guard), *params)
 
     /**
      * Create [indexes] on [table], for the backends that take them as separate statements.
@@ -132,10 +154,8 @@ interface Database {
      * after: exactly one of the two does the work, so the same schema code covers all three backends.
      * A no-op on MySQL, where the inline form already made them.
      */
-    fun createIndexes(table: String, indexes: List<SqlIndex>): CompletableFuture<Void> {
-        val statements = dialect.indexStatements(table, indexes)
-        if (statements.isEmpty()) return CompletableFuture.completedFuture(null)
-        return CompletableFuture.allOf(*statements.map { update(it) }.toTypedArray())
+    suspend fun createIndexes(table: String, indexes: List<SqlIndex>) {
+        for (statement in dialect.indexStatements(table, indexes)) update(statement)
     }
 
     fun close()

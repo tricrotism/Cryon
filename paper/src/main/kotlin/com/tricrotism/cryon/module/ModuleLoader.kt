@@ -1,5 +1,6 @@
 package com.tricrotism.cryon.module
 
+import com.tricrotism.cryon.common.diagnostic.Retention
 import com.tricrotism.cryon.common.locale.LangScanner
 import com.tricrotism.cryon.common.locale.MessageService
 import com.tricrotism.cryon.common.locale.MessageSource
@@ -40,6 +41,16 @@ class ModuleLoader(
     /** Private copies we actually class-load, so the originals never lock. */
     private val cacheDir: File,
     private val coreLoader: ClassLoader,
+    /**
+     * Watches whether an unloaded jar's classloader is actually reclaimed.
+     *
+     * The one measurement that says whether a hot-swap really worked. Everything else — services
+     * dropped, commands unregistered, windows closed, tasks cancelled — is this loader *trying* to
+     * remove the last references to a jar; only the collector can confirm it succeeded. A live count
+     * that climbs across reloads of the same jar is the module leaking, and nothing else in the
+     * server can see it (see [Retention]).
+     */
+    private val retention: Retention,
 ) {
 
     private class LoadedJar(
@@ -281,6 +292,7 @@ class ModuleLoader(
         context.services.unregisterByClassLoader(jar.loader)
         jar.lang?.let(messageService::removeSource)
         runCatching { jar.loader.close() }
+        retention.track(RETENTION_PREFIX + jarKey, jar.loader)
         jar.cache.delete()
         log.info("Unloaded {} module(s) from {}", jar.moduleIds.size, jar.source.name)
         return jar.moduleIds
@@ -326,5 +338,9 @@ class ModuleLoader(
     private fun jarVersion(fileName: String): String {
         val base = fileName.removeSuffix(".jar")
         return Regex("-(\\d[\\w.+-]*)$").find(base)?.groupValues?.get(1) ?: base
+    }
+
+    private companion object {
+        const val RETENTION_PREFIX = "module-jar:"
     }
 }

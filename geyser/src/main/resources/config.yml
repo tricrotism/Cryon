@@ -1,0 +1,63 @@
+# Cryon Geyser extension config.
+#
+# Geyser Standalone runs beside the network rather than inside it, so this loader takes the shared
+# state it needs to answer a Bedrock client at its own edge: maintenance (so a login is refused here
+# with a Bedrock disconnect screen instead of a Java-shaped kick from the proxy) and the server
+# registry (read-only; Geyser registers no node of its own and routes no player).
+#
+# With redis off none of that crosses processes, so maintenance toggled here is local to this Geyser
+# and the registry is empty. That is fine for a single-machine setup where the proxy is the only
+# thing enforcing maintenance anyway.
+#
+# The database is optional; without it, maintenance state resets when Geyser restarts.
+
+database:
+    enabled: false
+    # Backend: postgresql, mysql, or h2. With h2 the DB is an embedded local file (`database` below is
+    # its path, host/port ignored), which is local to this process and shared with nothing.
+    type: postgresql
+    host: localhost
+    # Leave the port at the backend default (postgresql 5432, mysql 3306) or set your own.
+    port: 5432
+    database: cryon
+    username: cryon
+    password: ""
+    max-pool-size: 10
+
+redis:
+    enabled: false
+    # redis://[:password@]host:port/db
+    uri: "redis://localhost:6379/0"
+
+network:
+    registry-enabled: true
+    heartbeat-seconds: 5
+
+# Network-wide maintenance mode, the same state the proxies hold. Toggle with /maintenance on|off
+# [message] (permission cryon.maintenance); with redis on it syncs to every proxy and every Geyser.
+# While on, a Bedrock login is denied here unless the player is on the /maintenance allowlist. The
+# cryon.maintenance.bypass permission is NOT evaluated at this point (there is no permission backend
+# for a player who has not connected yet); the proxy still enforces it a moment later.
+maintenance:
+    default-message: "The network is under maintenance."
+    # How often to re-pull maintenance state from the database, in seconds. A broadcast only reaches a
+    # process that was listening, so this is what repairs a process that started before the database
+    # was reachable, or that missed a toggle while disconnected. 0 disables it. Needs database.enabled.
+    refresh-seconds: 30
+
+# Bedrock server-list MOTD (shown when maintenance is off). Same keys as the proxy config so one set
+# of copy serves both, but a Bedrock ping is two plain strings with no font metrics, so the left /
+# center / right segments of a line are simply joined with a space rather than pixel-aligned, and
+# `width` is not read. The bottom line lands in the ping's secondary slot, which only some Bedrock
+# clients show, so keep the identity on top. Reload at runtime with /motd reload (permission
+# cryon.motd) after editing this section.
+motd:
+    enabled: true
+    top:
+        left: "<gradient:#09add3:#5ce1e6><bold>Cryon Network"
+        center: ""
+        right: ""
+    bottom:
+        left: "<off_white>Welcome back!"
+        center: ""
+        right: ""

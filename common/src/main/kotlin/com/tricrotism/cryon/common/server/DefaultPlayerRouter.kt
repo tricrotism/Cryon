@@ -1,8 +1,8 @@
 package com.tricrotism.cryon.common.server
 
 import com.tricrotism.cryon.common.net.Messenger
+import kotlinx.coroutines.CancellationException
 import java.util.*
-import java.util.concurrent.CompletableFuture
 
 /**
  * The one [PlayerRouter] implementation: picks the target from the [ServerRegistry] and asks the
@@ -22,32 +22,38 @@ class DefaultPlayerRouter(
     private val matchmaker: () -> Matchmaker? = { null },
 ) : PlayerRouter {
 
-    override fun route(player: UUID, serverId: String): CompletableFuture<RouteResult> {
+    override suspend fun route(player: UUID, serverId: String): RouteResult {
         // Candidates least-loaded first; reserve a slot atomically so two proxies can't overfill one.
         val candidates = registry.nodesOf(serverId)
             .filter { it.state == NodeState.READY && it.playerCount < it.maxPlayers }
             .sortedWith(compareBy({ it.playerCount }, { it.nodeId }))
             .map { it.nodeId }
-        return reserveFirst(player, candidates, 0).thenCompose { reserved ->
-            if (reserved != null) return@thenCompose routeToInstance(player, reserved)
-            val matcher = matchmaker()
-                ?: return@thenCompose CompletableFuture.completedFuture<RouteResult>(RouteResult.NoInstance)
-            matcher.claim(serverId, setOf(player))
-                .thenCompose { routeToInstance(player, it.nodeId) }
-                .exceptionally { RouteResult.Failed(it.message ?: "matchmaking failed") }
+
+        val reserved = reserveFirst(player, candidates)
+        if (reserved != null) return routeToInstance(player, reserved)
+
+        val matcher = matchmaker() ?: return RouteResult.NoInstance
+        return try {
+            routeToInstance(player, matcher.claim(serverId, setOf(player)).nodeId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            RouteResult.Failed(e.message ?: "matchmaking failed")
         }
     }
 
-    /** Try each candidate in order until one accepts the reservation; null if all are full. */
-    private fun reserveFirst(player: UUID, ids: List<String>, index: Int): CompletableFuture<String?> {
-        if (index >= ids.size) return CompletableFuture.completedFuture(null)
-        val id = ids[index]
-        return registry.tryReserve(id, player).thenCompose { accepted ->
-            if (accepted) CompletableFuture.completedFuture(id) else reserveFirst(player, ids, index + 1)
-        }
-    }
+    /**
+     * Try each candidate in order until one accepts the reservation; null if all are full.
+     *
+     * Sequential on purpose: reserving is a *side effect*, so asking every candidate at once would
+     * hold a slot on each of them and drop all but one, briefly making the whole pool look fuller
+     * than it is to any other proxy routing at the same moment.
+     */
+    private suspend fun reserveFirst(player: UUID, ids: List<String>): String? =
+        ids.firstOrNull { registry.tryReserve(it, player) }
 
-    override fun routeToInstance(player: UUID, nodeId: String): CompletableFuture<RouteResult> =
+    override suspend fun routeToInstance(player: UUID, nodeId: String): RouteResult {
         messenger.publish(TransferRequest.CHANNEL, TransferRequest.encode(player, nodeId))
-            .thenApply<RouteResult> { RouteResult.Sent(nodeId) }
+        return RouteResult.Sent(nodeId)
+    }
 }

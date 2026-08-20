@@ -7,6 +7,7 @@ hikaricp = "5.1.0"
 postgresql = "42.7.13"
 
 kotlin = "2.4.20-Beta1"
+coroutines = "1.10.2"
 
 slf4j = "2.0.16"
 snakeyaml = "2.2"
@@ -27,6 +28,10 @@ paper = "26.2.build.+"
 placeholderapi = "2.11.6"
 velocity = "3.3.0-SNAPSHOT"
 
+# Geyser Standalone hosts extensions rather than plugins; this is the extension contract :geyser-api
+# compiles against. Tracks the standalone build the network runs (2.11.2-b1227).
+geyser = "2.11.2-SNAPSHOT"
+
 invui = "2.2.0"
 floodgate = "2.2.4-SNAPSHOT"
 packetevents = "2.13.0"
@@ -40,6 +45,7 @@ postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" 
 paper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper" }
 placeholderapi = { module = "me.clip:placeholderapi", version.ref = "placeholderapi" }
 velocity-api = { module = "com.velocitypowered:velocity-api", version.ref = "velocity" }
+geyser-api = { module = "org.geysermc.geyser:api", version.ref = "geyser" }
 
 invui = { module = "xyz.xenondevs.invui:invui", version.ref = "invui" }
 floodgate = { module = "org.geysermc.floodgate:api", version.ref = "floodgate" }
@@ -51,6 +57,7 @@ lettuce = { module = "io.lettuce:lettuce-core", version.ref = "lettuce" }
 caffeine = { module = "com.github.ben-manes.caffeine:caffeine", version.ref = "caffeine" }
 
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib-jdk8", version.ref = "kotlin" }
+kotlinx-coroutines = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 
 adventure-api = { module = "net.kyori:adventure-api", version.ref = "adventure" }
 adventure-minimessage = { module = "net.kyori:adventure-text-minimessage", version.ref = "adventure" }

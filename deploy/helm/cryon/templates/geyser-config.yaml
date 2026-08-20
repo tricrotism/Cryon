@@ -1,4 +1,7 @@
 { { - if .Values.geyser.enabled } }
+# Two configs for one pod: Geyser's own, and the Cryon extension's. The entrypoint copies the first
+# into config/ and the second into extensions/cryon/, filling the DB password from its Secret.
+# Key names below are Geyser config-version 7 (2.11.x); older Geysers spell `java:` as `remote:`.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -9,13 +12,31 @@ data:
         bedrock:
             address: 0.0.0.0
             port: 19132
-        remote:
+        java:
             # Point at the Velocity Service; from there a Bedrock player is an ordinary Java player.
             address: cryon-velocity
-            port: { { .Values.proxy.port } }
+            port: {{ .Values.proxy.port }}
             auth-type: floodgate
-        # The Floodgate key must be identical across Geyser, the proxies, and every backend.
-        floodgate-key-file: key.pem
-        passthrough-motd: true
-        passthrough-player-counts: true
+        motd:
+            passthrough-motd: true
+            passthrough-player-counts: true
+        advanced:
+            # The Floodgate key must be identical across Geyser, the proxies, and every backend.
+            floodgate-key-file: key.pem
+        config-version: 7
+    cryon-config.yml: |
+        database:
+            enabled: true
+            host: "{{ .Values.postgres.host }}"
+            port: {{ .Values.postgres.port }}
+            database: "{{ .Values.postgres.database }}"
+            username: "{{ .Values.postgres.username }}"
+            password: "__DB_PASSWORD__"
+            max-pool-size: 10
+        redis:
+            enabled: true
+            uri: "{{ .Values.redis.uri }}"
+        network:
+            registry-enabled: true
+            heartbeat-seconds: 5
   { { - end } }

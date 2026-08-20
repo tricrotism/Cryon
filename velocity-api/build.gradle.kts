@@ -7,6 +7,7 @@ repositories {
 }
 
 dependencies {
+    compileOnly(libs.kotlinx.coroutines)
     compileOnly(libs.velocity.api)
 
     implementation(project(":common"))

@@ -94,8 +94,11 @@ object AnnotationCommands {
         if (arg.suggests.isNotEmpty()) {
             val suggester = handler.javaClass.getMethod(arg.suggests)
             node.suggests { _, builder ->
+                val typed = builder.remainingLowerCase
                 @Suppress("UNCHECKED_CAST")
-                (suggester.invoke(handler) as Collection<String>).forEach { builder.suggest(it) }
+                (suggester.invoke(handler) as Collection<String>)
+                    .filter { it.lowercase().startsWith(typed) }
+                    .forEach { builder.suggest(it) }
                 builder.buildFuture()
             }
         }

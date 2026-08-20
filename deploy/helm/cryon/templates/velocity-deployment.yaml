@@ -27,7 +27,7 @@ spec:
                             containerPort: 25565
                             protocol: TCP
                     resources:
-  { { toYaml .Values.proxy.resources | indent 12 } }
+  { { toYaml .Values.proxy.resources | indent 24 } }
 env:
     -   name: CRYON_DB_PASSWORD
         valueFrom:

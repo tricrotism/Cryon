@@ -11,6 +11,47 @@ modules:
     # and can be freely swapped while running.
     auto-reload: true
 
+# Remote feature modules: pull feature jars from a Maven repository instead of copying them in by
+# hand. Off by default, and genuinely optional: with `enabled: false` nothing is parsed, no poller
+# starts, and `modules/` behaves exactly as it always has.
+#
+# The poller only ever WRITES jars into modules/. Whether a downloaded build then applies is decided
+# by modules.auto-reload above and nothing else: with the watcher running a replaced jar hot-swaps
+# just as if you had dropped it in yourself, and with the watcher off (a production server) the new
+# build waits on disk for the next restart or an explicit /cryon load. Use `/cryon remote` to see
+# what is tracked and `/cryon remote check` to poll immediately.
+#
+# CREDENTIALS ARE ENV-FIRST AND HAVE NO DEFAULT. For a repository named `internal` the poller reads
+# CRYON_MAVEN_INTERNAL_USERNAME and CRYON_MAVEN_INTERNAL_PASSWORD ahead of anything set below (the
+# name uppercased, every non-alphanumeric character replaced with `_`). A repository that resolves
+# to no username sends no auth header at all, which is right for a public repository and produces an
+# honest 401 in the log for a private one.
+remote:
+    enabled: false
+    # How often to check, in seconds. Minimum 30. The first check runs shortly after boot rather
+    # than during it, so an unreachable repository can never turn into an unbootable server.
+    poll-seconds: 300
+    repositories:
+        internal:
+            url: "https://maven.example.com/snapshots"
+            # Prefer the environment variables above. These exist for a local test network where
+            # there is no secret worth protecting.
+            username: ""
+            password: ""
+    # Maven has no branches, so a branch is spliced into the version: version 1.0.0 on branch main
+    # resolves to 1.0.0-main-SNAPSHOT, which is what CI publishes. Leave `branch` blank for a plain
+    # 1.0.0-SNAPSHOT. A version with no -SNAPSHOT anywhere is a PIN: it resolves to exactly one
+    # immutable jar, is fetched once, and never changes again, which is the right shape for a
+    # production server that wants remote delivery without remote surprises.
+    #
+    # Each artifact lands on a stable filename (cryon-economy.jar), so a new build replaces the old
+    # one rather than landing beside it.
+    artifacts: [ ]
+    #    - repository: internal
+    #      coords: "com.tricrotism.cryon:cryon-economy"
+    #      version: "1.0.0"
+    #      branch: "main"
+
 # This server's family (the interchangeable pool it belongs to, e.g. skyblock or hub). Also the
 # scope name server-scoped feature flags apply to, so a flag kills the whole pool at once. Kept as a
 # legacy alias for network.family below; prefer setting network.family.

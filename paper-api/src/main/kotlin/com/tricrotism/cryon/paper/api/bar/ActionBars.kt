@@ -1,0 +1,139 @@
+package com.tricrotism.cryon.paper.api.bar
+
+import com.tricrotism.cryon.paper.api.event.Events
+import com.tricrotism.cryon.paper.api.event.Subscription
+import com.tricrotism.cryon.paper.api.scheduler.Schedulers
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask
+import net.kyori.adventure.text.Component
+import org.bukkit.Bukkit
+import org.bukkit.entity.Player
+import org.bukkit.event.player.PlayerQuitEvent
+import java.util.*
+import java.util.concurrent.ConcurrentHashMap
+
+/**
+ * The action bar, arbitrated.
+ *
+ * **Why this is not just `player.sendActionBar`.** The action bar has two properties that make the
+ * raw call unusable for anything persistent: the text fades after roughly three seconds, so anything
+ * meant to stay must be re-sent; and there is exactly *one* of it, so two features both sending
+ * produce a flicker at whatever rate they happen to tick, with the winner decided by scheduling
+ * order. This owns the re-send and settles the contest by [priority], so a transient alert can
+ * interrupt a persistent readout and the readout comes back when it expires.
+ *
+ * ```
+ * ActionBars.send(player, "<gray>Mining: <gold>32%".mm(), Duration.ofSeconds(5))          // readout
+ * ActionBars.send(player, "<red>Out of stamina".mm(), Duration.ofSeconds(2), priority = 10) // alert
+ * ```
+ *
+ * **Costs nothing when nobody is using it.** The ticker walks only the players who have an entry, so
+ * an empty map is one `isEmpty` check per interval; a server that never sends an action bar pays for
+ * one no-op task. Entries are dropped when they expire and on disconnect, so the map is bounded by
+ * the players actually being shown something rather than by everyone who ever was.
+ */
+object ActionBars {
+
+    /**
+     * One thing a feature wants on a player's action bar.
+     *
+     * [key] is what makes an update an update rather than a second entry: sending again under the
+     * same key replaces the previous one, so a per-tick readout does not accumulate. Different
+     * features use different keys and therefore compete on [priority] instead of overwriting.
+     */
+    private class Entry(
+        val key: String,
+        val message: Component,
+        val priority: Int,
+        val expiresAt: Long,
+    )
+
+    private val entries = ConcurrentHashMap<UUID, ConcurrentHashMap<String, Entry>>()
+
+    @Volatile
+    private var task: ScheduledTask? = null
+
+    @Volatile
+    private var quit: Subscription? = null
+
+    /** Start the ticker and the disconnect cleanup. Called once by the core. */
+    fun install() {
+        if (task != null) return
+        quit = Events.subscribe<PlayerQuitEvent>().handler { entries.remove(it.player.uniqueId) }
+        task = Schedulers.globalTimer(REFRESH_TICKS, REFRESH_TICKS) { tick() }
+    }
+
+    fun uninstall() {
+        task?.let { runCatching { it.cancel() } }
+        task = null
+        quit?.let { runCatching { it.unregister() } }
+        quit = null
+        entries.clear()
+    }
+
+    /**
+     * Show [message] on [player]'s action bar for [durationMillis].
+     *
+     * Sent immediately as well as on the next tick, so a one-off acknowledgement is not delayed by up
+     * to the refresh interval — which for something answering a click is the difference between
+     * feedback and lag. A higher [priority] wins while both are live.
+     */
+    fun send(
+        player: Player,
+        message: Component,
+        durationMillis: Long = DEFAULT_DURATION_MILLIS,
+        priority: Int = 0,
+        key: String = DEFAULT_KEY,
+    ) {
+        val id = player.uniqueId
+        val entry = Entry(key, message, priority, System.currentTimeMillis() + durationMillis)
+        entries.computeIfAbsent(id) { ConcurrentHashMap() }[key] = entry
+        if (best(id) === entry) player.sendActionBar(message)
+    }
+
+    /** Drop one entry. Whatever was underneath it reappears on the next tick. */
+    fun clear(player: Player, key: String = DEFAULT_KEY) {
+        val forPlayer = entries[player.uniqueId] ?: return
+        forPlayer.remove(key)
+        if (forPlayer.isEmpty()) entries.remove(player.uniqueId, forPlayer)
+    }
+
+    /** Drop everything this player is being shown. */
+    fun clearAll(player: Player) {
+        entries.remove(player.uniqueId)
+    }
+
+    /**
+     * Re-send the winning entry to everyone who has one, dropping what has expired.
+     *
+     * Runs on the global region thread. Sending is a packet write on the player's connection rather
+     * than a read or mutation of their entity, so it needs no per-player hop — the same reasoning
+     * `StaffFeed` applies to `sendMessage`.
+     */
+    private fun tick() {
+        if (entries.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val iterator = entries.entries.iterator()
+        while (iterator.hasNext()) {
+            val (id, forPlayer) = iterator.next()
+            forPlayer.values.removeIf { it.expiresAt <= now }
+            if (forPlayer.isEmpty()) {
+                iterator.remove()
+                continue
+            }
+            val winner = forPlayer.values.maxWithOrNull(ORDER) ?: continue
+            Bukkit.getPlayer(id)?.sendActionBar(winner.message)
+        }
+    }
+
+    private fun best(player: UUID): Entry? = entries[player]?.values?.maxWithOrNull(ORDER)
+
+    /** Highest priority wins; the later expiry breaks a tie, so a refresh beats what it replaced. */
+    private val ORDER = compareBy<Entry>({ it.priority }, { it.expiresAt })
+
+    private const val DEFAULT_KEY = "default"
+
+    /** Comfortably inside the client's ~3s fade. */
+    private const val REFRESH_TICKS = 30L
+
+    private const val DEFAULT_DURATION_MILLIS = 3_000L
+}

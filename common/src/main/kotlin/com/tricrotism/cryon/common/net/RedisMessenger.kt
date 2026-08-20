@@ -1,13 +1,18 @@
 package com.tricrotism.cryon.common.net
 
+import com.tricrotism.cryon.common.concurrent.CryonIO
 import io.lettuce.core.RedisClient
 import io.lettuce.core.api.StatefulRedisConnection
 import io.lettuce.core.pubsub.RedisPubSubAdapter
 import io.lettuce.core.pubsub.StatefulRedisPubSubConnection
+import kotlinx.coroutines.*
+import kotlinx.coroutines.future.await
 import org.slf4j.Logger
 import java.time.Duration
 import java.util.*
-import java.util.concurrent.*
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeoutException
 
 /**
  * [Messenger] over Lettuce. One connection publishes, one subscribes. Request/response rides pub/sub:
@@ -23,10 +28,8 @@ class RedisMessenger(config: RedisConfig, private val logger: Logger) : Messenge
     private val handlers = ConcurrentHashMap<String, CopyOnWriteArrayList<(String) -> Unit>>()
     private val nodeId = UUID.randomUUID().toString()
     private val replyChannel = "cryon:reply:$nodeId"
-    private val pending = ConcurrentHashMap<String, CompletableFuture<String>>()
-    private val timeouts = Executors.newSingleThreadScheduledExecutor { r ->
-        Thread(r, "cryon-redis-timeout").apply { isDaemon = true }
-    }
+    private val pending = ConcurrentHashMap<String, CompletableDeferred<String>>()
+    private val scope = CoroutineScope(SupervisorJob() + CryonIO.dispatcher)
 
     init {
         pubSubConn.addListener(object : RedisPubSubAdapter<String, String>() {
@@ -35,8 +38,9 @@ class RedisMessenger(config: RedisConfig, private val logger: Logger) : Messenge
         subscribe(replyChannel) { onReply(it) }
     }
 
-    override fun publish(channel: String, message: String): CompletableFuture<Void> =
-        publishConn.async().publish(channel, message).toCompletableFuture().thenAccept { }
+    override suspend fun publish(channel: String, message: String) {
+        publishConn.async().publish(channel, message).toCompletableFuture().await()
+    }
 
     override fun subscribe(channel: String, handler: (String) -> Unit): MessengerSubscription {
         var created = false
@@ -52,36 +56,41 @@ class RedisMessenger(config: RedisConfig, private val logger: Logger) : Messenge
         }
     }
 
-    override fun handle(channel: String, responder: (String) -> CompletableFuture<String>): MessengerSubscription =
+    override fun handle(channel: String, responder: suspend (String) -> String): MessengerSubscription =
         subscribe("$channel:req") { raw ->
             val parts = raw.split(SEP, limit = 3)
             if (parts.size != 3) return@subscribe
             val (correlationId, replyTo, payload) = parts
-            responder(payload)
-                .thenAccept { reply -> publish(replyTo, "$correlationId$SEP$reply") }
-                .exceptionally { logger.error("Responder on '{}' failed", channel, it); null }
+            scope.launch {
+                try {
+                    publish(replyTo, "$correlationId$SEP${responder(payload)}")
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.error("Responder on '{}' failed", channel, e)
+                }
+            }
         }
 
-    override fun request(channel: String, message: String, timeout: Duration): CompletableFuture<String> {
+    override suspend fun request(channel: String, message: String, timeout: Duration): String {
         val correlationId = UUID.randomUUID().toString()
-        val future = CompletableFuture<String>()
-        pending[correlationId] = future
-        timeouts.schedule({
-            if (pending.remove(correlationId) != null) {
-                future.completeExceptionally(TimeoutException("No reply on '$channel' within $timeout"))
-            }
-        }, timeout.toMillis(), TimeUnit.MILLISECONDS)
-        publish("$channel:req", "$correlationId$SEP$replyChannel$SEP$message")
-        return future
+        val reply = CompletableDeferred<String>()
+        pending[correlationId] = reply
+        try {
+            publish("$channel:req", "$correlationId$SEP$replyChannel$SEP$message")
+            return withTimeoutOrNull(timeout.toMillis()) { reply.await() }
+                ?: throw TimeoutException("No reply on '$channel' within $timeout")
+        } finally {
+            pending.remove(correlationId)
+        }
     }
 
     /**
-     * Fail whatever is still waiting before the transport goes away. The timeout thread is what would
-     * otherwise have completed these, so dropping it silently leaves every in-flight request pending
-     * forever, and a caller that parked a connection behind one never resumes.
+     * Fail whatever is still waiting before the transport goes away. Nothing else will ever complete
+     * these once the connection is gone, so a caller suspended on one would never resume.
      */
     override fun close() {
-        timeouts.shutdownNow()
+        scope.cancel("The messenger was closed")
         failPending()
         pubSubConn.close()
         publishConn.close()

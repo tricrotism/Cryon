@@ -1,8 +1,10 @@
 package com.tricrotism.cryon.common.flag
 
+import com.tricrotism.cryon.common.concurrent.CryonIO
 import com.tricrotism.cryon.common.data.Database
 import com.tricrotism.cryon.common.net.Messenger
 import com.tricrotism.cryon.common.net.MessengerSubscription
+import kotlinx.coroutines.*
 import org.slf4j.Logger
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
@@ -49,22 +51,76 @@ class FeatureFlags(
     @Volatile
     private var loaded: Set<Pair<String, String>> = emptySet()
 
+    /**
+     * Owns the persistence behind every mutation.
+     *
+     * The in-memory update stays **synchronous** and the SQL write and broadcast are launched
+     * behind it, which is what the futures did before. That split is the contract, not an
+     * implementation detail: [isEnabled] is a map read on an event-handler path and [register] is
+     * called from a module's `onEnable`, neither of which is a coroutine — making them suspend would
+     * push the colour through every caller to buy nothing, since the durable write was never what a
+     * flag check waited on.
+     */
+    private val scope = CoroutineScope(SupervisorJob() + CryonIO.dispatcher)
+
+    /**
+     * Write one key's **current** in-memory state down and broadcast it.
+     *
+     * Reading the value inside the coroutine rather than capturing it at the call site is what makes
+     * concurrent toggles converge. Two launched writes for the same key can land in either order, so
+     * a captured value lets the older write win and leaves the durable row disagreeing with memory
+     * until the next restart reads it back. Re-reading means whichever runs last writes what memory
+     * actually says, which is the same answer either way.
+     */
+    private fun syncKey(scopeId: String, id: String) {
+        persist("sync $scopeId/$id") {
+            when (val current = flags[scopeId]?.get(id)) {
+                null -> {
+                    database?.update("DELETE FROM $TABLE WHERE scope = ? AND feature = ?", scopeId, id)
+                    messenger.publish(CHANNEL, sync(scopeId, id, REMOVE_MARKER))
+                }
+
+                else -> {
+                    database?.upsert(TABLE, KEYS, COLUMNS, scopeId, id, current)
+                    messenger.publish(CHANNEL, sync(scopeId, id, current.toString()))
+                }
+            }
+        }
+    }
+
+    /**
+     * Log a launched write that failed rather than letting it vanish into a canceled scope.
+     */
+    private fun persist(what: String, block: suspend () -> Unit) {
+        scope.launch {
+            try {
+                block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.error("Failed to persist feature flag change ({})", what, e)
+            }
+        }
+    }
+
     fun init() {
         val db = database
         if (db == null) {
             logger.info("Feature flags are in-memory only (no database). Overrides reset on restart")
         } else {
-            db.update(
-                """
-                CREATE TABLE IF NOT EXISTS $TABLE (
-                    scope VARCHAR(96) NOT NULL,
-                    feature VARCHAR(128) NOT NULL,
-                    enabled BOOLEAN NOT NULL DEFAULT TRUE,
-                    PRIMARY KEY (scope, feature)
+            persist("init") {
+                db.update(
+                    """
+                    CREATE TABLE IF NOT EXISTS $TABLE (
+                        scope VARCHAR(96) NOT NULL,
+                        feature VARCHAR(128) NOT NULL,
+                        enabled BOOLEAN NOT NULL DEFAULT TRUE,
+                        PRIMARY KEY (scope, feature)
+                    )
+                    """.trimIndent()
                 )
-                """.trimIndent()
-            ).thenCompose { load() }
-                .exceptionally { logger.error("Failed to initialize the feature flag table", it); null }
+                load()
+            }
         }
         subscription = messenger.subscribe(CHANNEL, ::onSync)
     }
@@ -72,6 +128,7 @@ class FeatureFlags(
     fun close() {
         subscription?.unsubscribe()
         subscription = null
+        scope.cancel("Feature flags closed")
     }
 
     /**
@@ -96,7 +153,8 @@ class FeatureFlags(
         val id = normalize(feature)
         val scopeId = normalizeScope(scope)
         if (scopeFlags(scopeId).putIfAbsent(id, defaultEnabled) != null) return
-        database?.insertIfAbsent(TABLE, KEYS, COLUMNS, scopeId, id, defaultEnabled)
+        val db = database ?: return
+        persist("register $scopeId/$id") { db.insertIfAbsent(TABLE, KEYS, COLUMNS, scopeId, id, defaultEnabled) }
     }
 
     /**
@@ -106,8 +164,7 @@ class FeatureFlags(
         val id = normalize(feature)
         val scopeId = normalizeScope(scope)
         scopeFlags(scopeId)[id] = enabled
-        database?.upsert(TABLE, KEYS, COLUMNS, scopeId, id, enabled)
-        messenger.publish(CHANNEL, sync(scopeId, id, enabled.toString()))
+        syncKey(scopeId, id)
     }
 
     /**
@@ -117,8 +174,7 @@ class FeatureFlags(
         val id = normalize(feature)
         val scopeId = normalizeScope(scope)
         val removed = flags[scopeId]?.remove(id) != null
-        database?.update("DELETE FROM $TABLE WHERE scope = ? AND feature = ?", scopeId, id)
-        messenger.publish(CHANNEL, sync(scopeId, id, REMOVE_MARKER))
+        syncKey(scopeId, id)
         return removed
     }
 
@@ -128,8 +184,10 @@ class FeatureFlags(
     fun delete(feature: String) {
         val id = normalize(feature)
         flags.values.forEach { it.remove(id) }
-        database?.update("DELETE FROM $TABLE WHERE feature = ?", id)
-        messenger.publish(CHANNEL, sync(ALL_SCOPES_MARKER, id, REMOVE_MARKER))
+        persist("delete $id") {
+            database?.update("DELETE FROM $TABLE WHERE feature = ?", id)
+            messenger.publish(CHANNEL, sync(ALL_SCOPES_MARKER, id, REMOVE_MARKER))
+        }
     }
 
     /**
@@ -137,7 +195,7 @@ class FeatureFlags(
      */
     fun reload(): Boolean {
         if (database == null) return false
-        load()
+        persist("reload") { load() }
         return true
     }
 
@@ -179,21 +237,19 @@ class FeatureFlags(
      * contributed ([loaded]) keeps a flag deleted on another node from surviving here, without
      * claiming ownership of entries this process registered itself.
      */
-    private fun load() = database!!
-        .query("SELECT scope, feature, enabled FROM $TABLE") {
+    private suspend fun load() {
+        val rows = database!!.query("SELECT scope, feature, enabled FROM $TABLE") {
             Triple(it.getString(1), it.getString(2), it.getBoolean(3))
         }
-        .thenAccept { rows ->
-            val stored = HashSet<Pair<String, String>>(rows.size)
-            for ((scope, feature, enabled) in rows) {
-                scopeFlags(scope)[feature] = enabled
-                stored += scope to feature
-            }
-            for ((scope, feature) in loaded - stored) flags[scope]?.remove(feature)
-            loaded = stored
-            logger.info("Loaded {} feature flags", rows.size)
+        val stored = HashSet<Pair<String, String>>(rows.size)
+        for ((scopeId, feature, enabled) in rows) {
+            scopeFlags(scopeId)[feature] = enabled
+            stored += scopeId to feature
         }
-        .exceptionally { logger.error("Failed to load feature flags", it); null }
+        for ((scopeId, feature) in loaded - stored) flags[scopeId]?.remove(feature)
+        loaded = stored
+        logger.info("Loaded {} feature flags", rows.size)
+    }
 
     /**
      * Apply a broadcast from another server (or our own echo, idempotent either way).

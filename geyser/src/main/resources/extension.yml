@@ -1,0 +1,7 @@
+id: cryon
+name: Cryon
+main: com.tricrotism.cryon.geyser.CryonGeyserExtension
+version: ${version}
+api: 2.11.2
+authors:
+    - tricrotism

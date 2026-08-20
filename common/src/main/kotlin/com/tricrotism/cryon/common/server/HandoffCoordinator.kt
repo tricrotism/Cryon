@@ -3,9 +3,12 @@ package com.tricrotism.cryon.common.server
 import com.tricrotism.cryon.common.net.Messenger
 import com.tricrotism.cryon.common.net.MessengerSubscription
 import com.tricrotism.cryon.common.server.HandoffCoordinator.Companion.HANDOFF_WINDOW_MILLIS
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import org.slf4j.Logger
 import java.util.*
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -28,7 +31,7 @@ class HandoffCoordinator(
     private val logger: Logger,
 ) : PlayerHandoff {
 
-    private class Registered(val stage: Int, val flush: (UUID) -> CompletableFuture<Void>)
+    private class Registered(val stage: Int, val flush: suspend (UUID) -> Unit)
 
     private val flushes = ConcurrentHashMap<String, Registered>()
 
@@ -41,20 +44,20 @@ class HandoffCoordinator(
     fun init() {
         subscription = messenger.handle(channel(nodeId)) { payload ->
             val player = runCatching { UUID.fromString(payload) }.getOrNull()
-                ?: return@handle CompletableFuture.completedFuture(REPLY)
-            flush(player).thenApply {
+            if (player != null) {
+                flush(player)
                 val now = System.currentTimeMillis()
                 handedOff.values.removeIf { now - it >= HANDOFF_WINDOW_MILLIS }
                 handedOff[player] = now
-                REPLY
             }
+            REPLY
         }
     }
 
     override fun onFlush(
         id: String,
         stage: Int,
-        flush: (UUID) -> CompletableFuture<Void>,
+        flush: suspend (UUID) -> Unit,
     ): AutoCloseable {
         flushes[id] = Registered(stage, flush)
         return AutoCloseable { flushes.remove(id) }
@@ -69,31 +72,32 @@ class HandoffCoordinator(
      * a whole stage failing still lets the next one run: one broken feature must not strand the
      * player mid-transfer, and must not take the rest of their state down with it.
      */
-    fun flush(player: UUID): CompletableFuture<Void> {
-        val stages = flushes.entries
-            .groupBy { it.value.stage }
-            .toSortedMap()
-        if (stages.isEmpty()) return DONE
-        var chain = DONE
+    suspend fun flush(player: UUID) {
+        val stages = flushes.entries.groupBy { it.value.stage }.toSortedMap()
+        if (stages.isEmpty()) return
         for ((_, group) in stages) {
-            chain = chain.thenCompose {
-                val pending = group.map { (id, registered) ->
-                    runCatching { registered.flush(player) }
-                        .getOrElse { CompletableFuture.failedFuture(it) }
-                        .exceptionally { logger.error("Flush '{}' failed for {}", id, player, it); null }
-                }
-                CompletableFuture.allOf(*pending.toTypedArray())
+            coroutineScope {
+                group.map { (id, registered) ->
+                    async {
+                        try {
+                            registered.flush(player)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            logger.error("Flush '{}' failed for {}", id, player, e)
+                        }
+                    }
+                }.awaitAll()
             }
         }
-        return chain
     }
 
     /** The quit path: a no-op when we already flushed [player] to hand them over moments ago. */
-    fun flushOnQuit(player: UUID): CompletableFuture<Void> {
+    suspend fun flushOnQuit(player: UUID) {
         val flushedAt = handedOff.remove(player)
         val handedOverRecently = flushedAt != null &&
                 System.currentTimeMillis() - flushedAt < HANDOFF_WINDOW_MILLIS
-        return if (handedOverRecently) DONE else flush(player)
+        if (!handedOverRecently) flush(player)
     }
 
     fun close() {
@@ -114,7 +118,5 @@ class HandoffCoordinator(
         // between a transfer being acknowledged and the old backend dropping the player, and far
         // shorter than a session, so a failed transfer's mark cannot silently eat a real save.
         private const val HANDOFF_WINDOW_MILLIS = 15_000L
-
-        private val DONE: CompletableFuture<Void> get() = CompletableFuture.completedFuture(null)
     }
 }

@@ -1,12 +1,15 @@
 package com.tricrotism.cryon.common.maintenance
 
+import com.tricrotism.cryon.common.concurrent.CryonIO
 import com.tricrotism.cryon.common.data.Database
 import com.tricrotism.cryon.common.net.Messenger
 import com.tricrotism.cryon.common.net.MessengerSubscription
+import kotlinx.coroutines.*
 import org.slf4j.Logger
-import java.util.concurrent.CompletableFuture
+import java.time.Duration
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * The one [MaintenanceService] implementation: state rides the [Messenger], with SQL as the durable
@@ -14,15 +17,22 @@ import java.util.concurrent.CopyOnWriteArrayList
  * write-through then broadcast, own echo applied idempotently. The [Database] is optional (without it,
  * state is per-proxy and resets on restart).
  *
- * Proxy-side only, on either transport. Maintenance is enforced where logins arrive, and a
- * single-server deployment still has exactly one proxy, so its in-process state is already
- * network-wide truth, so nothing on Paper reads this service.
+ * Enforced wherever logins arrive: the proxy, and Geyser ahead of it. A single-server deployment
+ * still has exactly one proxy, so its in-process state is already network-wide truth, and nothing on
+ * Paper reads this service.
+ *
+ * **With a database, state is re-pulled on an interval as well as at boot.** A broadcast only reaches
+ * a process that was listening, and [init] gives up if SQL is unreachable, which is an ordinary
+ * startup race rather than an exotic failure: a process that came up before the database would
+ * otherwise hold its default (maintenance off) for its whole life while the network was closed. The
+ * re-pull is what makes SQL the source of truth in practice and not just on paper.
  */
 class SharedMaintenanceService(
     private val database: Database?,
     private val messenger: Messenger,
     defaultMessage: String,
     private val logger: Logger,
+    private val refreshInterval: Duration = DEFAULT_REFRESH,
 ) : MaintenanceService {
 
     @Volatile
@@ -43,32 +53,105 @@ class SharedMaintenanceService(
      */
     private val allowed: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
+
+    /**
+     * Owns the persistence behind every mutation. The in-memory update stays synchronous and the SQL
+     * write plus broadcast are launched behind it, which is exactly what the futures did before —
+     * see `FeatureFlags`, which this deliberately mirrors.
+     */
+    private val scope = CoroutineScope(SupervisorJob() + CryonIO.dispatcher)
+
+    private fun persist(what: String, block: suspend () -> Unit) {
+        scope.launch {
+            try {
+                block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.error("Failed to persist maintenance change ({})", what, e)
+            }
+        }
+    }
+
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
     private var subscription: MessengerSubscription? = null
     private var allowSubscription: MessengerSubscription? = null
 
     fun init() {
-        database?.update(
-            "CREATE TABLE IF NOT EXISTS $TABLE (id INT PRIMARY KEY, enabled BOOLEAN NOT NULL, message TEXT NOT NULL)"
-        )?.thenCompose { load() }
-            ?.exceptionally { logger.error("Failed to initialize the maintenance table", it); null }
-        database?.update("CREATE TABLE IF NOT EXISTS $ALLOW_TABLE (name VARCHAR(64) PRIMARY KEY)")
-            ?.thenCompose { loadAllow() }
-            ?.exceptionally { logger.error("Failed to initialize the maintenance allowlist table", it); null }
+        val db = database
+        if (db != null) {
+            persist("init state") {
+                db.update(
+                    "CREATE TABLE IF NOT EXISTS $TABLE (id INT PRIMARY KEY, enabled BOOLEAN NOT NULL, message TEXT NOT NULL)"
+                )
+                load()
+            }
+            persist("init allowlist") {
+                db.update("CREATE TABLE IF NOT EXISTS $ALLOW_TABLE (name VARCHAR(64) PRIMARY KEY)")
+                loadAllow()
+            }
+        }
         subscription = messenger.subscribe(CHANNEL, ::onSync)
         allowSubscription = messenger.subscribe(ALLOW_CHANNEL, ::onAllowSync)
+        if (db != null && refreshInterval.isPositive()) startRefresh()
+    }
+
+    /**
+     * Re-read the durable state on an interval, forever, until the scope is cancelled.
+     *
+     * Delays first, so the loop never races [init]'s own load, and swallows a failed pass rather than
+     * ending the loop: the database being briefly unreachable is the case this exists to survive.
+     */
+    private fun startRefresh() {
+        scope.launch {
+            while (isActive) {
+                delay(refreshInterval.toMillis().milliseconds)
+                try {
+                    refresh()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.warn("Could not re-pull maintenance state; keeping the state we have", e)
+                }
+            }
+        }
+    }
+
+    /**
+     * Pull state and allowlist from SQL and adopt them.
+     *
+     * Removals are applied only to names that were already present *before* the read, so a name added
+     * on this process while the query was in flight is never wiped by its result. A name genuinely
+     * removed elsewhere is in that snapshot and absent from the read, so it goes.
+     */
+    private suspend fun refresh() {
+        val known = allowed.toSet()
+        val row = database!!.query("SELECT enabled, message FROM $TABLE WHERE id = $STATE_ROW") {
+            it.getBoolean(1) to it.getString(2)
+        }.firstOrNull()
+        val fresh = database.query("SELECT name FROM $ALLOW_TABLE") { it.getString(1).lowercase() }.toSet()
+
+        row?.let { (freshEnabled, freshMessage) ->
+            if (freshEnabled != enabled || freshMessage != message) {
+                enabled = freshEnabled
+                message = freshMessage
+                listeners.forEach { runCatching { it() } }
+            }
+        }
+        allowed.addAll(fresh)
+        allowed.removeAll(known - fresh)
     }
 
     override fun isEnabled(): Boolean = enabled
 
     override fun message(): String = message
 
-    override fun set(enabled: Boolean, message: String?): CompletableFuture<Void> {
+    override suspend fun set(enabled: Boolean, message: String?) {
         this.enabled = enabled
         if (message != null) this.message = message
         val current = this.message
         database?.upsert(TABLE, STATE_KEYS, STATE_COLUMNS, STATE_ROW, enabled, current)
-        return messenger.publish(CHANNEL, "$enabled$SEP$current")
+        messenger.publish(CHANNEL, "$enabled$SEP$current")
     }
 
     override fun allowlist(): Set<String> = allowed.toSet()
@@ -78,16 +161,20 @@ class SharedMaintenanceService(
     override fun allow(name: String): Boolean {
         val key = name.lowercase()
         if (!allowed.add(key)) return false
-        database?.insertIfAbsent(ALLOW_TABLE, ALLOW_COLUMNS, ALLOW_COLUMNS, key)
-        messenger.publish(ALLOW_CHANNEL, ALLOW_ADD + key)
+        persist("allow $key") {
+            database?.insertIfAbsent(ALLOW_TABLE, ALLOW_COLUMNS, ALLOW_COLUMNS, key)
+            messenger.publish(ALLOW_CHANNEL, ALLOW_ADD + key)
+        }
         return true
     }
 
     override fun disallow(name: String): Boolean {
         val key = name.lowercase()
         if (!allowed.remove(key)) return false
-        database?.update("DELETE FROM $ALLOW_TABLE WHERE name = ?", key)
-        messenger.publish(ALLOW_CHANNEL, ALLOW_REMOVE + key)
+        persist("disallow $key") {
+            database?.update("DELETE FROM $ALLOW_TABLE WHERE name = ?", key)
+            messenger.publish(ALLOW_CHANNEL, ALLOW_REMOVE + key)
+        }
         return true
     }
 
@@ -102,15 +189,20 @@ class SharedMaintenanceService(
         allowSubscription?.unsubscribe()
         allowSubscription = null
         listeners.clear()
+        scope.cancel("The maintenance service was closed")
     }
 
-    private fun load(): CompletableFuture<Void> =
-        database!!.query("SELECT enabled, message FROM $TABLE WHERE id = 1") { it.getBoolean(1) to it.getString(2) }
-            .thenAccept { rows -> rows.firstOrNull()?.let { (e, m) -> enabled = e; message = m } }
+    private suspend fun load() {
+        val rows = database!!.query("SELECT enabled, message FROM $TABLE WHERE id = 1") {
+            it.getBoolean(1) to it.getString(2)
+        }
+        rows.firstOrNull()?.let { (e, m) -> enabled = e; message = m }
+    }
 
-    private fun loadAllow(): CompletableFuture<Void> =
+    private suspend fun loadAllow() {
         database!!.query("SELECT name FROM $ALLOW_TABLE") { it.getString(1) }
-            .thenAccept { rows -> rows.forEach { allowed.add(it.lowercase()) } }
+            .forEach { allowed.add(it.lowercase()) }
+    }
 
     private fun onSync(raw: String) {
         val parts = raw.split(SEP, limit = 2)
@@ -133,6 +225,9 @@ class SharedMaintenanceService(
     }
 
     private companion object {
+        /** How often the durable state is re-pulled. Overridable per deployment. */
+        private val DEFAULT_REFRESH: Duration = Duration.ofSeconds(30)
+
         private const val TABLE = "cryon_maintenance"
         private const val ALLOW_TABLE = "cryon_maintenance_allow"
 

@@ -1,7 +1,6 @@
 package com.tricrotism.cryon.common.net
 
 import java.time.Duration
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -37,35 +36,69 @@ class MemoryKeyValueStore : KeyValueStore {
 
     private val hashes = ConcurrentHashMap<String, Hash>()
 
-    override fun set(key: String, value: String, ttl: Duration): CompletableFuture<Void> {
+    override suspend fun set(key: String, value: String, ttl: Duration) {
         entries[key] = Entry(value, deadline(ttl))
-        return DONE
     }
 
-    override fun get(key: String): CompletableFuture<String?> {
-        val entry = entries.compute(key) { _, existing -> live(existing) }
-        return CompletableFuture.completedFuture(entry?.value)
-    }
+    override suspend fun get(key: String): String? =
+        entries.compute(key) { _, existing -> live(existing) }?.value
 
-    override fun delete(key: String): CompletableFuture<Boolean> {
+    override suspend fun delete(key: String): Boolean {
         val previous = entries.remove(key)
-        val held = previous != null && !previous.expired(System.currentTimeMillis())
-        return CompletableFuture.completedFuture(held)
+        return previous != null && !previous.expired(System.currentTimeMillis())
     }
 
-    override fun keys(pattern: String): CompletableFuture<List<String>> {
+    /**
+     * The three claim primitives, each inside one [ConcurrentHashMap.compute], which holds the bin
+     * for the duration and so gives the same all-or-nothing guarantee Redis gives by being
+     * single-threaded.
+     */
+    override suspend fun setIfAbsent(key: String, value: String, ttl: Duration): Boolean {
+        val now = System.currentTimeMillis()
+        var claimed = false
+        entries.compute(key) { _, existing ->
+            if (existing != null && !existing.expired(now)) return@compute existing
+            claimed = true
+            Entry(value, now + ttl.toMillis())
+        }
+        return claimed
+    }
+
+    override suspend fun deleteIfEqual(key: String, value: String): Boolean {
+        val now = System.currentTimeMillis()
+        var removed = false
+        entries.compute(key) { _, existing ->
+            val live = existing?.takeIf { !it.expired(now) } ?: return@compute null
+            if (live.value != value) return@compute live
+            removed = true
+            null
+        }
+        return removed
+    }
+
+    override suspend fun refreshIfEqual(key: String, value: String, ttl: Duration): Boolean {
+        val now = System.currentTimeMillis()
+        var refreshed = false
+        entries.compute(key) { _, existing ->
+            val live = existing?.takeIf { !it.expired(now) } ?: return@compute null
+            if (live.value != value) return@compute live
+            refreshed = true
+            Entry(live.value, now + ttl.toMillis())
+        }
+        return refreshed
+    }
+
+    override suspend fun keys(pattern: String): List<String> {
         val now = System.currentTimeMillis()
         val regex = globToRegex(pattern)
-        val matched = entries.entries
+        return entries.entries
             .filter { !it.value.expired(now) && regex.matches(it.key) }
             .map { it.key }
-        return CompletableFuture.completedFuture(matched)
     }
 
-    override fun mget(keys: Collection<String>): CompletableFuture<List<String?>> {
+    override suspend fun mget(keys: Collection<String>): List<String?> {
         val now = System.currentTimeMillis()
-        val values = keys.map { key -> entries[key]?.takeIf { !it.expired(now) }?.value }
-        return CompletableFuture.completedFuture(values)
+        return keys.map { key -> entries[key]?.takeIf { !it.expired(now) }?.value }
     }
 
     /**
@@ -73,23 +106,36 @@ class MemoryKeyValueStore : KeyValueStore {
      * a concurrent one and [hdel]'s answer is a real claim — the same guarantees Redis gives by
      * being single-threaded.
      */
-    override fun hset(key: String, field: String, value: String, ttl: Duration): CompletableFuture<Void> {
+    override suspend fun hset(key: String, field: String, value: String, ttl: Duration) {
         val now = System.currentTimeMillis()
         hashes.compute(key) { _, existing ->
             val fields = existing?.takeIf { !it.expired(now) }?.fields ?: HashMap()
             fields[field] = value
             Hash(fields, now + ttl.toMillis())
         }
-        return DONE
     }
 
-    override fun hgetAll(key: String): CompletableFuture<Map<String, String>> {
+    override suspend fun hsetIfAbsent(key: String, field: String, value: String, ttl: Duration): Boolean {
+        val now = System.currentTimeMillis()
+        var claimed = false
+        hashes.compute(key) { _, existing ->
+            val live = existing?.takeIf { !it.expired(now) }
+            if (live != null && live.fields.containsKey(field)) return@compute live
+            val fields = live?.fields ?: HashMap()
+            fields[field] = value
+            claimed = true
+            Hash(fields, now + ttl.toMillis())
+        }
+        return claimed
+    }
+
+    override suspend fun hgetAll(key: String): Map<String, String> {
         val now = System.currentTimeMillis()
         val hash = hashes.compute(key) { _, existing -> existing?.takeIf { !it.expired(now) } }
-        return CompletableFuture.completedFuture(hash?.fields?.toMap() ?: emptyMap())
+        return hash?.fields?.toMap() ?: emptyMap()
     }
 
-    override fun hdel(key: String, field: String): CompletableFuture<Boolean> {
+    override suspend fun hdel(key: String, field: String): Boolean {
         val now = System.currentTimeMillis()
         var removed = false
         hashes.compute(key) { _, existing ->
@@ -97,16 +143,16 @@ class MemoryKeyValueStore : KeyValueStore {
             removed = live.fields.remove(field) != null
             live.takeIf { it.fields.isNotEmpty() }
         }
-        return CompletableFuture.completedFuture(removed)
+        return removed
     }
 
-    override fun tryHold(
+    override suspend fun tryHold(
         key: String,
         member: String,
         ttl: Duration,
         limit: Int,
         baseline: Int,
-    ): CompletableFuture<Boolean> {
+    ): Boolean {
         val now = System.currentTimeMillis()
         var granted = false
         holds.compute(key) { _, existing ->
@@ -117,10 +163,10 @@ class MemoryKeyValueStore : KeyValueStore {
             granted = true
             current
         }
-        return CompletableFuture.completedFuture(granted)
+        return granted
     }
 
-    override fun refresh(key: String, member: String, ttl: Duration): CompletableFuture<Boolean> {
+    override suspend fun refresh(key: String, member: String, ttl: Duration): Boolean {
         val now = System.currentTimeMillis()
         var refreshed = false
         holds.compute(key) { _, existing ->
@@ -130,7 +176,7 @@ class MemoryKeyValueStore : KeyValueStore {
             refreshed = true
             current
         }
-        return CompletableFuture.completedFuture(refreshed)
+        return refreshed
     }
 
     override fun close() {
@@ -144,7 +190,6 @@ class MemoryKeyValueStore : KeyValueStore {
     private fun deadline(ttl: Duration): Long = System.currentTimeMillis() + ttl.toMillis()
 
     private companion object {
-        private val DONE: CompletableFuture<Void> get() = CompletableFuture.completedFuture(null)
 
         /** Translate a Redis key glob (`*`, `?`, literals) into an equivalent regex. */
         private fun globToRegex(pattern: String): Regex = buildString {

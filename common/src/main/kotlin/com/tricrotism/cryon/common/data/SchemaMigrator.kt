@@ -1,7 +1,7 @@
 package com.tricrotism.cryon.common.data
 
+import kotlinx.coroutines.CancellationException
 import org.slf4j.Logger
-import java.util.concurrent.CompletableFuture
 
 /**
  * One forward step in a namespace's schema.
@@ -44,25 +44,29 @@ class Migration(val version: Int, val name: String, val apply: (SqlSession) -> U
  * ), logger)
  * ```
  */
-fun Database.migrate(
+suspend fun Database.migrate(
     namespace: String,
     migrations: List<Migration>,
     logger: Logger,
-): CompletableFuture<Int> {
+): Int {
     require(namespace.isNotBlank()) { "A migration namespace cannot be blank" }
     val ordered = migrations.sortedBy(Migration::version)
     require(ordered.distinctBy(Migration::version).size == ordered.size) {
         "Namespace '$namespace' declares two migrations with the same version"
     }
     require(ordered.all { it.version > 0 }) { "Migration versions start at 1" }
-    if (ordered.isEmpty()) return CompletableFuture.completedFuture(0)
+    if (ordered.isEmpty()) return 0
 
-    return update(CREATE_VERSION_TABLE)
-        .thenCompose { insertIfAbsent(VERSION_TABLE, VERSION_KEYS, VERSION_COLUMNS, namespace, 0) }
-        .thenCompose { transaction { session -> advance(session, namespace, ordered, logger) } }
-        .whenComplete { _, error ->
-            if (error != null) logger.error("Schema migration failed for '{}'", namespace, error)
-        }
+    try {
+        update(CREATE_VERSION_TABLE)
+        insertIfAbsent(VERSION_TABLE, VERSION_KEYS, VERSION_COLUMNS, namespace, 0)
+        return transaction { session -> advance(session, namespace, ordered, logger) }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        logger.error("Schema migration failed for '{}'", namespace, e)
+        throw e
+    }
 }
 
 /**

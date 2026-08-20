@@ -3,31 +3,42 @@ package com.tricrotism.cryon
 import com.github.retrooper.packetevents.PacketEvents
 import com.tricrotism.cryon.bedrock.BedrockBridge
 import com.tricrotism.cryon.command.*
+import com.tricrotism.cryon.common.colony.Colony
+import com.tricrotism.cryon.common.colony.SharedColony
+import com.tricrotism.cryon.common.concurrent.CryonIO
+import com.tricrotism.cryon.common.cooldown.CooldownService
+import com.tricrotism.cryon.common.cooldown.MemoryCooldowns
 import com.tricrotism.cryon.common.currency.Currencies
 import com.tricrotism.cryon.common.currency.CurrencyService
 import com.tricrotism.cryon.common.data.Database
 import com.tricrotism.cryon.common.data.DatabaseConfig
 import com.tricrotism.cryon.common.data.SqlDatabase
 import com.tricrotism.cryon.common.data.SqlDialect
+import com.tricrotism.cryon.common.diagnostic.Retention
 import com.tricrotism.cryon.common.flag.FeatureFlags
 import com.tricrotism.cryon.common.locale.*
+import com.tricrotism.cryon.common.lock.DistributedLock
+import com.tricrotism.cryon.common.lock.StoreDistributedLock
 import com.tricrotism.cryon.common.module.ModuleManager
 import com.tricrotism.cryon.common.module.ServiceRegistry
+import com.tricrotism.cryon.common.module.remote.RemoteModules
+import com.tricrotism.cryon.common.module.remote.UpdateResult
 import com.tricrotism.cryon.common.net.*
 import com.tricrotism.cryon.common.server.*
+import com.tricrotism.cryon.common.signal.LocalSignals
+import com.tricrotism.cryon.common.signal.Signals
 import com.tricrotism.cryon.common.text.Mini
 import com.tricrotism.cryon.inventory.DefaultInventorySearch
 import com.tricrotism.cryon.menu.AdminMenu
-import com.tricrotism.cryon.module.CommandRegistry
-import com.tricrotism.cryon.module.ModuleLoader
-import com.tricrotism.cryon.module.ModuleWatcher
-import com.tricrotism.cryon.module.SparkSupport
+import com.tricrotism.cryon.module.*
 import com.tricrotism.cryon.network.NetworkStatus
 import com.tricrotism.cryon.network.NodeReporter
 import com.tricrotism.cryon.network.agones.AgonesClient
 import com.tricrotism.cryon.network.agones.AgonesLifecycle
 import com.tricrotism.cryon.paper.api.CryonPaper
 import com.tricrotism.cryon.paper.api.PaperModuleContext
+import com.tricrotism.cryon.paper.api.bar.ActionBars
+import com.tricrotism.cryon.paper.api.bar.BossBars
 import com.tricrotism.cryon.paper.api.bedrock.BedrockService
 import com.tricrotism.cryon.paper.api.command.CommandService
 import com.tricrotism.cryon.paper.api.event.Events
@@ -35,12 +46,14 @@ import com.tricrotism.cryon.paper.api.event.Subscription
 import com.tricrotism.cryon.paper.api.inventory.InventorySearch
 import com.tricrotism.cryon.paper.api.menu.MenuPalette
 import com.tricrotism.cryon.paper.api.placeholder.PlaceholderService
+import com.tricrotism.cryon.paper.api.scheduler.CryonDispatchers
 import com.tricrotism.cryon.paper.api.scheduler.Schedulers
 import com.tricrotism.cryon.papi.CorePlaceholders
 import com.tricrotism.cryon.papi.PapiBridge
 import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask
+import kotlinx.coroutines.*
 import org.bukkit.Server
 import org.bukkit.configuration.file.FileConfiguration
 import org.bukkit.event.EventPriority
@@ -53,8 +66,8 @@ import org.slf4j.LoggerFactory
 import xyz.xenondevs.invui.InvUI
 import java.io.File
 import java.time.Duration
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * The bootstrap. On load it scans `plugins/Cryon/modules/` for feature jars and loads each in its
@@ -70,6 +83,8 @@ class Cryon : JavaPlugin() {
     private lateinit var loader: ModuleLoader
     private lateinit var commandRegistry: CommandRegistry
     private val watchers = ArrayList<ModuleWatcher>()
+    private var remoteModules: RemoteModules? = null
+    private var remoteTask: ScheduledTask? = null
 
     private lateinit var messageService: MessageService
     private lateinit var services: ServiceRegistry
@@ -91,6 +106,16 @@ class Cryon : JavaPlugin() {
     private var bedrockService: AutoCloseable? = null
     private var heartbeatSeconds: Long = 5
     private val subscriptions = ArrayList<Subscription>()
+
+    private var colony: SharedColony? = null
+    private var colonyTask: ScheduledTask? = null
+    private val retention = Retention()
+
+    private val scope = CoroutineScope(
+        SupervisorJob() + CryonDispatchers.Global + CoroutineExceptionHandler { _, error ->
+            log.error("Unhandled failure in a Cryon core coroutine", error)
+        }
+    )
 
     // The transport. Always installed: Redis when configured, in-process otherwise, so the services
     // above it have one implementation each and features never branch on the deployment shape.
@@ -137,11 +162,10 @@ class Cryon : JavaPlugin() {
             log,
             modulesDir,
             File(dataFolder, ".module-cache"),
-            javaClass.classLoader
+            javaClass.classLoader,
+            retention,
         )
 
-        // Shared cross-module contract layer (api/) parents every feature loader, then register the
-        // feature jars in modules/ so their classes exist before the rest of the server enables.
         loader.loadSharedApi(apiDir)
         loader.prepareCache()
         loader.registerAll()
@@ -170,25 +194,25 @@ class Cryon : JavaPlugin() {
         bedrockService = bedrock as? AutoCloseable
         corePlaceholders = papi.register(CORE_COMMAND_OWNER, CorePlaceholders(identity))
 
-        val menu = AdminMenu(manager, featureFlags, status, bedrock)
+        val menu = AdminMenu(manager, featureFlags, status, bedrock, scope)
         adminMenu = menu
 
         manager.loadAll(context)
         manager.enableAll()
         manager.postLoadAll()
 
-        seedAdminLang(messageService) // after modules so their keys land in the reference file too
+        seedAdminLang(messageService)
 
+        startRemoteModules(modulesDir)
         bootstrapCommands(
             messageService,
             status,
             papi,
             menu
-        ) // after modules so the boot flush sees their contributions
+        )
         startWatchers(modulesDir, apiDir)
-        announceReady(services) // only now can this server actually serve the players routed to it
+        announceReady(services)
 
-        // Next tick: spark may enable after us, and the splice reads loaded modules either way.
         val authors = pluginMeta.authors.joinToString(", ").ifEmpty { "Cryon" }
         Schedulers.globalLater(1) { SparkSupport.install(server, loader, authors, log) }
     }
@@ -231,10 +255,59 @@ class Cryon : JavaPlugin() {
                 }
             },
         )
-        // Any change to a contract jar means re-linking every module, so both edges trigger the cascade.
+
         val reloadApi: (File) -> Unit =
             { runCatching { loader.reloadApi() }.onFailure { log.error("api/ reload failed", it) } }
         startWatcher(apiDir, "api", onChanged = reloadApi, onDeleted = reloadApi)
+    }
+
+    /**
+     * Start polling a remote Maven repository for new feature jars, when `remote.enabled` is on.
+     *
+     * The poller only writes files into `modules/`. Whether a downloaded build then *applies* is
+     * decided by `modules.auto-reload` and nothing else: with the watcher running a replaced jar is
+     * hot-swapped exactly as if an admin had dropped it in, and with the watcher off the build waits
+     * on disk for the next restart or an explicit `/cryon load`. There is deliberately no second
+     * switch, because a remote update that could apply while local ones could not would be a
+     * surprise nobody asked for.
+     *
+     * The first poll is delayed rather than run at boot: blocking startup on a network fetch would
+     * make an unreachable repository an unbootable server, and the modules already on disk are the
+     * ones this server was last known to run.
+     */
+    private fun startRemoteModules(modulesDir: File) {
+        val remote = RemoteModuleConfig.build(config, modulesDir, dataFolder, log) ?: return
+        remoteModules = remote
+        val seconds = config.getLong("remote.poll-seconds", 300).coerceAtLeast(30)
+        remoteTask = Schedulers.asyncTimer(REMOTE_FIRST_POLL_SECONDS, seconds, TimeUnit.SECONDS) {
+            scope.launch { reportRemote(remote.pollAll()) }
+        }
+    }
+
+    /**
+     * Log what a poll did, and say plainly when a build landed but will not run yet, since a jar
+     * that changed on disk without changing in memory is the one outcome an operator would
+     * otherwise have to infer.
+     */
+    private fun reportRemote(results: List<UpdateResult>) {
+        val applies = config.getBoolean("modules.auto-reload", !config.getBoolean("production", true))
+        for (result in results) when (result) {
+            is UpdateResult.Installed -> if (applies) {
+                log.info("Remote module {} updated to {}", result.artifact, result.to)
+            } else {
+                log.info(
+                    "Remote module {} downloaded ({}), and applies on restart or /cryon load {}",
+                    result.artifact,
+                    result.to,
+                    result.artifact.fileName,
+                )
+            }
+
+            is UpdateResult.Failed ->
+                log.warn("Remote module {} could not be updated: {}", result.artifact, result.reason)
+
+            is UpdateResult.UpToDate -> Unit
+        }
     }
 
     private fun startWatcher(dir: File, label: String, onChanged: (File) -> Unit, onDeleted: (File) -> Unit) {
@@ -330,16 +403,17 @@ class Cryon : JavaPlugin() {
         menu: AdminMenu,
     ) {
         val menuFirst = config.getBoolean("commands.menu", true)
-        val handlers = mutableListOf<Any>(
+        val handlers = mutableListOf(
             ModuleCommands(
-                manager, loader, featureFlags, commandRegistry, status, messageService, placeholders, menu, menuFirst,
+                manager, loader, featureFlags, commandRegistry, status, messageService, placeholders, menu,
+                menuFirst, retention, remoteModules, scope,
             ),
-            LanguageCommands(messageService),
+            LanguageCommands(messageService, scope),
         )
         currencies?.let { service ->
-            handlers += BalanceCommand(service, messageService)
-            handlers += PayCommand(service, messageService)
-            handlers += CurrencyAdminCommands(service, messageService)
+            handlers += BalanceCommand(service, messageService, scope)
+            handlers += PayCommand(service, messageService, scope)
+            handlers += CurrencyAdminCommands(service, messageService, scope)
         }
         commandRegistry.register(CORE_COMMAND_OWNER, { true }, handlers)
         lifecycleManager.registerEventHandler(LifecycleEvents.COMMANDS) { event ->
@@ -382,7 +456,7 @@ class Cryon : JavaPlugin() {
         setupTransport(services, cfg)
 
         identity = resolveIdentity(cfg)
-        services.register<NodeIdentity>(identity) // so a feature can ask who it is
+        services.register<NodeIdentity>(identity)
         heartbeatSeconds = cfg.getLong("network.heartbeat-seconds", 5).coerceAtLeast(1)
 
         featureFlags = FeatureFlags(identity.serverId, database, messenger, log)
@@ -392,13 +466,24 @@ class Cryon : JavaPlugin() {
         setupCurrency(services, cfg)
 
         services.register<InventorySearch>(DefaultInventorySearch())
+        BossBars.install()
+        ActionBars.install()
+        services.register<CooldownService>(MemoryCooldowns())
+        services.register<Retention>(retention)
+        services.register<Signals>(LocalSignals(log))
+        services.register<DistributedLock>(StoreDistributedLock(store, log))
 
         val db = database
         val locale: LocaleStore = if (db != null) {
             PlayerLocaleStore(db, messenger).also { s ->
-                s.init().exceptionally { log.error("Failed to create locale table", it); null }
+                scope.launch {
+                    runCatching { s.init() }.onFailure { log.error("Failed to create locale table", it) }
+                }
                 subscriptions += Events.subscribe<PlayerJoinEvent>()
-                    .handler { event -> s.load(event.player.uniqueId) }
+                    .handler { event ->
+                        val uuid = event.player.uniqueId
+                        scope.launch { s.load(uuid) }
+                    }
                 subscriptions += Events.subscribe<PlayerQuitEvent>()
                     .handler { event -> s.unload(event.player.uniqueId) }
                 log.info("Persistent player locale enabled")
@@ -428,12 +513,12 @@ class Cryon : JavaPlugin() {
             return
         }
         val service = Currencies(identity.serverId, database, messenger, log)
-        service.init()
+        scope.launch { service.init() }
         currencies = service
         services.register<CurrencyService>(service)
         val rankSeconds = cfg.getLong("currency.leaderboard-refresh-seconds", 300).coerceAtLeast(30)
         leaderboardTask = Schedulers.asyncTimer(rankSeconds, rankSeconds, TimeUnit.SECONDS) {
-            service.refreshLeaderboards()
+            scope.launch { service.refreshLeaderboards() }
         }
     }
 
@@ -521,6 +606,7 @@ class Cryon : JavaPlugin() {
      */
     private fun setupNetwork(services: ServiceRegistry) {
         setupHandoff(services)
+        setupColony(services)
         if (!config.getBoolean("network.registry-enabled", true)) {
             log.info("Server registry disabled by config (network.registry-enabled=false)")
             return
@@ -531,8 +617,26 @@ class Cryon : JavaPlugin() {
         services.register<ServerRegistry>(reg)
 
         if (sharedTransport) services.register<PlayerRouter>(DefaultPlayerRouter(reg, messenger))
-        reporter = NodeReporter(reg, identity, server, Duration.ofSeconds(heartbeatSeconds), log)
+        services.register<Provisioner>(
+            RegistryProvisioner(reg, { services.find<NodeAllocator>() }, log)
+        )
+        reporter = NodeReporter(reg, identity, server, Duration.ofSeconds(heartbeatSeconds), log, scope)
             .also { it.register() }
+    }
+
+    private fun setupColony(services: ServiceRegistry) {
+        val instance = SharedColony(
+            identity.nodeId,
+            identity.serverId,
+            store,
+            log,
+            Duration.ofSeconds(heartbeatSeconds * 3),
+        )
+        colony = instance
+        services.register<Colony>(instance)
+        colonyTask = Schedulers.asyncTimer(heartbeatSeconds, heartbeatSeconds, TimeUnit.SECONDS) {
+            scope.launch { instance.tick() }
+        }
     }
 
     /**
@@ -545,7 +649,10 @@ class Cryon : JavaPlugin() {
         handoff = coordinator
         services.register<PlayerHandoff>(coordinator)
         subscriptions += Events.subscribe<PlayerQuitEvent>(EventPriority.MONITOR)
-            .handler { event -> coordinator.flushOnQuit(event.player.uniqueId) }
+            .handler { event ->
+                val uuid = event.player.uniqueId
+                scope.launch { coordinator.flushOnQuit(uuid) }
+            }
     }
 
     /** Advertise this server as READY, now that the modules serving its players are enabled. */
@@ -589,6 +696,9 @@ class Cryon : JavaPlugin() {
     }
 
     override fun onDisable() {
+        remoteTask?.let { runCatching { it.cancel() } }
+        remoteTask = null
+        remoteModules = null
         watchers.forEach { runCatching { it.close() } }
         watchers.clear()
         subscriptions.forEach { runCatching { it.unregister() } }
@@ -606,18 +716,30 @@ class Cryon : JavaPlugin() {
         if (::loader.isInitialized) loader.close()
         registry?.let { runCatching { it.close() } }
         handoff?.let { runCatching { it.close() } }
+        runCatching { ActionBars.uninstall() }
+        runCatching { BossBars.uninstall() }
+        colonyTask?.let { runCatching { it.cancel() } }
+        colonyTask = null
+        colony?.let { instance ->
+            runCatching {
+                runBlocking { withTimeout(COLONY_RESIGN_TIMEOUT_MILLIS.milliseconds) { instance.shutdown() } }
+            }.onFailure { log.warn("Timed out resigning colony crowns on shutdown") }
+        }
+        colony = null
         leaderboardTask?.let { runCatching { it.cancel() } }
         leaderboardTask = null
         currencies?.close()
         currencies = null
         if (::featureFlags.isInitialized) featureFlags.close()
         localeStore?.close()
+        scope.cancel("The Cryon core is shutting down")
         if (::messenger.isInitialized) messenger.close()
         if (::store.isInitialized) store.close()
         database?.close()
         if (::services.isInitialized) services.clear()
         runCatching { PacketEvents.getAPI()?.terminate() }
         Locales.install(null)
+        CryonIO.shutdown()
     }
 
     /**
@@ -631,9 +753,13 @@ class Cryon : JavaPlugin() {
         val online = server.onlinePlayers.map { it.uniqueId }
         if (online.isEmpty()) return
         log.info("Flushing {} online player(s) before shutdown", online.size)
-        val flushes = online.map { coordinator.flush(it) }.toTypedArray()
-        runCatching { CompletableFuture.allOf(*flushes).orTimeout(FLUSH_TIMEOUT_SECONDS, TimeUnit.SECONDS).join() }
-            .onFailure { log.error("Timed out flushing players on shutdown, some state may be lost", it) }
+        runCatching {
+            runBlocking {
+                withTimeout(TimeUnit.SECONDS.toMillis(FLUSH_TIMEOUT_SECONDS).milliseconds) {
+                    online.map { async { coordinator.flush(it) } }.awaitAll()
+                }
+            }
+        }.onFailure { log.error("Timed out flushing players on shutdown, some state may be lost", it) }
     }
 
     private class CryonContext(
@@ -653,5 +779,11 @@ class Cryon : JavaPlugin() {
 
         /** How long shutdown waits for player flushes before giving up and saying so. */
         const val FLUSH_TIMEOUT_SECONDS = 10L
+
+        /** How long shutdown waits for the colony to resign before letting the heartbeat expire it. */
+        const val COLONY_RESIGN_TIMEOUT_MILLIS = 2_000L
+
+        /** Long enough that a boot finishes before the first repository fetch competes with it. */
+        const val REMOTE_FIRST_POLL_SECONDS = 15L
     }
 }

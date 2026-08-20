@@ -14,6 +14,9 @@ import com.tricrotism.cryon.paper.api.command.Permission
 import com.tricrotism.cryon.paper.api.command.Subcommand
 import com.tricrotism.cryon.paper.api.extension.render
 import com.tricrotism.cryon.paper.api.scheduler.Schedulers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver
@@ -47,7 +50,7 @@ internal fun MessageService.say(
 /**
  * Run [block] on [sender]'s own thread.
  *
- * Every reply in this file lands in a `CompletableFuture` continuation, which runs on whichever
+ * Every reply in this file is written after a suspending read or write, so it resumes on whichever
  * thread the database or messenger finished on. Rendering a line resolves the viewer's locale and
  * sending it touches their connection, so both belong on that player's region thread. Console has no
  * region and is safe to write from anywhere.
@@ -87,6 +90,7 @@ internal object CurrencyCommandSupport {
 class BalanceCommand(
     private val currencies: CurrencyService,
     private val messages: MessageService,
+    private val scope: CoroutineScope,
 ) {
 
     /**
@@ -126,7 +130,15 @@ class BalanceCommand(
     }
 
     private fun show(sender: CommandSender, player: UUID, name: String) {
-        currencies.balances(player).thenAccept { balances ->
+        scope.launch {
+            val balances = try {
+                currencies.balances(player)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                reply(sender) { sender.sendMessage(CommonMessages.error(messages.say(sender, "currency.failed"))) }
+                return@launch
+            }
             reply(sender) {
                 if (balances.isEmpty()) {
                     sender.sendMessage(CommonMessages.info(messages.say(sender, "currency.none")))
@@ -147,9 +159,6 @@ class BalanceCommand(
                     )
                 }
             }
-        }.exceptionally {
-            reply(sender) { sender.sendMessage(CommonMessages.error(messages.say(sender, "currency.failed"))) }
-            null
         }
     }
 
@@ -174,6 +183,7 @@ class BalanceCommand(
 class PayCommand(
     private val currencies: CurrencyService,
     private val messages: MessageService,
+    private val scope: CoroutineScope,
 ) {
 
     @Subcommand
@@ -215,7 +225,17 @@ class PayCommand(
         }
 
         val recipient = target.uniqueId
-        currencies.transfer(currency, player.uniqueId, recipient, value, "pay").thenAccept { result ->
+        scope.launch {
+            val result = try {
+                currencies.transfer(currency, player.uniqueId, recipient, value, "pay")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                Schedulers.entity(player) {
+                    player.sendMessage(CommonMessages.error(messages.render(player, "currency.failed")))
+                }
+                return@launch
+            }
             Schedulers.entity(player) {
                 if (result != TransferResult.COMPLETED) {
                     val key =
@@ -243,7 +263,7 @@ class PayCommand(
                 )
                 player.playSound(player.location, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1.5f)
             }
-            if (result != TransferResult.COMPLETED) return@thenAccept
+            if (result != TransferResult.COMPLETED) return@launch
             CurrencyCommandSupport.closeMenu(recipient)
             Bukkit.getPlayer(recipient)?.let { online ->
                 Schedulers.entity(online) {
@@ -258,11 +278,6 @@ class PayCommand(
                     )
                 }
             }
-        }.exceptionally {
-            Schedulers.entity(player) {
-                player.sendMessage(CommonMessages.error(messages.render(player, "currency.failed")))
-            }
-            null
         }
     }
 
@@ -288,6 +303,7 @@ class PayCommand(
 class CurrencyAdminCommands(
     private val currencies: CurrencyService,
     private val messages: MessageService,
+    private val scope: CoroutineScope,
 ) {
 
     @Subcommand("list")
@@ -297,14 +313,14 @@ class CurrencyAdminCommands(
             sender.sendMessage(CommonMessages.info(messages.say(sender, "currency.none_registered")))
             return
         }
-        for (currency in all) {
+        for ((id, displayName, scope, _, _, _, _, leaderboard) in all) {
             sender.sendMessage(
                 messages.say(
                     sender, "currency.list_row",
-                    Placeholder.unparsed("currency", currency.id),
-                    Placeholder.unparsed("name", currency.displayName),
-                    Placeholder.unparsed("scope", currency.scope.name.lowercase()),
-                    Placeholder.unparsed("ranked", (currency.leaderboard != null).toString()),
+                    Placeholder.unparsed("currency", id),
+                    Placeholder.unparsed("name", displayName),
+                    Placeholder.unparsed("scope", scope.name.lowercase()),
+                    Placeholder.unparsed("ranked", (leaderboard != null).toString()),
                 )
             )
         }
@@ -335,14 +351,14 @@ class CurrencyAdminCommands(
                 messages.say(sender, "currency.top_header", Placeholder.unparsed("currency", currency.displayName))
             )
         )
-        for (ranking in rankings) {
-            val name = Bukkit.getPlayer(ranking.player)?.name ?: ranking.player.toString().take(8)
+        for ((position, player, balance) in rankings) {
+            val name = Bukkit.getPlayer(player)?.name ?: player.toString().take(8)
             sender.sendMessage(
                 messages.say(
                     sender, "currency.top_row",
-                    Placeholder.unparsed("position", ranking.position.toString()),
+                    Placeholder.unparsed("position", position.toString()),
                     Placeholder.unparsed("player", name),
-                    Placeholder.unparsed("balance", currency.format(ranking.balance)),
+                    Placeholder.unparsed("balance", currency.format(balance)),
                 )
             )
         }
@@ -355,7 +371,8 @@ class CurrencyAdminCommands(
         @Arg("currency", suggests = "currencies") currencyId: String,
         @Arg("amount") amount: String,
     ) = mutate(sender, "give", name, currencyId, amount) { currency, target, value ->
-        currencies.deposit(currency, target, value, "admin:${sender.name}").thenApply { true }
+        currencies.deposit(currency, target, value, "admin:${sender.name}")
+        true
     }
 
     @Subcommand("take")
@@ -375,7 +392,8 @@ class CurrencyAdminCommands(
         @Arg("currency", suggests = "currencies") currencyId: String,
         @Arg("amount") amount: String,
     ) = mutate(sender, "set", name, currencyId, amount, allowZero = true) { currency, target, value ->
-        currencies.set(currency, target, value, "admin:${sender.name}").thenApply { true }
+        currencies.set(currency, target, value, "admin:${sender.name}")
+        true
     }
 
     /** Shared shape: resolve, close the target's menu, apply, then report what actually happened. */
@@ -386,7 +404,7 @@ class CurrencyAdminCommands(
         currencyId: String,
         amount: String,
         allowZero: Boolean = false,
-        action: (Currency, UUID, PackedDecimal) -> java.util.concurrent.CompletableFuture<Boolean>,
+        action: suspend (Currency, UUID, PackedDecimal) -> Boolean,
     ) {
         val currency = resolve(sender, currencyId) { "/currency list" } ?: return
         val value =
@@ -409,7 +427,15 @@ class CurrencyAdminCommands(
         }
         val id = target.uniqueId
         CurrencyCommandSupport.closeMenu(target)
-        action(currency, id, value).thenAccept { applied ->
+        scope.launch {
+            val applied = try {
+                action(currency, id, value)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                reply(sender) { sender.sendMessage(CommonMessages.error(messages.say(sender, "currency.failed"))) }
+                return@launch
+            }
             reply(sender) {
                 val key = if (applied) "currency.admin_applied" else "currency.admin_refused"
                 val line = messages.say(
@@ -419,9 +445,6 @@ class CurrencyAdminCommands(
                 )
                 sender.sendMessage(if (applied) CommonMessages.success(line) else CommonMessages.error(line))
             }
-        }.exceptionally {
-            reply(sender) { sender.sendMessage(CommonMessages.error(messages.say(sender, "currency.failed"))) }
-            null
         }
     }
 

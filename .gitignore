@@ -20,6 +20,7 @@ hs_err_pid*
 # Common working directories — `run` for :paper:runServer, `run-folia` for :paper:runFolia
 run
 run-folia
+patches/
 
 # Local dev test network: track the authored harness (scripts, README, hand-written configs),
 # ignore everything downloaded or generated (portable redis/postgres/velocity/paper binaries,

@@ -7,7 +7,7 @@ and admins can override any key in `plugins/Cryon/lang/`. Crowdin manages the tr
 
 ## One-time setup
 
-1. Create a Crowdin project — file format **Java Properties**, source language **English**.
+1. Create a Crowdin project, file format **Java Properties**, source language **English**.
 2. Add two repo secrets (Settings → Secrets and variables → Actions):
     - `CROWDIN_PROJECT_ID`
     - `CROWDIN_PERSONAL_TOKEN` (personal access token with project scope)
@@ -17,7 +17,7 @@ and admins can override any key in `plugins/Cryon/lang/`. Crowdin manages the tr
    <[^>]+>
    ```
    (Every `<…>` in Cryon strings is a tag, so protecting all of them is safe.)
-4. Seed the existing translation — this repo already ships a hand-made `de_DE.properties`. Import it
+4. Seed the existing translation. This repo already ships a hand-made `de_DE.properties`. Import it
    once so Crowdin starts pre-filled (the workflow keeps `upload_translations: false` afterwards so
    Crowdin stays the source of truth):
    ```

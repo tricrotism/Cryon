@@ -2,10 +2,12 @@ package com.tricrotism.cryon.common.data
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.withContext
 import org.slf4j.Logger
 import java.sql.*
 import java.util.*
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -13,9 +15,15 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * [Database] over a HikariCP pool, for any backend in [SqlDialect] (PostgreSQL, MySQL, or embedded
  * H2). The backend only changes the JDBC URL and driver; all query/update work is plain JDBC.
- * Blocking JDBC runs on a daemon pool sized to the connection pool, exposed through
- * [CompletableFuture]s. Construct from [DatabaseConfig]; throws if the pool can't initialize (the
- * core catches and degrades gracefully).
+ * Construct from [DatabaseConfig]; throws if the pool can't initialize (the core catches and degrades
+ * gracefully).
+ *
+ * **Blocking JDBC runs on a daemon pool sized to the connection pool, and the suspending API is a
+ * `withContext` onto it.** The pool stays platform-threaded and stays that size on purpose: threads
+ * here are not the scarce resource, connections are, so a wider pool would only move the queue from
+ * the executor to `getConnection` — where waiting is bounded by Hikari's timeout and surfaces as a
+ * thrown exception rather than as backpressure. Bounding at the executor makes a burst of queries
+ * wait quietly instead of failing.
  */
 class SqlDatabase(config: DatabaseConfig) : Database {
 
@@ -35,8 +43,10 @@ class SqlDatabase(config: DatabaseConfig) : Database {
         Thread(r, "cryon-db-${threadId.incrementAndGet()}").apply { isDaemon = true }
     }
 
-    override fun <T> transaction(body: (SqlSession) -> T): CompletableFuture<T> =
-        CompletableFuture.supplyAsync({
+    private val dispatcher: CoroutineDispatcher = executor.asCoroutineDispatcher()
+
+    override suspend fun <T> transaction(body: (SqlSession) -> T): T =
+        withContext(dispatcher) {
             dataSource.connection.use { conn ->
                 conn.autoCommit = false
                 try {
@@ -50,10 +60,10 @@ class SqlDatabase(config: DatabaseConfig) : Database {
                     runCatching { conn.autoCommit = true }
                 }
             }
-        }, executor)
+        }
 
-    override fun <T> query(sql: String, vararg params: Any?, mapper: (ResultSet) -> T): CompletableFuture<List<T>> =
-        CompletableFuture.supplyAsync({
+    override suspend fun <T> query(sql: String, vararg params: Any?, mapper: (ResultSet) -> T): List<T> =
+        withContext(dispatcher) {
             dataSource.connection.use { conn ->
                 conn.prepareStatement(sql).use { stmt ->
                     bind(stmt, params)
@@ -64,17 +74,17 @@ class SqlDatabase(config: DatabaseConfig) : Database {
                     }
                 }
             }
-        }, executor)
+        }
 
-    override fun update(sql: String, vararg params: Any?): CompletableFuture<Int> =
-        CompletableFuture.supplyAsync({
+    override suspend fun update(sql: String, vararg params: Any?): Int =
+        withContext(dispatcher) {
             dataSource.connection.use { conn ->
                 conn.prepareStatement(sql).use { stmt ->
                     bind(stmt, params)
                     stmt.executeUpdate()
                 }
             }
-        }, executor)
+        }
 
     /**
      * Drain the query threads before the pool goes away.
@@ -82,9 +92,13 @@ class SqlDatabase(config: DatabaseConfig) : Database {
      * `shutdown()` only stops new submissions; it does not wait. Closing the [dataSource] straight
      * after would evict connections out from under statements still executing, which on a normal
      * shutdown is every write issued during teardown: module `onDisable` state, the last flag and
-     * locale updates, the registry deregister. Those futures are fire-and-forget, so the failure
+     * locale updates, the registry deregister. Those are launched rather than awaited, so the failure
      * would also be silent. Wait the drain out, then force what is left rather than letting one
      * wedged statement hold the server up forever.
+     *
+     * Module scopes are cancelled before this runs, which unblocks anything *suspended* on the way to
+     * a statement — but a thread already inside `executeUpdate` is not at a suspension point and runs
+     * to completion regardless. That is what the drain is still here for.
      */
     override fun close() {
         executor.shutdown()
@@ -121,6 +135,17 @@ class SqlDatabase(config: DatabaseConfig) : Database {
                 bind(stmt, params)
                 stmt.executeUpdate()
             }
+
+        override fun batch(sql: String, rows: List<Array<out Any?>>): Int {
+            if (rows.isEmpty()) return 0
+            return conn.prepareStatement(sql).use { stmt ->
+                for (row in rows) {
+                    bind(stmt, row)
+                    stmt.addBatch()
+                }
+                stmt.executeBatch().sumOf { if (it > 0) it else 0 }
+            }
+        }
 
         private fun bind(stmt: PreparedStatement, params: Array<out Any?>) {
             for (i in params.indices) stmt.setObject(i + 1, params[i])

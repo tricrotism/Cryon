@@ -1,15 +1,20 @@
 package com.tricrotism.cryon.common.server
 
+import com.tricrotism.cryon.common.concurrent.CryonIO
 import com.tricrotism.cryon.common.data.Database
 import com.tricrotism.cryon.common.data.Migration
 import com.tricrotism.cryon.common.data.migrate
 import com.tricrotism.cryon.common.net.KeyValueStore
 import com.tricrotism.cryon.common.net.Messenger
 import com.tricrotism.cryon.common.net.MessengerSubscription
+import kotlinx.coroutines.*
 import org.slf4j.Logger
 import java.time.Duration
 import java.util.*
-import java.util.concurrent.*
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * The one [ServerRegistry] implementation, over whatever [KeyValueStore] + [Messenger] transport the
@@ -40,6 +45,14 @@ class SharedServerRegistry(
 
     private val listeners = CopyOnWriteArrayList<(ServerRegistryEvent) -> Unit>()
     private var subscription: MessengerSubscription? = null
+
+    /**
+     * Owns the registry's own background work: the warm-up read, the catalog migration and the
+     * per-node catalog upsert. Each is launched rather than awaited because the callers are
+     * lifecycle hooks rather than coroutines, and cancelling this on [close] stops a slow warm-up
+     * writing into a replica the process is already tearing down.
+     */
+    private val scope = CoroutineScope(SupervisorJob() + CryonIO.dispatcher)
     private val reaper = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "cryon-registry-reaper").apply { isDaemon = true }
     }
@@ -52,24 +65,24 @@ class SharedServerRegistry(
         reaper.scheduleAtFixedRate(::reap, period, period, TimeUnit.MILLISECONDS)
     }
 
-    override fun register(instance: Node): CompletableFuture<Void> {
+    override suspend fun register(instance: Node) {
         val stamped = instance.copy(lastHeartbeat = System.currentTimeMillis())
         owned[stamped.nodeId] = stamped
         upsertServer(stamped)
-        return writeAndBroadcast(stamped, ADD)
+        writeAndBroadcast(stamped, ADD)
     }
 
-    override fun heartbeat(nodeId: String, playerCount: Int, state: NodeState): CompletableFuture<Void> {
-        val base = owned[nodeId] ?: return CompletableFuture.completedFuture(null)
+    override suspend fun heartbeat(nodeId: String, playerCount: Int, state: NodeState) {
+        val base = owned[nodeId] ?: return
         val updated = base.copy(playerCount = playerCount, state = state, lastHeartbeat = System.currentTimeMillis())
         owned[nodeId] = updated
-        return writeAndBroadcast(updated, UPD)
+        writeAndBroadcast(updated, UPD)
     }
 
-    override fun deregister(nodeId: String): CompletableFuture<Void> {
+    override suspend fun deregister(nodeId: String) {
         val serverId = owned.remove(nodeId)?.serverId ?: replica[nodeId]?.serverId ?: ""
-        return store.delete(nodeKey(nodeId))
-            .thenCompose { messenger.publish(EVENTS_CHANNEL, "$DEL$ENVELOPE$nodeId$ENVELOPE$serverId") }
+        store.delete(nodeKey(nodeId))
+        messenger.publish(EVENTS_CHANNEL, "$DEL$ENVELOPE$nodeId$ENVELOPE$serverId")
     }
 
     override fun node(nodeId: String): Node? = replica[nodeId]
@@ -83,18 +96,25 @@ class SharedServerRegistry(
             .filter { it.serverId == serverId && it.state == NodeState.READY && it.playerCount < it.maxPlayers }
             .minWithOrNull(compareBy({ it.playerCount }, { it.nodeId }))
 
-    override fun tryReserve(nodeId: String, player: UUID): CompletableFuture<Boolean> {
-        val instance = replica[nodeId] ?: return CompletableFuture.completedFuture(false)
-        if (instance.maxPlayers <= 0) return CompletableFuture.completedFuture(true)
+    override suspend fun tryReserve(nodeId: String, player: UUID): Boolean {
+        val instance = replica[nodeId] ?: return false
+        if (instance.maxPlayers <= 0) return true
         // The replica's playerCount is up to one heartbeat stale, so the hold only ever makes the
         // in-flight reservations atomic against each other, never the count they are added to.
-        return store.tryHold(
-            key = RESERVED_PREFIX + nodeId,
-            member = player.toString(),
-            ttl = ttl,
-            limit = instance.maxPlayers,
-            baseline = instance.playerCount,
-        ).exceptionally { false }
+        return try {
+            store.tryHold(
+                key = RESERVED_PREFIX + nodeId,
+                member = player.toString(),
+                ttl = ttl,
+                limit = instance.maxPlayers,
+                baseline = instance.playerCount,
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error("Failed to reserve a slot on {} for {}", nodeId, player, e)
+            false
+        }
     }
 
     override fun onChange(listener: (ServerRegistryEvent) -> Unit): AutoCloseable {
@@ -103,16 +123,17 @@ class SharedServerRegistry(
     }
 
     override fun close() {
+        scope.cancel("The server registry was closed")
         reaper.shutdownNow()
         subscription?.unsubscribe()
         subscription = null
         listeners.clear()
     }
 
-    private fun writeAndBroadcast(instance: Node, type: String): CompletableFuture<Void> {
+    private suspend fun writeAndBroadcast(instance: Node, type: String) {
         val line = NodeCodec.encode(instance)
-        return store.set(nodeKey(instance.nodeId), line, ttl)
-            .thenCompose { messenger.publish(EVENTS_CHANNEL, "$type$ENVELOPE$line") }
+        store.set(nodeKey(instance.nodeId), line, ttl)
+        messenger.publish(EVENTS_CHANNEL, "$type$ENVELOPE$line")
     }
 
     /** Apply a broadcast from any node (including our own echo, idempotent). */
@@ -151,17 +172,20 @@ class SharedServerRegistry(
     }
 
     private fun warmUp() {
-        store.keys("$INSTANCE_PREFIX*")
-            .thenCompose { keys ->
-                if (keys.isEmpty()) CompletableFuture.completedFuture(emptyList<String?>()) else store.mget(keys)
-            }
-            .thenAccept { values ->
+        scope.launch {
+            try {
+                val keys = store.keys("$INSTANCE_PREFIX*")
+                val values = if (keys.isEmpty()) emptyList() else store.mget(keys)
                 values.filterNotNull().mapNotNull(NodeCodec::decode).forEach { instance ->
                     replica[instance.nodeId] = instance.copy(lastHeartbeat = System.currentTimeMillis())
                 }
                 logger.info("Server registry warmed up with {} live node(s)", replica.size)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.error("Failed to warm up the server registry", e)
             }
-            .exceptionally { logger.error("Failed to warm up the server registry", it); null }
+        }
     }
 
     /**
@@ -175,12 +199,13 @@ class SharedServerRegistry(
      */
     private fun createCatalog() {
         val db = database ?: return
-        db.migrate(
-            "cryon-core-servers",
-            listOf(
-                Migration(1, "create the server catalog") { session ->
-                    session.update(
-                        """
+        scope.launch {
+            db.migrate(
+                "cryon-core-servers",
+                listOf(
+                    Migration(1, "create the server catalog") { session ->
+                        session.update(
+                            """
                         CREATE TABLE IF NOT EXISTS $SERVER_TABLE (
                             server_id     VARCHAR(64) PRIMARY KEY,
                             policy        VARCHAR(16) NOT NULL DEFAULT 'persistent',
@@ -189,29 +214,33 @@ class SharedServerRegistry(
                             target_shards INT NOT NULL DEFAULT 1
                         )
                         """.trimIndent()
-                    )
-                },
-                Migration(2, "adopt the pre-rename catalog") { session ->
-                    val legacy = session.query(
-                        "SELECT COUNT(*) FROM information_schema.tables WHERE UPPER(table_name) = ?",
-                        LEGACY_TABLE.uppercase(),
-                    ) { it.getInt(1) }.firstOrNull() ?: 0
-                    if (legacy == 0) return@Migration
-                    session.update(
-                        "INSERT INTO $SERVER_TABLE (server_id, policy, max_players, min_shards, target_shards) " +
-                                "SELECT family, policy, max_players, min_shards, target_shards FROM $LEGACY_TABLE"
-                    )
-                    session.update("DROP TABLE $LEGACY_TABLE")
-                },
-            ),
-            logger,
-        )
+                        )
+                    },
+                    Migration(2, "adopt the pre-rename catalog") { session ->
+                        val legacy = session.query(
+                            "SELECT COUNT(*) FROM information_schema.tables WHERE UPPER(table_name) = ?",
+                            LEGACY_TABLE.uppercase(),
+                        ) { it.getInt(1) }.firstOrNull() ?: 0
+                        if (legacy == 0) return@Migration
+                        session.update(
+                            "INSERT INTO $SERVER_TABLE (server_id, policy, max_players, min_shards, target_shards) " +
+                                    "SELECT family, policy, max_players, min_shards, target_shards FROM $LEGACY_TABLE"
+                        )
+                        session.update("DROP TABLE $LEGACY_TABLE")
+                    },
+                ),
+                logger,
+            )
+        }
     }
 
     private fun upsertServer(instance: Node) {
         val db = database ?: return
-        db.insertIfAbsent(SERVER_TABLE, SERVER_KEYS, SERVER_COLUMNS, instance.serverId, instance.maxPlayers)
-            .exceptionally { 0 }
+        scope.launch {
+            runCatching {
+                db.insertIfAbsent(SERVER_TABLE, SERVER_KEYS, SERVER_COLUMNS, instance.serverId, instance.maxPlayers)
+            }
+        }
     }
 
     private fun fire(event: ServerRegistryEvent) {

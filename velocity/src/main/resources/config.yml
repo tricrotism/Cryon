@@ -47,6 +47,10 @@ network:
 # unless the player has cryon.maintenance.bypass.
 maintenance:
     default-message: "The network is under maintenance."
+    # How often to re-pull maintenance state from the database, in seconds. A broadcast only reaches a
+    # process that was listening, so this is what repairs a process that started before the database
+    # was reachable, or that missed a toggle while disconnected. 0 disables it. Needs database.enabled.
+    refresh-seconds: 30
     # The protocol version reported in the ping while under maintenance. Any value clients won't match
     # (-1 renders as an incompatible version). Change only if you need a specific display.
     ping-protocol: -1

@@ -6,6 +6,8 @@ import com.tricrotism.cryon.common.server.ServerRegistry
 import com.velocitypowered.api.event.EventTask
 import com.velocitypowered.api.event.Subscribe
 import com.velocitypowered.api.event.player.ServerPreConnectEvent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.future.future
 import org.slf4j.Logger
 import java.time.Duration
 
@@ -27,6 +29,7 @@ class HandoffListener(
     private val registry: ServerRegistry,
     private val timeout: Duration,
     private val logger: Logger,
+    private val scope: CoroutineScope,
 ) {
 
     @Subscribe
@@ -42,13 +45,15 @@ class HandoffListener(
         if (registry.node(from) == null) return null
 
         val player = event.player.uniqueId
-        val request = messenger
-            .request(HandoffCoordinator.channel(from), player.toString(), timeout)
-            .handle { _, error ->
+        val request = scope.future {
+            try {
+                messenger.request(HandoffCoordinator.channel(from), player.toString(), timeout)
+            } catch (_: Exception) {
                 // Never strand the player: log the miss and let them move regardless.
-                if (error != null) logger.warn("No handoff flush from {} for {}; moving anyway", from, player)
+                logger.warn("No handoff flush from {} for {}; moving anyway", from, player)
                 null
             }
+        }
         return EventTask.resumeWhenComplete(request)
     }
 }

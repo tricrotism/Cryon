@@ -1,9 +1,13 @@
 package com.tricrotism.cryon.common.net
 
+import com.tricrotism.cryon.common.concurrent.CryonIO
+import kotlinx.coroutines.*
+import kotlinx.coroutines.CancellationException
 import org.slf4j.Logger
 import java.time.Duration
 import java.util.*
 import java.util.concurrent.*
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * [Messenger] confined to this process, what a single-server deployment runs instead of
@@ -21,28 +25,32 @@ import java.util.concurrent.*
  *    `publish` (and on the main server thread), so code that worked here would deadlock or reorder
  *    against real Redis, a fidelity gap in the worst direction.
  *
- * [publish]'s future completes once the message is handed to that thread, not once handlers have run
- * the same promise Redis makes, where a publish completes on server ack rather than on delivery.
+ * [publish] returns once the message is handed to that thread, not once handlers have run — the same
+ * promise Redis makes, where a publish completes on server ack rather than on delivery.
  */
 class LocalMessenger(private val logger: Logger) : Messenger {
 
     private val handlers = ConcurrentHashMap<String, CopyOnWriteArrayList<(String) -> Unit>>()
     private val nodeId = UUID.randomUUID().toString()
     private val replyChannel = "cryon:reply:$nodeId"
-    private val pending = ConcurrentHashMap<String, CompletableFuture<String>>()
-    private val delivery: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { r ->
+    private val pending = ConcurrentHashMap<String, CompletableDeferred<String>>()
+    private val delivery: ExecutorService = Executors.newSingleThreadExecutor { r ->
         Thread(r, "cryon-local-messenger").apply { isDaemon = true }
     }
+
+    /**
+     * Runs [handle] responders. Canceled by [close], so no responder outlives the transport.
+     */
+    private val scope = CoroutineScope(SupervisorJob() + CryonIO.dispatcher)
 
     init {
         subscribe(replyChannel) { onReply(it) }
     }
 
-    override fun publish(channel: String, message: String): CompletableFuture<Void> {
+    override suspend fun publish(channel: String, message: String) {
         // Rejected once closed; a publish during shutdown is a no-op rather than a failure, matching
         // a Redis connection that has already gone away.
         runCatching { delivery.execute { dispatch(channel, message) } }
-        return CompletableFuture.completedFuture(null)
     }
 
     override fun subscribe(channel: String, handler: (String) -> Unit): MessengerSubscription {
@@ -54,35 +62,45 @@ class LocalMessenger(private val logger: Logger) : Messenger {
         }
     }
 
-    override fun handle(channel: String, responder: (String) -> CompletableFuture<String>): MessengerSubscription =
+    override fun handle(channel: String, responder: suspend (String) -> String): MessengerSubscription =
         subscribe("$channel:req") { raw ->
             val parts = raw.split(SEP, limit = 3)
             if (parts.size != 3) return@subscribe
             val (correlationId, replyTo, payload) = parts
-            responder(payload)
-                .thenAccept { reply -> publish(replyTo, "$correlationId$SEP$reply") }
-                .exceptionally { logger.error("Responder on '{}' failed", channel, it); null }
+            scope.launch {
+                try {
+                    publish(replyTo, "$correlationId$SEP${responder(payload)}")
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.error("Responder on '{}' failed", channel, e)
+                }
+            }
         }
 
-    override fun request(channel: String, message: String, timeout: Duration): CompletableFuture<String> {
+    /**
+     * The timeout is `withTimeoutOrNull` rather than a scheduled task, so a scheduler thread no
+     * longer exists purely to fail requests, and a caller that is cancelled while waiting drops its
+     * pending entry in the `finally` instead of leaving it for a timer to reap.
+     */
+    override suspend fun request(channel: String, message: String, timeout: Duration): String {
         val correlationId = UUID.randomUUID().toString()
-        val future = CompletableFuture<String>()
-        pending[correlationId] = future
-        runCatching {
-            delivery.schedule({
-                if (pending.remove(correlationId) != null) {
-                    future.completeExceptionally(TimeoutException("No reply on '$channel' within $timeout"))
-                }
-            }, timeout.toMillis(), TimeUnit.MILLISECONDS)
+        val reply = CompletableDeferred<String>()
+        pending[correlationId] = reply
+        try {
+            publish("$channel:req", "$correlationId$SEP$replyChannel$SEP$message")
+            return withTimeoutOrNull(timeout.toMillis().milliseconds) { reply.await() }
+                ?: throw TimeoutException("No reply on '$channel' within $timeout")
+        } finally {
+            pending.remove(correlationId)
         }
-        publish("$channel:req", "$correlationId$SEP$replyChannel$SEP$message")
-        return future
     }
 
     /**
      * Fail what is still waiting rather than dropping it: see `RedisMessenger.close`.
      */
     override fun close() {
+        scope.cancel("The messenger was closed")
         delivery.shutdownNow()
         handlers.clear()
         val iterator = pending.entries.iterator()

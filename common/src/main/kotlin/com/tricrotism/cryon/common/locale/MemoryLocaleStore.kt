@@ -1,7 +1,6 @@
 package com.tricrotism.cryon.common.locale
 
 import java.util.*
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -16,13 +15,11 @@ class MemoryLocaleStore : LocaleStore {
 
     override fun cached(uuid: UUID): Locale? = overrides[uuid]
 
-    override fun set(uuid: UUID, locale: Locale): CompletableFuture<Void> {
+    override suspend fun set(uuid: UUID, locale: Locale) {
         overrides[uuid] = locale
-        return CompletableFuture.completedFuture(null)
     }
 
-    override fun clear(uuid: UUID): CompletableFuture<Void> {
+    override suspend fun clear(uuid: UUID) {
         overrides.remove(uuid)
-        return CompletableFuture.completedFuture(null)
     }
 }
