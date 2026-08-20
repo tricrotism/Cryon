@@ -7,6 +7,7 @@ import com.tricrotism.cryon.common.module.ModuleManager
 import com.tricrotism.cryon.common.module.ModuleState
 import com.tricrotism.cryon.common.module.remote.RemoteModules
 import com.tricrotism.cryon.common.module.remote.UpdateResult
+import com.tricrotism.cryon.common.server.PresenceEntry
 import com.tricrotism.cryon.common.text.CommonMessages
 import com.tricrotism.cryon.common.text.Mini
 import com.tricrotism.cryon.menu.AdminMenu
@@ -232,6 +233,17 @@ class ModuleCommands(
         line(sender, "Database", if (network.persistent) "on" else "off")
         line(sender, "Live nodes", network.nodeCount().toString())
 
+        val servers = network.servers()
+        if (servers.isNotEmpty()) {
+            sender.sendMessage(Mini.format("<off_white>Game servers"))
+            servers.forEach { (serverId, count) ->
+                val self = if (serverId == identity.serverId) " (this one)" else ""
+                line(sender, "  $serverId$self", "$count node${if (count == 1) "" else "s"}")
+            }
+        }
+        hookup(sender, "Proxies", network.proxies())
+        hookup(sender, "Geyser", network.geysers())
+
         val warnings = network.warnings()
         if (warnings.isEmpty()) {
             sender.sendMessage(Mini.format("  <success>Deployment matches the declared mode."))
@@ -242,6 +254,25 @@ class ModuleCommands(
                 Mini.format("  <error>! <text>", Placeholder.unparsed("text", warning))
             )
         }
+    }
+
+    /**
+     * One line for a kind of process that announces itself rather than registering into the registry.
+     *
+     * "not detected" rather than "0", because zero proxies is not a measurement: it means nothing is
+     * publishing, which without a shared transport is simply what one JVM looks like.
+     */
+    private fun hookup(sender: CommandSender, label: String, entries: List<PresenceEntry>) {
+        if (entries.isEmpty()) {
+            sender.sendMessage(
+                Mini.format(
+                    "  <slate_gray><label>:</slate_gray> <error>not detected",
+                    Placeholder.unparsed("label", label),
+                )
+            )
+            return
+        }
+        line(sender, label, entries.joinToString(", ") { "${it.id} (${it.detail})" })
     }
 
     private fun line(sender: CommandSender, label: String, value: String) {

@@ -3,6 +3,7 @@ package com.tricrotism.cryon.menu
 import com.tricrotism.cryon.common.flag.FeatureFlags
 import com.tricrotism.cryon.common.module.ModuleManager
 import com.tricrotism.cryon.common.module.ModuleState
+import com.tricrotism.cryon.common.server.PresenceEntry
 import com.tricrotism.cryon.common.text.Mini
 import com.tricrotism.cryon.network.NetworkStatus
 import com.tricrotism.cryon.paper.api.bedrock.BedrockService
@@ -157,7 +158,35 @@ class AdminMenu(
         add(field("Expect", network.identity.expectation.name.lowercase().replace('_', '-')))
         add(field("Transport", network.transport))
         add(field("Live nodes", network.nodeCount().toString()))
+
+        val servers = network.servers()
+        if (servers.isNotEmpty()) {
+            add(Mini.format("<slate_gray>Game servers"))
+            servers.forEach { (serverId, count) ->
+                val self = if (serverId == network.identity.serverId) " (this one)" else ""
+                add(field("  $serverId$self", "$count node${if (count == 1) "" else "s"}"))
+            }
+        }
+        add(hookup("Proxy", network.proxies()))
+        add(hookup("Geyser", network.geysers()))
+
         network.warnings().forEach { add(Mini.format("<error>! <w>", Placeholder.unparsed("w", it))) }
+    }
+
+    /**
+     * One line for a kind of process that announces itself rather than registering.
+     *
+     * Says "off" rather than "0" when nothing has announced, because zero proxies is not a count worth
+     * reading as a measurement: it means nothing is publishing, which without redis is simply what a
+     * single-JVM deployment looks like.
+     */
+    private fun hookup(label: String, entries: List<PresenceEntry>): Component = when {
+        entries.isEmpty() -> Mini.format(
+            "<slate_gray><label>: </slate_gray><error>not detected",
+            Placeholder.unparsed("label", label),
+        )
+
+        else -> field("$label ${entries.size}", entries.joinToString(", ") { "${it.id} (${it.detail})" })
     }
 
     private fun field(label: String, value: String): Component = Mini.format(

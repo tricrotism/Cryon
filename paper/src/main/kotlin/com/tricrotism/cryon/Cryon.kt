@@ -95,6 +95,7 @@ class Cryon : JavaPlugin() {
     private lateinit var featureFlags: FeatureFlags
     private var currencies: Currencies? = null
     private var leaderboardTask: ScheduledTask? = null
+    private var presenceTask: ScheduledTask? = null
     private var database: Database? = null
     private var localeStore: LocaleStore? = null
     private var registry: ServerRegistry? = null
@@ -668,7 +669,24 @@ class Cryon : JavaPlugin() {
         val status = NetworkStatus(identity, sharedTransport, database != null) { registry }
         services.register<NetworkStatus>(status)
         status.report(log)
+        startPresenceRefresh(status)
         return status
+    }
+
+    /**
+     * Keep [NetworkStatus]'s view of the proxies and Geysers current.
+     *
+     * They announce into a hash rather than the registry, because neither is somewhere a player can be
+     * routed, so reading them is a suspending call that `/cryon network` and the admin menu cannot
+     * make while drawing. The timer holds a snapshot for them, the same shape as the leaderboard
+     * refresh. Pointless without a shared transport, where the hash only ever contains this process.
+     */
+    private fun startPresenceRefresh(status: NetworkStatus) {
+        if (!sharedTransport) return
+        val presence = Presence(store, log)
+        presenceTask = Schedulers.asyncTimer(0, heartbeatSeconds, TimeUnit.SECONDS) {
+            scope.launch { status.updatePresence(presence.all()) }
+        }
     }
 
     /** Attach the Agones lifecycle when running under a sidecar; a no-op anywhere else. */
@@ -728,6 +746,8 @@ class Cryon : JavaPlugin() {
         colony = null
         leaderboardTask?.let { runCatching { it.cancel() } }
         leaderboardTask = null
+        presenceTask?.let { runCatching { it.cancel() } }
+        presenceTask = null
         currencies?.close()
         currencies = null
         if (::featureFlags.isInitialized) featureFlags.close()

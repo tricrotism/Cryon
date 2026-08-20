@@ -1175,6 +1175,17 @@ into a `serverId` (the pool, and the FeatureFlags server scope) plus a per-proce
   catalog (`cryon_servers`) lives in Postgres (optional). **Always registered**,
   `services.get<ServerRegistry>()`. Only ever populates its replica **from the pub/sub echo**, so
   a `Messenger` that didn't echo to itself would leave it permanently empty.
+- `Presence` (`…common.server`). **Who is on the network that the registry deliberately cannot see.**
+  A proxy never registers and Geyser registers no node, because either one appearing as a routing candidate would be a
+  bug, which leaves an operator unable to ask "is the proxy up, is Bedrock hooked up". Proxies and Geyser announce into
+  one `cryon:presence` hash on their heartbeat interval; each entry carries its own timestamp and stale ones are dropped
+  on read, the same shape `SharedColony`
+  uses and for the same reason (a key per process would need `keys("prefix*")`, which walks the keyspace). **Nothing
+  withdraws on shutdown**: a process that stops announcing ages out within the timeout, exactly as a killed pod does,
+  which is worth more than a blocking call on every teardown path. Read on Paper through a timer-refreshed snapshot on
+  `NetworkStatus`, because a menu draws synchronously and `all()` suspends. Surfaced in `/cryon network` and the admin
+  menu's network page, which also list every game server the registry knows grouped by `serverId`. Empty reads as "not
+  detected" rather than "0", since zero proxies is not a measurement.
 - `NodeReporter` (`:paper`). `register()` publishes this node as STARTING **before** modules
   load; `ready()` flips it to READY and starts heartbeating **after** they enable, so proxies never
   route into a half-loaded server. Player count rides an `AtomicInteger` fed by join/quit, so the async

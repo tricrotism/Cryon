@@ -14,6 +14,8 @@ import com.tricrotism.cryon.common.maintenance.SharedMaintenanceService
 import com.tricrotism.cryon.common.module.ModuleManager
 import com.tricrotism.cryon.common.module.ServiceRegistry
 import com.tricrotism.cryon.common.net.*
+import com.tricrotism.cryon.common.server.Presence
+import com.tricrotism.cryon.common.server.PresenceKind
 import com.tricrotism.cryon.common.server.ServerRegistry
 import com.tricrotism.cryon.common.server.SharedServerRegistry
 import com.tricrotism.cryon.geyser.api.command.AnnotationCommands
@@ -23,10 +25,7 @@ import com.tricrotism.cryon.geyser.maintenance.MaintenanceGate
 import com.tricrotism.cryon.geyser.motd.BedrockMotd
 import com.tricrotism.cryon.geyser.motd.MotdCommand
 import com.tricrotism.cryon.geyser.motd.MotdListener
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.*
 import org.geysermc.event.subscribe.Subscribe
 import org.geysermc.geyser.api.GeyserApi
 import org.geysermc.geyser.api.event.lifecycle.GeyserDefineCommandsEvent
@@ -38,6 +37,7 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
+import java.util.*
 
 /**
  * The Geyser loader entrypoint, the third platform loader beside the Paper core and
@@ -62,6 +62,16 @@ class CryonGeyserExtension : Extension {
     private lateinit var log: Logger
     private var database: Database? = null
     private var registry: ServerRegistry? = null
+
+    /** What this Geyser calls itself in the presence hash, resolved as `NodeIdentity` resolves a node id,
+     * random suffix and all: the presence hash is keyed by this name, so two processes falling back to
+     * the same literal would silently overwrite each other and read as one. */
+    private val geyserId: String by lazy {
+        sequenceOf(System.getenv("CRYON_NODE"), System.getenv("HOSTNAME"))
+            .firstOrNull { !it.isNullOrBlank() }
+            ?: "geyser-${UUID.randomUUID().toString().take(8)}"
+    }
+
     private var maintenance: MaintenanceService? = null
     private var maintenanceGate: MaintenanceGate? = null
     private var motd: BedrockMotd? = null
@@ -221,10 +231,31 @@ class CryonGeyserExtension : Extension {
             return
         }
         val heartbeat = cfg.long("network.heartbeat-seconds", 5).coerceAtLeast(1)
+        startPresence(Duration.ofSeconds(heartbeat))
         val reg = SharedServerRegistry(store, messenger, database, Duration.ofSeconds(heartbeat * 3), log)
         reg.init()
         registry = reg
         services.register<ServerRegistry>(reg)
+    }
+
+    /**
+     * Announce this Geyser so an operator can see from a game server whether Bedrock is hooked up.
+     *
+     * Geyser registers no node, because it is not somewhere a player can be routed. [Presence] is the
+     * separate, non-routable answer to "is Geyser up", and this is the only thing that publishes one.
+     */
+    private fun startPresence(interval: Duration) {
+        val presence = Presence(store, log)
+        scope.launch {
+            while (isActive) {
+                presence.announce(
+                    PresenceKind.GEYSER,
+                    geyserId,
+                    "${geyserApi().onlineConnections().size} bedrock online",
+                )
+                delay(interval.toMillis())
+            }
+        }
     }
 
     /**

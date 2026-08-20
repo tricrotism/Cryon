@@ -15,10 +15,7 @@ import com.tricrotism.cryon.common.maintenance.SharedMaintenanceService
 import com.tricrotism.cryon.common.module.ModuleManager
 import com.tricrotism.cryon.common.module.ServiceRegistry
 import com.tricrotism.cryon.common.net.*
-import com.tricrotism.cryon.common.server.DefaultPlayerRouter
-import com.tricrotism.cryon.common.server.PlayerRouter
-import com.tricrotism.cryon.common.server.ServerRegistry
-import com.tricrotism.cryon.common.server.SharedServerRegistry
+import com.tricrotism.cryon.common.server.*
 import com.tricrotism.cryon.velocity.api.bedrock.BedrockService
 import com.tricrotism.cryon.velocity.api.command.AnnotationCommands
 import com.tricrotism.cryon.velocity.bedrock.BedrockBridge
@@ -37,15 +34,13 @@ import com.velocitypowered.api.event.proxy.ProxyInitializeEvent
 import com.velocitypowered.api.event.proxy.ProxyShutdownEvent
 import com.velocitypowered.api.plugin.annotation.DataDirectory
 import com.velocitypowered.api.proxy.ProxyServer
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.*
 import org.slf4j.Logger
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
+import java.util.*
 
 /**
  * The Velocity loader entrypoint, mirroring the Paper core `Cryon`. Velocity injects the proxy
@@ -60,6 +55,20 @@ class CryonVelocityPlugin @Inject constructor(
 ) {
     private var database: Database? = null
     private var registry: ServerRegistry? = null
+    private var presence: Presence? = null
+
+    /**
+     * What this proxy calls itself in the presence hash, resolved exactly as `NodeIdentity` resolves a
+     * node id, so a proxy and a game server in the same pod agree on their name. The random suffix
+     * matters: the presence hash is keyed by this name, so two proxies falling back to the same
+     * literal would silently overwrite each other and read as one.
+     */
+    private val proxyId: String by lazy {
+        sequenceOf(System.getenv("CRYON_NODE"), System.getenv("HOSTNAME"))
+            .firstOrNull { !it.isNullOrBlank() }
+            ?: "proxy-${UUID.randomUUID().toString().take(8)}"
+    }
+
     private var backendSync: BackendSynchronizer? = null
     private var transfers: TransferListener? = null
     private var maintenance: MaintenanceService? = null
@@ -209,6 +218,7 @@ class CryonVelocityPlugin @Inject constructor(
             return
         }
         val heartbeat = cfg.long("network.heartbeat-seconds", 5).coerceAtLeast(1)
+        startPresence(Duration.ofSeconds(heartbeat))
         val reg = SharedServerRegistry(store, messenger, database, Duration.ofSeconds(heartbeat * 3), logger)
         reg.init()
         registry = reg
@@ -222,6 +232,28 @@ class CryonVelocityPlugin @Inject constructor(
         val timeout = Duration.ofSeconds(cfg.long("network.handoff-timeout-seconds", 5).coerceAtLeast(1))
         proxy.eventManager.register(this, HandoffListener(messenger, reg, timeout, logger, scope))
         logger.info("Player handoff on. Transfers wait up to {}s for the source server to flush", timeout.toSeconds())
+    }
+
+    /**
+     * Announce this proxy so an operator can see it from anywhere, including from a game server.
+     *
+     * A proxy is deliberately absent from [ServerRegistry], because a proxy that could be returned by
+     * `bestNode` would be a routing bug. [Presence] is the separate, non-routable answer to "is the
+     * proxy up", and this is the only thing that publishes one.
+     */
+    private fun startPresence(interval: Duration) {
+        val presence = Presence(store, logger)
+        this.presence = presence
+        scope.launch {
+            while (isActive) {
+                presence.announce(
+                    PresenceKind.PROXY,
+                    proxyId,
+                    "${proxy.playerCount} players, ${proxy.allServers.size} backends",
+                )
+                delay(interval.toMillis())
+            }
+        }
     }
 
     /**

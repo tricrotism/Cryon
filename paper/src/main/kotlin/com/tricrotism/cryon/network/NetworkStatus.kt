@@ -1,8 +1,6 @@
 package com.tricrotism.cryon.network
 
-import com.tricrotism.cryon.common.server.NodeExpectation
-import com.tricrotism.cryon.common.server.NodeIdentity
-import com.tricrotism.cryon.common.server.ServerRegistry
+import com.tricrotism.cryon.common.server.*
 import org.slf4j.Logger
 
 /**
@@ -20,11 +18,45 @@ class NetworkStatus(
     private val registry: () -> ServerRegistry?,
 ) {
 
+    /**
+     * The last presence sweep, refreshed by a timer and read synchronously.
+     *
+     * Proxies and Geyser are not in the registry by design, so they are read from [Presence], which
+     * suspends. A menu draws on the calling thread and cannot await anything, so this holds a snapshot
+     * the same way the currency leaderboard does. Empty means "nothing has announced", which without
+     * Redis is simply the truth.
+     */
+    @Volatile
+    private var presence: List<PresenceEntry> = emptyList()
+
+    fun updatePresence(entries: List<PresenceEntry>) {
+        presence = entries
+    }
+
     /** How far state travels: the difference between a pool and ten strangers. */
     val transport: String get() = if (sharedTransport) "redis (shared)" else "in-process"
 
     /** Live instances of our own serverId, as this process currently sees them. */
     fun nodeCount(): Int = registry()?.nodesOf(identity.serverId)?.size ?: 0
+
+    /** Announced proxies, newest heartbeat first. */
+    fun proxies(): List<PresenceEntry> = presence.filter { it.kind == PresenceKind.PROXY }
+
+    /** Announced Geyser instances, newest heartbeat first. */
+    fun geysers(): List<PresenceEntry> = presence.filter { it.kind == PresenceKind.GEYSER }
+
+    /**
+     * Every game server the registry knows, our own included, as serverId to live node count.
+     *
+     * Sorted so the listing is stable between draws; a set that reordered every refresh would read as
+     * churn that is not happening.
+     */
+    fun servers(): List<Pair<String, Int>> =
+        registry()?.nodes().orEmpty()
+            .groupingBy { it.serverId }
+            .eachCount()
+            .toList()
+            .sortedBy { it.first }
 
     /**
      * Every current disagreement between what was declared and what is running, in plain words. Recomputed on
