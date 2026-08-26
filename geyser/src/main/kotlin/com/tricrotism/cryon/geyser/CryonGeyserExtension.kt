@@ -1,6 +1,8 @@
 package com.tricrotism.cryon.geyser
 
 import com.tricrotism.cryon.common.concurrent.CryonIO
+import com.tricrotism.cryon.common.config.ConfigDefaults
+import com.tricrotism.cryon.common.config.ConfigMigrator
 import com.tricrotism.cryon.common.data.Database
 import com.tricrotism.cryon.common.data.DatabaseConfig
 import com.tricrotism.cryon.common.data.SqlDatabase
@@ -11,7 +13,9 @@ import com.tricrotism.cryon.common.locale.MessageService
 import com.tricrotism.cryon.common.locale.Messages
 import com.tricrotism.cryon.common.maintenance.MaintenanceService
 import com.tricrotism.cryon.common.maintenance.SharedMaintenanceService
+import com.tricrotism.cryon.common.module.JarWatcher
 import com.tricrotism.cryon.common.module.ModuleManager
+import com.tricrotism.cryon.common.module.PluginPresence
 import com.tricrotism.cryon.common.module.ServiceRegistry
 import com.tricrotism.cryon.common.net.*
 import com.tricrotism.cryon.common.server.Presence
@@ -19,6 +23,7 @@ import com.tricrotism.cryon.common.server.PresenceKind
 import com.tricrotism.cryon.common.server.ServerRegistry
 import com.tricrotism.cryon.common.server.SharedServerRegistry
 import com.tricrotism.cryon.geyser.api.command.AnnotationCommands
+import com.tricrotism.cryon.geyser.command.ModuleCommands
 import com.tricrotism.cryon.geyser.config.GeyserConfig
 import com.tricrotism.cryon.geyser.maintenance.MaintenanceCommand
 import com.tricrotism.cryon.geyser.maintenance.MaintenanceGate
@@ -77,6 +82,7 @@ class CryonGeyserExtension : Extension {
     private var motd: BedrockMotd? = null
     private var manager: ModuleManager? = null
     private var loader: GeyserModuleLoader? = null
+    private val watchers = ArrayList<JarWatcher>()
 
     /**
      * The extension's coroutine scope, cancelled on shutdown. The Geyser twin of the proxy's: the
@@ -104,7 +110,7 @@ class CryonGeyserExtension : Extension {
         setupNetwork(services, cfg)
         setupMaintenance(services, cfg)
         setupMotd(dataDirectory)
-        setupModules(services, dataDirectory)
+        setupModules(services, dataDirectory, cfg)
         log.info("Cryon Geyser loader enabled")
     }
 
@@ -122,11 +128,16 @@ class CryonGeyserExtension : Extension {
             MaintenanceCommand(service, GeyserApi.api(), scope),
             MotdCommand(bedrockMotd),
         )
+        val mgr = manager
+        val ldr = loader
+        if (mgr != null && ldr != null) AnnotationCommands.register(event, this, ModuleCommands(mgr, ldr))
     }
 
     @Subscribe
     fun onShutdown(event: GeyserShutdownEvent) {
         scope.cancel("Geyser is shutting down")
+        watchers.forEach { runCatching { it.close() } }
+        watchers.clear()
         manager?.disableAll()
         loader?.close()
         maintenanceGate?.close()
@@ -138,11 +149,20 @@ class CryonGeyserExtension : Extension {
         CryonIO.shutdown()
     }
 
+    /**
+     * Load `config.yml`, first bringing it up to date with the one shipped in this jar so a key
+     * added since it was written is actually there to read. See [ConfigMigrator].
+     */
     private fun loadConfig(dataDirectory: Path): GeyserConfig {
         Files.createDirectories(dataDirectory)
         val configFile = dataDirectory.resolve("config.yml")
-        if (!Files.exists(configFile)) {
-            javaClass.getResourceAsStream("/config.yml")?.use { Files.copy(it, configFile) }
+        val template = javaClass.getResourceAsStream("/config.yml")?.use { it.readBytes().decodeToString() }
+        if (template == null) {
+            log.error("config.yml is missing from the Cryon jar, so defaults cannot be migrated")
+        } else {
+            runCatching { ConfigMigrator.migrate(template, configFile, log) }
+                .onFailure { log.error("Failed to migrate config.yml, continuing with what is on disk", it) }
+                .onSuccess { if (it) log.info("config.yml updated with keys added since it was written") }
         }
         return GeyserConfig.load(configFile)
     }
@@ -166,17 +186,17 @@ class CryonGeyserExtension : Extension {
     }.getOrNull()
 
     private fun setupInfrastructure(services: ServiceRegistry, cfg: GeyserConfig) {
-        if (cfg.boolean("database.enabled", false)) {
+        if (cfg.boolean("database.enabled", ConfigDefaults.DATABASE_ENABLED)) {
             try {
-                val dialect = SqlDialect.of(cfg.string("database.type", "postgresql"))
+                val dialect = SqlDialect.of(cfg.string("database.type", ConfigDefaults.DATABASE_TYPE))
                 val db = SqlDatabase.connect(
                     DatabaseConfig(
-                        host = cfg.string("database.host", "localhost"),
+                        host = cfg.string("database.host", ConfigDefaults.DATABASE_HOST),
                         port = cfg.int("database.port", dialect.defaultPort),
-                        database = cfg.string("database.database", "cryon"),
-                        username = cfg.string("database.username", "cryon"),
-                        password = cfg.string("database.password", ""),
-                        maxPoolSize = cfg.int("database.max-pool-size", 10),
+                        database = cfg.string("database.database", ConfigDefaults.DATABASE_NAME),
+                        username = cfg.string("database.username", ConfigDefaults.DATABASE_USERNAME),
+                        password = cfg.string("database.password", ConfigDefaults.DATABASE_PASSWORD),
+                        maxPoolSize = cfg.int("database.max-pool-size", ConfigDefaults.DATABASE_MAX_POOL_SIZE),
                         dialect = dialect,
                     ),
                     log,
@@ -193,9 +213,9 @@ class CryonGeyserExtension : Extension {
 
     /** Install the transport every other service is built on. Mirrors the Paper core and the proxy. */
     private fun setupTransport(services: ServiceRegistry, cfg: GeyserConfig) {
-        if (cfg.boolean("redis.enabled", false)) {
+        if (cfg.boolean("redis.enabled", ConfigDefaults.REDIS_ENABLED)) {
             try {
-                val config = RedisConfig(cfg.string("redis.uri", "redis://localhost:6379/0"))
+                val config = RedisConfig(cfg.string("redis.uri", ConfigDefaults.REDIS_URI))
                 messenger = RedisMessenger(config, log)
                 store = RedisKeyValueStore(config)
                 sharedTransport = true
@@ -226,11 +246,11 @@ class CryonGeyserExtension : Extension {
             log.info("Server registry off (no redis). Geyser reads no network state")
             return
         }
-        if (!cfg.boolean("network.registry-enabled", true)) {
+        if (!cfg.boolean("network.registry-enabled", ConfigDefaults.REGISTRY_ENABLED)) {
             log.info("Server registry disabled by config (network.registry-enabled=false)")
             return
         }
-        val heartbeat = cfg.long("network.heartbeat-seconds", 5).coerceAtLeast(1)
+        val heartbeat = cfg.long("network.heartbeat-seconds", ConfigDefaults.HEARTBEAT_SECONDS).coerceAtLeast(1)
         startPresence(Duration.ofSeconds(heartbeat))
         val reg = SharedServerRegistry(store, messenger, database, Duration.ofSeconds(heartbeat * 3), log)
         reg.init()
@@ -267,9 +287,9 @@ class CryonGeyserExtension : Extension {
         val service = SharedMaintenanceService(
             database,
             messenger,
-            cfg.string("maintenance.default-message", "The network is under maintenance."),
+            cfg.string("maintenance.default-message", ConfigDefaults.MAINTENANCE_MESSAGE),
             log,
-            Duration.ofSeconds(cfg.long("maintenance.refresh-seconds", 30)),
+            Duration.ofSeconds(cfg.long("maintenance.refresh-seconds", ConfigDefaults.MAINTENANCE_REFRESH_SECONDS)),
         ).also { it.init() }
         maintenance = service
         services.register<MaintenanceService>(service)
@@ -288,14 +308,16 @@ class CryonGeyserExtension : Extension {
         log.info("Bedrock MOTD available (/motd reload)")
     }
 
-    private fun setupModules(services: ServiceRegistry, dataDirectory: Path) {
+    private fun setupModules(services: ServiceRegistry, dataDirectory: Path, cfg: GeyserConfig) {
         val dataDir = dataDirectory.toFile()
         val apiDir = File(dataDir, "api").apply { mkdirs() }
         val modulesDir = File(dataDir, "modules").apply { mkdirs() }
-        val mgr = ModuleManager(log)
+        val mgr = ModuleManager(log, PluginPresence { GeyserApi.api().extensionManager().extension(it) != null })
         services.register<ModuleManager>(mgr)
         val ctx = GeyserContext(GeyserApi.api(), this, log, services, dataDirectory)
-        val ldr = GeyserModuleLoader(mgr, log, modulesDir, File(dataDir, ".module-cache"), javaClass.classLoader)
+        val ldr = GeyserModuleLoader(
+            mgr, ctx, log, modulesDir, File(dataDir, ".module-cache"), javaClass.classLoader,
+        )
         ldr.loadSharedApi(apiDir)
         ldr.prepareCache()
         ldr.registerAll()
@@ -304,5 +326,40 @@ class CryonGeyserExtension : Extension {
         mgr.postLoadAll()
         manager = mgr
         loader = ldr
+        startWatchers(cfg, modulesDir, apiDir, ldr)
+    }
+
+    /**
+     * Start the dev hot-reload watchers, the Geyser twin of the Paper core's. Gated by
+     * `modules.auto-reload`, which defaults to `!production`, so a dev deployment picks up a replaced
+     * feature jar on its own and a production one does not. `/cryon modules load|unload|scan|reload-api`
+     * works either way. Best-effort: a watcher that fails to start degrades to manual hot-swap.
+     */
+    private fun startWatchers(cfg: GeyserConfig, modulesDir: File, apiDir: File, ldr: GeyserModuleLoader) {
+        val production = cfg.boolean("production", ConfigDefaults.PRODUCTION)
+        if (!cfg.boolean("modules.auto-reload", !production)) {
+            log.info(
+                "Hot-reload watchers off (production={}); use /cryon modules load|unload|scan|reload-api to hot-swap",
+                production,
+            )
+            return
+        }
+        startWatcher(modulesDir, "modules", ldr, onChanged = { ldr.loadJar(it) }, onDeleted = { ldr.unloadJar(it) })
+        val reloadApi: (File) -> Unit = { ldr.reloadApi() }
+        startWatcher(apiDir, "api", ldr, onChanged = reloadApi, onDeleted = reloadApi)
+    }
+
+    private fun startWatcher(
+        dir: File,
+        label: String,
+        ldr: GeyserModuleLoader,
+        onChanged: (File) -> Unit,
+        onDeleted: (File) -> Unit,
+    ) {
+        try {
+            watchers += JarWatcher(dir, log, ldr::submit, onChanged, onDeleted).also { it.start() }
+        } catch (e: Exception) {
+            log.error("Failed to start the {} watcher; falling back to manual hot-swap", label, e)
+        }
     }
 }

@@ -7,6 +7,7 @@ import org.bukkit.entity.Player
 import org.bukkit.event.player.PlayerQuitEvent
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * A boss bar and the set of players currently seeing it.
@@ -37,8 +38,11 @@ class CryonBossBar internal constructor(private val bar: BossBar) : AutoCloseabl
      */
     private val viewers = ConcurrentHashMap.newKeySet<UUID>()
 
-    @Volatile
-    private var closed = false
+    /**
+     * Set before [close] sweeps [viewers], which is what lets [show] settle a race against it by
+     * re-reading rather than by locking.
+     */
+    private val closed = AtomicBoolean(false)
 
     val name: Component get() = bar.name()
     val progress: Float get() = bar.progress()
@@ -53,9 +57,23 @@ class CryonBossBar internal constructor(private val bar: BossBar) : AutoCloseabl
 
     fun overlay(value: BossBar.Overlay): CryonBossBar = apply { bar.overlay(value) }
 
+    /**
+     * Show this bar to [player], unless it has been closed.
+     *
+     * The closed check is repeated after the viewer lands in the set, because a [close] on another
+     * thread can pass between the two. Whichever order they interleave in, one of them sees the
+     * other: an add before the sweep is hidden by it, and an add after it finds the flag already
+     * set. Without the second read a bar could stay rendered on a client with nothing left owning
+     * it, which is the leak this class exists to prevent.
+     */
     fun show(player: Player): CryonBossBar = apply {
-        if (closed) return@apply
-        if (viewers.add(player.uniqueId)) player.showBossBar(bar)
+        if (closed.get()) return@apply
+        if (!viewers.add(player.uniqueId)) return@apply
+        if (closed.get()) {
+            viewers.remove(player.uniqueId)
+            return@apply
+        }
+        player.showBossBar(bar)
     }
 
     fun hide(player: Player): CryonBossBar = apply {
@@ -73,8 +91,7 @@ class CryonBossBar internal constructor(private val bar: BossBar) : AutoCloseabl
 
     /** Hide from everyone and stop tracking. Idempotent, and safe from any thread. */
     override fun close() {
-        if (closed) return
-        closed = true
+        if (!closed.compareAndSet(false, true)) return
         BossBars.forget(this)
         for (id in viewers) {
             org.bukkit.Bukkit.getPlayer(id)?.hideBossBar(bar)

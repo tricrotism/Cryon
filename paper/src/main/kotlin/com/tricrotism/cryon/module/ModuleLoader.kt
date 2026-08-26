@@ -4,10 +4,7 @@ import com.tricrotism.cryon.common.diagnostic.Retention
 import com.tricrotism.cryon.common.locale.LangScanner
 import com.tricrotism.cryon.common.locale.MessageService
 import com.tricrotism.cryon.common.locale.MessageSource
-import com.tricrotism.cryon.common.module.Module
-import com.tricrotism.cryon.common.module.ModuleContext
-import com.tricrotism.cryon.common.module.ModuleManager
-import com.tricrotism.cryon.common.module.ModuleState
+import com.tricrotism.cryon.common.module.*
 import com.tricrotism.cryon.paper.api.command.CommandService
 import com.tricrotism.cryon.paper.api.scheduler.Schedulers
 import org.slf4j.Logger
@@ -20,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Owns the jar ↔ classloader ↔ module mapping for the core and the runtime hot-swap operations the
- * boot scan, the `/cryon` command, and the [ModuleWatcher] all share.
+ * boot scan, the `/cryon` command, and the [JarWatcher] all share.
  *
  * Each feature jar in `plugins/Cryon/modules/` is **copied into a private cache dir and loaded from
  * the copy**, so the original stays unlocked on Windows and can be deleted or replaced while the
@@ -123,7 +120,7 @@ class ModuleLoader(
         apiDir?.let { loadSharedApi(it) }
 
         // Re-read all (register) before loading any, so cross-module services resolve in onEnable.
-        val ids = sources.flatMap { readJar(it) ?: emptyList() }
+        val ids = manager.order(sources.flatMap { readJar(it) ?: emptyList() })
         val loaded = ids.filter { manager.load(it, context) }
         loaded.forEach(manager::enable)
         loaded.forEach(manager::postLoad)
@@ -161,7 +158,7 @@ class ModuleLoader(
      */
     fun loadJar(source: File): List<String> {
         if (isLoaded(source)) unloadByKey(key(source))
-        val ids = readJar(source) ?: return emptyList()
+        val ids = manager.order(readJar(source) ?: return emptyList())
         val loaded = ids.filter { manager.load(it, context) }
         loaded.forEach(manager::enable)
         loaded.forEach(manager::postLoad)
@@ -244,9 +241,11 @@ class ModuleLoader(
                 throw IllegalStateException("no modules")
             }
             for (module in modules) {
-                if (manager.register(module)) {
-                    ids.add(module.id)
-                    moduleToJar[module.id] = sourceKey
+                // Registers the module's sub-module tree too, so every id in it maps back to this jar
+                // and comes down with it on unload.
+                for (id in manager.register(module)) {
+                    ids.add(id)
+                    moduleToJar[id] = sourceKey
                 }
             }
             if (ids.isEmpty()) throw IllegalStateException("all module ids were duplicates")

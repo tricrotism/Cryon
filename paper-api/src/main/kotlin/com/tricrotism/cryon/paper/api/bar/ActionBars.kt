@@ -1,5 +1,6 @@
 package com.tricrotism.cryon.paper.api.bar
 
+import com.tricrotism.cryon.paper.api.bar.ActionBars.prune
 import com.tricrotism.cryon.paper.api.event.Events
 import com.tricrotism.cryon.paper.api.event.Subscription
 import com.tricrotism.cryon.paper.api.scheduler.Schedulers
@@ -76,6 +77,9 @@ object ActionBars {
      * Sent immediately as well as on the next tick, so a one-off acknowledgement is not delayed by up
      * to the refresh interval — which for something answering a click is the difference between
      * feedback and lag. A higher [priority] wins while both are live.
+     *
+     * The entry lands in one step. Resolving this player's map and then writing into it would let
+     * [prune] unlink that same map as empty in between, and the update would be lost into an orphan.
      */
     fun send(
         player: Player,
@@ -86,15 +90,15 @@ object ActionBars {
     ) {
         val id = player.uniqueId
         val entry = Entry(key, message, priority, System.currentTimeMillis() + durationMillis)
-        entries.computeIfAbsent(id) { ConcurrentHashMap() }[key] = entry
+        entries.compute(id) { _, existing -> (existing ?: ConcurrentHashMap()).apply { put(key, entry) } }
         if (best(id) === entry) player.sendActionBar(message)
     }
 
     /** Drop one entry. Whatever was underneath it reappears on the next tick. */
     fun clear(player: Player, key: String = DEFAULT_KEY) {
-        val forPlayer = entries[player.uniqueId] ?: return
-        forPlayer.remove(key)
-        if (forPlayer.isEmpty()) entries.remove(player.uniqueId, forPlayer)
+        val id = player.uniqueId
+        entries[id]?.remove(key) ?: return
+        prune(id)
     }
 
     /** Drop everything this player is being shown. */
@@ -112,17 +116,26 @@ object ActionBars {
     private fun tick() {
         if (entries.isEmpty()) return
         val now = System.currentTimeMillis()
-        val iterator = entries.entries.iterator()
-        while (iterator.hasNext()) {
-            val (id, forPlayer) = iterator.next()
+        for ((id, forPlayer) in entries) {
             forPlayer.values.removeIf { it.expiresAt <= now }
-            if (forPlayer.isEmpty()) {
-                iterator.remove()
+            val winner = forPlayer.values.maxWithOrNull(ORDER)
+            if (winner == null) {
+                prune(id)
                 continue
             }
-            val winner = forPlayer.values.maxWithOrNull(ORDER) ?: continue
             Bukkit.getPlayer(id)?.sendActionBar(winner.message)
         }
+    }
+
+    /**
+     * Unlink a player's map once nothing is left in it, and only while that is still true.
+     *
+     * Testing emptiness and then removing as two steps would drop a map that [send] had already
+     * resolved and was about to write into, losing that update. Deciding it inside the remap holds
+     * the bin against the [ConcurrentHashMap.compute] in [send] for the length of the check.
+     */
+    private fun prune(player: UUID) {
+        entries.computeIfPresent(player) { _, forPlayer -> forPlayer.takeIf { it.isNotEmpty() } }
     }
 
     private fun best(player: UUID): Entry? = entries[player]?.values?.maxWithOrNull(ORDER)

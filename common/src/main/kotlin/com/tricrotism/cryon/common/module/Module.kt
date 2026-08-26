@@ -22,6 +22,41 @@ interface Module {
     val id: String
 
     /**
+     * Prerequisites this module declares, checked and ordered by [ModuleManager] before its lifecycle
+     * runs. A missing **hard** dependency marks the module `FAILED` without calling `onLoad`; a soft
+     * one only pulls this module later in the enable order.
+     *
+     * ```
+     * override val dependencies = listOf(
+     *     Dependency.plugin("WorldGuard"),
+     *     Dependency.service("com.tricrotism.shop.ShopService", hard = false),
+     * )
+     * ```
+     *
+     * Read once, at registration. Keep it a plain literal: it is evaluated before anything of this
+     * module has run, so it can reference nothing the module builds later.
+     */
+    val dependencies: List<Dependency> get() = emptyList()
+
+    /**
+     * Sub-modules this one owns. Each is a full [Module] in its own right: its own id, its own
+     * lifecycle, its own [ModuleState], its own row in `/cryon modules`, and its own listeners and
+     * tasks torn down when it disables.
+     *
+     * That last part is the difference from a feature flag, which is the other way to switch a slice
+     * of a feature off. A flag is a guard inside a live handler; a child module is *not wired at all*
+     * while it is disabled. Reach for a flag to gate behaviour, and for a child to hand an admin an
+     * independently loadable half of a feature.
+     *
+     * Give a child the id `<parent>/<name>` so the tree reads in listings and admin output. The
+     * parent always loads and enables first, disables last, and a child cannot enable while its parent
+     * is not enabled.
+     *
+     * Read once, at registration; a child added afterwards is never seen.
+     */
+    val children: List<Module> get() = emptyList()
+
+    /**
      * Runs inside the host's own load phase, before **any** plugin on the server has enabled. The
      * only window in which a third-party registry that seals itself on enable (WorldGuard's flag
      * registry being the motivating case) can still be written to.

@@ -9,5 +9,6 @@ dependencies {
     compileOnly(libs.caffeine)
     compileOnly(libs.hikaricp)
     compileOnly(libs.postgresql)
+    compileOnly(libs.snakeyaml)
     compileOnly(libs.bundles.adventure)
 }

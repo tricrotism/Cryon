@@ -61,7 +61,11 @@ class FeatureFlags(
      * push the colour through every caller to buy nothing, since the durable write was never what a
      * flag check waited on.
      */
-    private val scope = CoroutineScope(SupervisorJob() + CryonIO.dispatcher)
+    private val scope = CoroutineScope(
+        SupervisorJob() + CryonIO.dispatcher + CoroutineExceptionHandler { _, error ->
+            logger.error("Unhandled failure in a coroutine of the feature flag service", error)
+        }
+    )
 
     /**
      * Write one key's **current** in-memory state down and broadcast it.

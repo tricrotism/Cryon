@@ -2,6 +2,8 @@ package com.tricrotism.cryon.velocity
 
 import com.google.inject.Inject
 import com.tricrotism.cryon.common.concurrent.CryonIO
+import com.tricrotism.cryon.common.config.ConfigDefaults
+import com.tricrotism.cryon.common.config.ConfigMigrator
 import com.tricrotism.cryon.common.data.Database
 import com.tricrotism.cryon.common.data.DatabaseConfig
 import com.tricrotism.cryon.common.data.SqlDatabase
@@ -12,13 +14,16 @@ import com.tricrotism.cryon.common.locale.MessageService
 import com.tricrotism.cryon.common.locale.Messages
 import com.tricrotism.cryon.common.maintenance.MaintenanceService
 import com.tricrotism.cryon.common.maintenance.SharedMaintenanceService
+import com.tricrotism.cryon.common.module.JarWatcher
 import com.tricrotism.cryon.common.module.ModuleManager
+import com.tricrotism.cryon.common.module.PluginPresence
 import com.tricrotism.cryon.common.module.ServiceRegistry
 import com.tricrotism.cryon.common.net.*
 import com.tricrotism.cryon.common.server.*
 import com.tricrotism.cryon.velocity.api.bedrock.BedrockService
 import com.tricrotism.cryon.velocity.api.command.AnnotationCommands
 import com.tricrotism.cryon.velocity.bedrock.BedrockBridge
+import com.tricrotism.cryon.velocity.command.ModuleCommands
 import com.tricrotism.cryon.velocity.config.VelocityConfig
 import com.tricrotism.cryon.velocity.maintenance.MaintenanceCommand
 import com.tricrotism.cryon.velocity.maintenance.MaintenanceListener
@@ -75,6 +80,7 @@ class CryonVelocityPlugin @Inject constructor(
     private var maintenanceListener: MaintenanceListener? = null
     private var manager: ModuleManager? = null
     private var loader: VelocityModuleLoader? = null
+    private val watchers = ArrayList<JarWatcher>()
 
     /**
      * The proxy's coroutine scope, canceled on shutdown.
@@ -106,13 +112,15 @@ class CryonVelocityPlugin @Inject constructor(
         setupServerAccess(cfg)
         setupBedrock(services)
         setupMotd(services)
-        setupModules(services)
+        setupModules(services, cfg)
         logger.info("Cryon proxy loader enabled")
     }
 
     @Subscribe
     fun onProxyShutdown(event: ProxyShutdownEvent) {
         scope.cancel("The proxy is shutting down")
+        watchers.forEach { runCatching { it.close() } }
+        watchers.clear()
         manager?.disableAll()
         loader?.close()
         backendSync?.stop()
@@ -126,11 +134,20 @@ class CryonVelocityPlugin @Inject constructor(
         CryonIO.shutdown()
     }
 
+    /**
+     * Load `config.yml`, first bringing it up to date with the one shipped in this jar so a key
+     * added since it was written is actually there to read. See [ConfigMigrator].
+     */
     private fun loadConfig(): VelocityConfig {
         Files.createDirectories(dataDirectory)
         val configFile = dataDirectory.resolve("config.yml")
-        if (!Files.exists(configFile)) {
-            javaClass.getResourceAsStream("/config.yml")?.use { Files.copy(it, configFile) }
+        val template = javaClass.getResourceAsStream("/config.yml")?.use { it.readBytes().decodeToString() }
+        if (template == null) {
+            logger.error("config.yml is missing from the Cryon jar, so defaults cannot be migrated")
+        } else {
+            runCatching { ConfigMigrator.migrate(template, configFile, logger) }
+                .onFailure { logger.error("Failed to migrate config.yml, continuing with what is on disk", it) }
+                .onSuccess { if (it) logger.info("config.yml updated with keys added since it was written") }
         }
         return VelocityConfig.load(configFile)
     }
@@ -154,17 +171,17 @@ class CryonVelocityPlugin @Inject constructor(
     }.getOrNull()
 
     private fun setupInfrastructure(services: ServiceRegistry, cfg: VelocityConfig) {
-        if (cfg.boolean("database.enabled", false)) {
+        if (cfg.boolean("database.enabled", ConfigDefaults.DATABASE_ENABLED)) {
             try {
-                val dialect = SqlDialect.of(cfg.string("database.type", "postgresql"))
+                val dialect = SqlDialect.of(cfg.string("database.type", ConfigDefaults.DATABASE_TYPE))
                 val db = SqlDatabase.connect(
                     DatabaseConfig(
-                        host = cfg.string("database.host", "localhost"),
+                        host = cfg.string("database.host", ConfigDefaults.DATABASE_HOST),
                         port = cfg.int("database.port", dialect.defaultPort),
-                        database = cfg.string("database.database", "cryon"),
-                        username = cfg.string("database.username", "cryon"),
-                        password = cfg.string("database.password", ""),
-                        maxPoolSize = cfg.int("database.max-pool-size", 10),
+                        database = cfg.string("database.database", ConfigDefaults.DATABASE_NAME),
+                        username = cfg.string("database.username", ConfigDefaults.DATABASE_USERNAME),
+                        password = cfg.string("database.password", ConfigDefaults.DATABASE_PASSWORD),
+                        maxPoolSize = cfg.int("database.max-pool-size", ConfigDefaults.DATABASE_MAX_POOL_SIZE),
                         dialect = dialect,
                     ),
                     logger,
@@ -181,9 +198,9 @@ class CryonVelocityPlugin @Inject constructor(
 
     /** Install the transport every other service is built on. Mirrors the Paper core exactly. */
     private fun setupTransport(services: ServiceRegistry, cfg: VelocityConfig) {
-        if (cfg.boolean("redis.enabled", false)) {
+        if (cfg.boolean("redis.enabled", ConfigDefaults.REDIS_ENABLED)) {
             try {
-                val config = RedisConfig(cfg.string("redis.uri", "redis://localhost:6379/0"))
+                val config = RedisConfig(cfg.string("redis.uri", ConfigDefaults.REDIS_URI))
                 messenger = RedisMessenger(config, logger)
                 store = RedisKeyValueStore(config)
                 sharedTransport = true
@@ -213,11 +230,11 @@ class CryonVelocityPlugin @Inject constructor(
             logger.info("Dynamic routing off (no redis). Configure backends in velocity.toml")
             return
         }
-        if (!cfg.boolean("network.registry-enabled", true)) {
+        if (!cfg.boolean("network.registry-enabled", ConfigDefaults.REGISTRY_ENABLED)) {
             logger.info("Server registry disabled by config (network.registry-enabled=false)")
             return
         }
-        val heartbeat = cfg.long("network.heartbeat-seconds", 5).coerceAtLeast(1)
+        val heartbeat = cfg.long("network.heartbeat-seconds", ConfigDefaults.HEARTBEAT_SECONDS).coerceAtLeast(1)
         startPresence(Duration.ofSeconds(heartbeat))
         val reg = SharedServerRegistry(store, messenger, database, Duration.ofSeconds(heartbeat * 3), logger)
         reg.init()
@@ -265,9 +282,9 @@ class CryonVelocityPlugin @Inject constructor(
         val service = SharedMaintenanceService(
             database,
             messenger,
-            cfg.string("maintenance.default-message", "The network is under maintenance."),
+            cfg.string("maintenance.default-message", ConfigDefaults.MAINTENANCE_MESSAGE),
             logger,
-            Duration.ofSeconds(cfg.long("maintenance.refresh-seconds", 30)),
+            Duration.ofSeconds(cfg.long("maintenance.refresh-seconds", ConfigDefaults.MAINTENANCE_REFRESH_SECONDS)),
         ).also { it.init() }
         maintenance = service
         services.register<MaintenanceService>(service)
@@ -311,14 +328,16 @@ class CryonVelocityPlugin @Inject constructor(
         logger.info("MOTD available (/motd reload)")
     }
 
-    private fun setupModules(services: ServiceRegistry) {
+    private fun setupModules(services: ServiceRegistry, cfg: VelocityConfig) {
         val dataDir = dataDirectory.toFile()
         val apiDir = File(dataDir, "api").apply { mkdirs() }
         val modulesDir = File(dataDir, "modules").apply { mkdirs() }
-        val mgr = ModuleManager(logger)
+        val mgr = ModuleManager(logger, PluginPresence { proxy.pluginManager.getPlugin(it).isPresent })
         services.register<ModuleManager>(mgr)
         val ctx = VelocityContext(proxy, this, logger, services, dataDirectory)
-        val ldr = VelocityModuleLoader(mgr, logger, modulesDir, File(dataDir, ".module-cache"), javaClass.classLoader)
+        val ldr = VelocityModuleLoader(
+            mgr, ctx, logger, modulesDir, File(dataDir, ".module-cache"), javaClass.classLoader,
+        )
         ldr.loadSharedApi(apiDir)
         ldr.prepareCache()
         ldr.registerAll()
@@ -327,5 +346,41 @@ class CryonVelocityPlugin @Inject constructor(
         mgr.postLoadAll()
         manager = mgr
         loader = ldr
+        AnnotationCommands.register(proxy.commandManager, ModuleCommands(mgr, ldr))
+        startWatchers(cfg, modulesDir, apiDir, ldr)
+    }
+
+    /**
+     * Start the dev hot-reload watchers, the proxy twin of the Paper core's. Gated by
+     * `modules.auto-reload`, which defaults to `!production`, so a dev proxy picks up a replaced
+     * feature jar on its own and a production one does not. `/cryon load|unload|scan|reload-api`
+     * works either way. Best-effort: a watcher that fails to start degrades to manual hot-swap.
+     */
+    private fun startWatchers(cfg: VelocityConfig, modulesDir: File, apiDir: File, ldr: VelocityModuleLoader) {
+        val production = cfg.boolean("production", ConfigDefaults.PRODUCTION)
+        if (!cfg.boolean("modules.auto-reload", !production)) {
+            logger.info(
+                "Hot-reload watchers off (production={}); use /cryon load|unload|scan|reload-api to hot-swap",
+                production,
+            )
+            return
+        }
+        startWatcher(modulesDir, "modules", ldr, onChanged = { ldr.loadJar(it) }, onDeleted = { ldr.unloadJar(it) })
+        val reloadApi: (File) -> Unit = { ldr.reloadApi() }
+        startWatcher(apiDir, "api", ldr, onChanged = reloadApi, onDeleted = reloadApi)
+    }
+
+    private fun startWatcher(
+        dir: File,
+        label: String,
+        ldr: VelocityModuleLoader,
+        onChanged: (File) -> Unit,
+        onDeleted: (File) -> Unit,
+    ) {
+        try {
+            watchers += JarWatcher(dir, logger, ldr::submit, onChanged, onDeleted).also { it.start() }
+        } catch (e: Exception) {
+            logger.error("Failed to start the {} watcher; falling back to manual hot-swap", label, e)
+        }
     }
 }

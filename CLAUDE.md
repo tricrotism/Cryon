@@ -432,6 +432,43 @@ Cache wiped on boot and disable.
   `service<T>()`/`serviceOrNull<T>()` sugar for `services.get`/`find`; `listen(listener)`
   auto-unregisters on disable. Override `onLoad` (call `super` first), `onEnable`, `onDisable` (call `super`).
 
+**Sub-modules (`Module.children`).** A module can own child modules, each a full `Module`: its own id, its own `onLoad`/
+`onEnable`/`onDisable`, its own `ModuleState`, its own row in `/cryon modules`, and its own listeners and tasks torn
+down when *it* disables. They register depth-first right behind their parent, so every ordering the manager derives has
+the parent first.
+
+**This is not a second feature-flag system, and picking the wrong one is the mistake to avoid.** A flag is a guard
+inside a live handler: the listener is registered, the task is running, and the check happens per call. A child module
+is *not wired at all* while it is disabled. Gate behaviour with a flag; make an independently loadable half of a feature
+a child. Name a child `<parent>/<name>` (the manager warns otherwise) so listings read as a tree. A child cannot enable
+while its parent is not enabled, `disable` on a parent takes its children down first, and `reload` on a parent cycles
+the whole tree and brings back exactly the children that were up.
+
+**Declared dependencies (`Module.dependencies`).** What a module needs, said up front, so the loader can refuse it
+*before* running a line of its code instead of letting it discover the problem from inside `onEnable`. Three targets,
+one per kind of thing a module can need:
+
+- **`Dependency.module("cryon-economy")`**, another Cryon module by id. Checked at load (is its jar even here)
+  and again at enable (did it come up), and it **orders** the lifecycle: a dependency enables first.
+- **`Dependency.service("com.example.ShopService")`** or `Dependency.service<ShopService>()`, a `ServiceRegistry`
+  type. The truest form, since isolated classloaders mean modules intertwine through service interfaces and never
+  through each other's classes, and it does not couple a consumer to whichever repo publishes the impl. Checked before
+  `onEnable`, because providers publish in `onLoad`. **Use the string form for anything optional**: the reified one has
+  to load the class to read its name, which throws `NoClassDefFoundError` when the api jar is absent, exactly the case a
+  soft dependency exists to survive.
+- **`Dependency.plugin("WorldGuard")`**, a third-party plugin (Paper), plugin (Velocity) or extension (Geyser). Answered
+  through the `PluginPresence` seam each loader supplies, since `:common` carries no platform types. A manager built
+  without one skips plugin checks rather than failing modules over a question it cannot ask.
+
+`hard = true` (the default) means a missing prerequisite marks the module **`FAILED` without calling into it**, with one
+log line naming what is missing, and `/cryon info <id>` lists the declaration. It clears on
+`/cryon reload <id>` once the dependency lands. `hard = false` only affects ordering, which is what lets a feature
+integrate with a peer it can live without. A dependency cycle cannot be ordered, so those modules load in registration
+order with a warning rather than being taken down.
+
+Both properties are read **once, at registration**, before anything of the module has run, so they must be plain
+literals referencing nothing the module builds later.
+
 **Isolation → intertwine only through shared interfaces.** Feature jars can't see each other's
 classes. Expose behaviour by registering an impl of an **API interface in a shared artifact** (`:common`,
 `:paper-api`, or an `api/` contract jar). Never reference another feature's concrete classes.
@@ -549,7 +586,8 @@ only coherent thing: unload **all** modules → close + reload the `api/` loader
 that was loaded, preserving the global two-phase order. Briefly takes all features down. Use it after
 replacing an `api/` jar.
 
-**Auto hot-reload (dev).** Two daemon `WatchService`s (`ModuleWatcher`), one on `modules/` (per-jar load/reload/unload
+**Auto hot-reload (dev).** Two daemon `WatchService`s (`JarWatcher`, in `:common` and shared by all three loaders), one
+on `modules/` (per-jar load/reload/unload
 on file events) and one on `api/` (any change → a full `reload-api` cascade),
 debounced and hopped to the main thread. **Config-gated** by `modules.auto-reload` in the core
 `config.yml`, **defaulting to `!production`** (`production: true` by default): a `production: false`
@@ -612,8 +650,14 @@ shared `api/` parent, `ServiceLoader` discovery). Velocity's `@Inject` appears *
 like Paper, so the DI and the module system don't collide. Config is read from `plugins/cryon/config.yml`
 via (relocated) SnakeYAML with the same keys as Paper. It also **bootstraps the shared i18n on the
 proxy** (`Messages.install` + a `plugins/cryon/lang/` override dir + the bundle in its own jar), so proxy commands
-localize by client locale exactly like Paper. Never hardcode English in `:velocity`.
-Runtime hot-swap parity (a Velocity watcher and `/cryon`-style commands) is the documented next step.
+localize by client locale exactly like Paper. Never hardcode English in `:velocity`. **Runtime hot-swap works here
+too**, the same way it does on Paper: `/cryon modules|info|enable|disable|reload|load|unload|scan|reload-api`, plus a
+`modules.auto-reload` watcher defaulting to `!production`. The proxy has no main thread to funnel onto, so the loader
+owns one daemon thread (`VelocityModuleLoader.submit`) and both the command and the watcher dispatch through it, which
+is what keeps the manager single-writer. A proxy command is a Brigadier node held by Velocity's own `CommandManager`
+with no core-owned registry in front of it, so a module registers through **`VelocityModule.registerCommands`**, which
+takes the names back on disable. Registering straight onto `proxy.commandManager` leaves a node dispatching into a
+closed classloader after an unload.
 Velocity feature repos `compileOnly` `:common` +
 `:velocity-api`, `class Foo : VelocityModule()` no-arg ctor, add the `META-INF/services` entry, and
 drop the jar into the proxy's `plugins/cryon/modules/`.
@@ -655,6 +699,12 @@ Components. And Geyser namespaces every extension command under the extension ro
 `Command.Builder.subCommands(...)` is `@Deprecated(forRemoval = true)`
 on 2.11.2 and documented as having no effect, so there is **no tab completion** for extension commands at all;
 `AnnotationCommands` answers a mismatch with a filtered candidate list instead.
+
+**Hot-swap works here too**, with one honest hole:
+`/cryon modules list|info|enable|disable|reload|load|unload|scan|reload-api` and the same `modules.auto-reload` watcher,
+but a hot-loaded module gets its services, listeners and lang bundle and **not its commands**.
+`GeyserDefineCommandsEvent` fires once from `CommandRegistry`'s constructor during startup and there is nothing to
+register against afterwards, so a new module's commands appear on the next restart.
 
 Geyser feature repos `compileOnly` `:common` + `:geyser-api`, `class Foo : GeyserModule()` no-arg ctor, add the
 `META-INF/services` entry, and drop the jar into `extensions/cryon/modules/`.
@@ -1106,6 +1156,36 @@ refreshed by an async timer (`currency.leaderboard-refresh-seconds`, default 300
   `currency.*` (`enabled: false`), `commands.menu` (default `true`), `production` (default `true`) and
   `modules.auto-reload` (defaults to `!production`).
 
+**Config defaults and migration (`…common.config`).** Two rules, and both exist because the same keys are read by three
+platforms.
+
+**`ConfigDefaults` owns the default for every key more than one platform reads.** Paper, Velocity and Geyser each used
+to carry their own copy of `postgresql`/`localhost`/`cryon`/`5`, agreeing by hand, which is the arrangement that holds
+until somebody tunes one of them. A default belonging to exactly one platform (`commands.menu`, `motd.width`,
+`network.agones.*`) stays at its read site, since sharing a value nothing else reads only hides where it lives. The
+shipped `config.yml` templates still spell the values out, and that duplication is the one direction that cannot drift
+silently: the template is documentation an operator reads and edits, and the migration copies their edit over the
+default rather than the other way round.
+
+**`ConfigMigrator` brings an operator's file up to date with the one in the jar**, run before any key is read (Paper in
+`onLoad`, the other two in `loadConfig`). All three previously wrote the template only when the file was missing, so a
+key added in a release was invisible forever to anyone who already had a config: behaviour stayed right, because the
+read sites carry defaults, but an option nobody can see is an option nobody can turn on. The merge is **template-driven
+and additive**. The output is the template's text with the operator's value substituted wherever they have one, plus
+anything of theirs the template has no place for. So new keys arrive carrying the comments that explain them (improving
+that guidance in source is how it reaches deployments), and **nothing is ever removed**. A key dropped from the template
+survives as a line nothing reads, which is a smaller problem than deleting a value somebody meant to keep, and is the
+only reason sections keyed by operator-chosen names (`remote.repositories`) and lists they curate (`remote.artifacts`)
+survive at all. A file that will not parse is left exactly as it is: half-edited is far likelier than abandoned.
+
+**A renamed key must be declared in `Cryon.RENAMED_KEYS`, or the migration quietly undoes the rename.** Writing a
+template key the operator has not set is normally harmless, the value being the default they already had. It is not
+harmless when the key has a former name that is still honoured:
+`network.expect` arrives holding `one-node`, `legacy(…)` finds it set and stops consulting
+`network.mode`, and a `many-nodes` deployment declares itself alone. Declaring the pair makes the new key inherit the
+old one's value instead. Retire the map in the release that drops `legacy` and the
+`single`/`instanced` values.
+
 **Player locale, persistent & cross-server.** `Player.resolvedLocale()` = stored override ?: client
 `locale()`; all helpers use it. A chosen override (`player.setLanguage(de)`) persists to SQL +
 broadcasts an invalidation; `PlayerLocaleStore` caches it in memory for sync reads. The core installs
@@ -1355,6 +1435,10 @@ of populated shards on node upgrades. Add infrastructure **and document it here 
 | `Packets.onReceive/onSend(...).handler{}` + `track(…)`            | Registering a raw PacketEvents listener with no teardown        |
 | Hop out of a packet handler before any Bukkit call                | Touching entities/inventories on the Netty thread               |
 | `PackedDecimal` for values that grow past ~1e15                   | `BigDecimal` on hot incremental-math paths                      |
+| `Module.children` for an independently loadable half              | An umbrella module with a flag standing in for a lifecycle      |
+| `Dependency.module/service/plugin` declared up front              | Discovering a missing prerequisite from inside `onEnable`       |
+| `Dependency.service("com.x.Y")` (string) when optional            | The reified form for a type whose api jar may be absent         |
+| `VelocityModule.registerCommands(...)`                            | `AnnotationCommands.register(proxy.commandManager, …)` direct   |
 | `services.find<CurrencyService>()` (optional, like SQL)           | `get<CurrencyService>()` assuming an economy is configured      |
 | Branch the reward on `withdraw`'s returned `Boolean`              | Reading a balance to decide, then taking it separately          |
 | `cachedBalance` for HUDs/placeholders only                        | Deciding a purchase from `cachedBalance`                        |
@@ -1395,6 +1479,8 @@ of populated shards on node upgrades. Add infrastructure **and document it here 
 | `hsetIfAbsent` / `setIfAbsent` to claim                           | `hgetAll` then `hset` (check-then-act)                          |
 | A `MenuContent` for anything longer than a page                   | Materializing every node to show the first twenty-eight         |
 | `database.upsert(table, keys, columns, …)`                        | Hand-written `ON CONFLICT` / `ON DUPLICATE KEY` SQL             |
+| `ConfigDefaults.X` for a key two platforms read                   | A fourth copy of the same default at the read site              |
+| Declare a renamed key in `RENAMED_KEYS` the same release          | Letting the migration write the new name over a live alias      |
 | Play a `Sound.*` on player-facing actions                         | Silent state changes / redeems                                  |
 | `inventory.addItem` + handle overflow deliberately                | `dropItemNaturally` as the "didn't fit" path                    |
 | Explicit types; `val` over `var`                                  | Java-isms; needless `var`; gratuitous `!!`                      |

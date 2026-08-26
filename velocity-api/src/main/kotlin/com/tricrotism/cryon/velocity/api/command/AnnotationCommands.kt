@@ -27,6 +27,19 @@ object AnnotationCommands {
 
     fun register(manager: CommandManager, vararg handlers: Any) = handlers.forEach { register(manager, it) }
 
+    /**
+     * Every name [handler] registers under: its root literal and its aliases. What a hot-swappable
+     * owner needs to give them back, since Velocity's `CommandManager` withdraws a command by name
+     * and nothing else records which names a handler claimed.
+     */
+    fun names(handler: Any): List<String> {
+        val command = handler.javaClass.getAnnotation(Command::class.java) ?: return emptyList()
+        return buildList {
+            add(command.name)
+            addAll(command.aliases)
+        }
+    }
+
     fun register(manager: CommandManager, handler: Any) {
         val type = handler.javaClass
         val command = type.getAnnotation(Command::class.java) ?: error("${type.name} is missing @Command")

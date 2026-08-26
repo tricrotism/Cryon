@@ -310,8 +310,26 @@ class ModuleCommands(
                 actionButtons(id, state),
             )
         )
+        printDependencies(sender, id)
         printCommands(sender, id)
         printPlaceholders(sender, id)
+    }
+
+    /**
+     * List what the module declared it needs, and its place in a sub-module tree. The one line that
+     * answers "why is this FAILED" for a module the loader refused before running it.
+     */
+    private fun printDependencies(sender: CommandSender, id: String) {
+        modules.parentOf(id)?.let { line(sender, "Parent", it) }
+        val children = modules.childrenOf(id)
+        if (children.isNotEmpty()) line(sender, "Sub-modules", children.joinToString(", "))
+        val declared = modules.dependenciesOf(id)
+        if (declared.isEmpty()) return
+        line(
+            sender,
+            "Depends on",
+            declared.joinToString(", ") { it.description + if (it.hard) "" else " (soft)" },
+        )
     }
 
     /** List the PlaceholderAPI namespaces the module owns, e.g. `%afkarea_…%`. Omitted when it has none. */
@@ -710,10 +728,13 @@ class ModuleCommands(
             return
         }
         for ((id, state) in states) {
+            // Sub-modules are indented under their parent: the map is in registration order, which is
+            // depth-first, so the tree reads without sorting anything here.
             sender.sendMessage(
                 Component.textOfChildren(
                     Mini.format(
-                        "  <slate_gray>•</slate_gray> <off_white><id></off_white> <state> ",
+                        "  <indent><slate_gray>•</slate_gray> <off_white><id></off_white> <state> ",
+                        Placeholder.unparsed("indent", if (modules.parentOf(id) == null) "" else "  "),
                         Placeholder.unparsed("id", id),
                         Placeholder.component("state", stateLabel(state)),
                     ),

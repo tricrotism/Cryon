@@ -4,10 +4,8 @@ import com.tricrotism.cryon.common.concurrent.CryonIO
 import com.tricrotism.cryon.common.data.Database
 import com.tricrotism.cryon.common.net.Messenger
 import com.tricrotism.cryon.common.net.MessengerSubscription
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
+import org.slf4j.Logger
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -22,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
 class PlayerLocaleStore(
     private val database: Database,
     private val messenger: Messenger,
+    private val logger: Logger,
 ) : LocaleStore {
     // present-value = override; present-empty = no override; absent = this player isn't on this server.
     private val cache = ConcurrentHashMap<UUID, Optional<Locale>>()
@@ -31,7 +30,11 @@ class PlayerLocaleStore(
      * runs on the transport's ordered delivery thread — so the SQL read it needs has to be launched
      * rather than awaited, and this is what owns and cancels those.
      */
-    private val scope = CoroutineScope(SupervisorJob() + CryonIO.dispatcher)
+    private val scope = CoroutineScope(
+        SupervisorJob() + CryonIO.dispatcher + CoroutineExceptionHandler { _, error ->
+            logger.error("Unhandled failure in the player locale store", error)
+        }
+    )
 
     private val subscription: MessengerSubscription = messenger.subscribe(CHANNEL, ::onInvalidate)
 
@@ -88,9 +91,25 @@ class PlayerLocaleStore(
         scope.cancel("The locale store was closed")
     }
 
+    /**
+     * Re-read a player another server just changed.
+     *
+     * A failed read is logged rather than left to a default handler, and it matters more than the
+     * line suggests: the broadcast has already been consumed, so nothing tries again and this node
+     * would go on serving the old override for the rest of its life with no sign of why.
+     */
     private fun onInvalidate(message: String) {
         val uuid = runCatching { UUID.fromString(message) }.getOrNull() ?: return
-        if (cache.containsKey(uuid)) scope.launch { reread(uuid) }
+        if (!cache.containsKey(uuid)) return
+        scope.launch {
+            try {
+                reread(uuid)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn("Failed to re-read the locale override for {}", uuid, e)
+            }
+        }
     }
 
     private companion object {

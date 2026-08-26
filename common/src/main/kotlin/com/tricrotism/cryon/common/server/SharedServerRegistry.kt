@@ -52,7 +52,11 @@ class SharedServerRegistry(
      * lifecycle hooks rather than coroutines, and cancelling this on [close] stops a slow warm-up
      * writing into a replica the process is already tearing down.
      */
-    private val scope = CoroutineScope(SupervisorJob() + CryonIO.dispatcher)
+    private val scope = CoroutineScope(
+        SupervisorJob() + CryonIO.dispatcher + CoroutineExceptionHandler { _, error ->
+            logger.error("Unhandled failure in a coroutine of the server registry", error)
+        }
+    )
     private val reaper = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "cryon-registry-reaper").apply { isDaemon = true }
     }
@@ -234,12 +238,19 @@ class SharedServerRegistry(
         }
     }
 
+    /**
+     * Record this node's server in the catalog, if it is not already there.
+     *
+     * Failing is survivable, the live replica is driven by the key-value store rather than by this
+     * table, but it is said out loud: a server missing from the catalog is otherwise a silent gap an
+     * operator only notices when something reads the catalog and finds nothing.
+     */
     private fun upsertServer(instance: Node) {
         val db = database ?: return
         scope.launch {
             runCatching {
                 db.insertIfAbsent(SERVER_TABLE, SERVER_KEYS, SERVER_COLUMNS, instance.serverId, instance.maxPlayers)
-            }
+            }.onFailure { logger.warn("Failed to record server '{}' in the catalog", instance.serverId, it) }
         }
     }
 

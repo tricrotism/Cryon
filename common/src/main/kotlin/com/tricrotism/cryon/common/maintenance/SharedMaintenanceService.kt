@@ -59,7 +59,11 @@ class SharedMaintenanceService(
      * write plus broadcast are launched behind it, which is exactly what the futures did before —
      * see `FeatureFlags`, which this deliberately mirrors.
      */
-    private val scope = CoroutineScope(SupervisorJob() + CryonIO.dispatcher)
+    private val scope = CoroutineScope(
+        SupervisorJob() + CryonIO.dispatcher + CoroutineExceptionHandler { _, error ->
+            logger.error("Unhandled failure in a coroutine of the maintenance service", error)
+        }
+    )
 
     private fun persist(what: String, block: suspend () -> Unit) {
         scope.launch {

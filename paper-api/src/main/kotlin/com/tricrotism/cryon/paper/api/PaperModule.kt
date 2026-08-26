@@ -317,17 +317,27 @@ abstract class PaperModule : Module {
         placeholders += placeholderService.register(id, provider)
     }
 
+    /**
+     * Release everything this module acquired, consumers before what they consume.
+     *
+     * The scope is cancelled **after** the tasks and listeners that dispatch into it, not before.
+     * `launch` on a cancelled scope is silently inert: the body never runs and nothing is raised. So
+     * cancelling first opens a window where a still-registered handler, a quit handler saving state
+     * being the case that costs, appears to do its work and drops it without a line in the log.
+     *
+     * Every step is guarded, because one throwing release must not strand the ones behind it.
+     */
     override fun onDisable() {
-        if (scopeStarted) runCatching { scope.cancel("Module '$id' disabled") }
         tasks.forEach { runCatching { it.cancel() } }
         tasks.clear()
-        listeners.forEach(HandlerList::unregisterAll)
+        listeners.forEach { runCatching { HandlerList.unregisterAll(it) } }
         listeners.clear()
+        if (scopeStarted) runCatching { scope.cancel("Module '$id' disabled") }
         closeables.asReversed().forEach { runCatching { it.close() } }
         closeables.clear()
-        flushes.forEach { it.close() }
+        flushes.forEach { runCatching { it.close() } }
         flushes.clear()
-        placeholders.forEach { it.close() }
+        placeholders.forEach { runCatching { it.close() } }
         placeholders.clear()
     }
 }

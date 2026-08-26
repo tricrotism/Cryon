@@ -1,3 +1,15 @@
+# Set false on a development deployment. Controls the default for the module hot-reload watcher
+# (see modules.auto-reload). Does not affect the /cryon load|unload|scan|reload-api commands, which
+# always work.
+production: true
+
+modules:
+# Watch modules/ and automatically load, reload, and unload feature jars at runtime as they are
+# added, replaced, or deleted. Intended for dev iteration. Defaults to the opposite of
+# `production`; uncomment to override. Feature jars are loaded from private copies, so the
+# originals here are never locked and can be freely swapped while running.
+#auto-reload: true
+
 # Cryon proxy config.
 #
 # With redis on, this proxy reads the shared registry to route players and register backends as nodes

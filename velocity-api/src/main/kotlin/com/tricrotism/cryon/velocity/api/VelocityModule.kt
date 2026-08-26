@@ -2,6 +2,7 @@ package com.tricrotism.cryon.velocity.api
 
 import com.tricrotism.cryon.common.module.*
 import com.tricrotism.cryon.velocity.api.bedrock.BedrockService
+import com.tricrotism.cryon.velocity.api.command.AnnotationCommands
 import com.velocitypowered.api.proxy.ProxyServer
 import com.velocitypowered.api.scheduler.ScheduledTask
 import org.slf4j.Logger
@@ -19,6 +20,7 @@ abstract class VelocityModule : Module {
 
     private lateinit var moduleContext: VelocityModuleContext
     private val listeners = ArrayList<Any>()
+    private val commands = ArrayList<String>()
     private val tasks = ArrayList<ScheduledTask>()
     private val closeables = ArrayList<AutoCloseable>()
 
@@ -50,6 +52,19 @@ abstract class VelocityModule : Module {
 
     override fun onLoad(context: ModuleContext) {
         moduleContext = context as VelocityModuleContext
+    }
+
+    /**
+     * Register an annotation command class, withdrawn from the proxy when this module disables.
+     *
+     * Use this rather than `AnnotationCommands.register(proxy.commandManager, …)` directly: a proxy
+     * command is a Brigadier node held by Velocity's own `CommandManager`, so one left behind by a
+     * hot-unloaded jar keeps dispatching into a closed classloader, and a reload of the same module
+     * would register a second copy over the first.
+     */
+    protected fun registerCommands(handler: Any) {
+        AnnotationCommands.register(proxy.commandManager, handler)
+        commands += AnnotationCommands.names(handler)
     }
 
     /** Register a Velocity event listener that is automatically unregistered when this module disables. */
@@ -87,8 +102,10 @@ abstract class VelocityModule : Module {
     override fun onDisable() {
         tasks.forEach { runCatching { it.cancel() } }
         tasks.clear()
-        listeners.forEach { proxy.eventManager.unregisterListener(moduleContext.plugin, it) }
+        listeners.forEach { runCatching { proxy.eventManager.unregisterListener(moduleContext.plugin, it) } }
         listeners.clear()
+        commands.forEach { runCatching { proxy.commandManager.unregister(it) } }
+        commands.clear()
         closeables.asReversed().forEach { runCatching { it.close() } }
         closeables.clear()
     }

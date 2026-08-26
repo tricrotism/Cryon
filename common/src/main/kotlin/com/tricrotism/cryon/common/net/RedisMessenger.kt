@@ -29,7 +29,11 @@ class RedisMessenger(config: RedisConfig, private val logger: Logger) : Messenge
     private val nodeId = UUID.randomUUID().toString()
     private val replyChannel = "cryon:reply:$nodeId"
     private val pending = ConcurrentHashMap<String, CompletableDeferred<String>>()
-    private val scope = CoroutineScope(SupervisorJob() + CryonIO.dispatcher)
+    private val scope = CoroutineScope(
+        SupervisorJob() + CryonIO.dispatcher + CoroutineExceptionHandler { _, error ->
+            logger.error("Unhandled failure in a coroutine of the Redis messenger", error)
+        }
+    )
 
     init {
         pubSubConn.addListener(object : RedisPubSubAdapter<String, String>() {

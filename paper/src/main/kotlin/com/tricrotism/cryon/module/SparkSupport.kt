@@ -121,9 +121,7 @@ object SparkSupport {
         val knownSources = sparkPluginType.getMethod("getKnownSources")
         // getKnownSources(): Collection<SourceMetadata>. Pull the element type out of the generics.
         val metadataType = (knownSources.genericReturnType as ParameterizedType).actualTypeArguments[0] as Class<*>
-        val metadataCtor = metadataType.getConstructor(
-            String::class.java, String::class.java, String::class.java, String::class.java
-        )
+        val newMetadata = metadataFactory(metadataType)
 
         val proxy = Proxy.newProxyInstance(sparkPluginType.classLoader, arrayOf(sparkPluginType)) { _, method, args ->
             when {
@@ -134,7 +132,7 @@ object SparkSupport {
                     wrapFinder(finderType, createFinder.invoke(realPlugin), loader)
 
                 method.name == "getKnownSources" && method.parameterCount == 0 ->
-                    appendModuleSources(knownSources.invoke(realPlugin), metadataCtor, loader, author)
+                    appendModuleSources(knownSources.invoke(realPlugin), newMetadata, loader, author)
 
                 else -> delegate(method, realPlugin, args)
             }
@@ -172,16 +170,48 @@ object SparkSupport {
     /** spark's real known sources plus a `SourceMetadata(name, version, author, description)` per jar. */
     private fun appendModuleSources(
         real: Any?,
-        metadataCtor: Constructor<*>,
+        newMetadata: (String, String, String, String) -> Any,
         loader: ModuleLoader,
         author: String,
     ): Any {
         val combined = ArrayList<Any?>(real as? Collection<Any?> ?: emptyList())
         for (source in loader.sources()) {
-            combined.add(metadataCtor.newInstance(source.name, source.version, author, "Cryon feature module"))
+            combined.add(newMetadata(source.name, source.version, author, "Cryon feature module"))
         }
         return combined
     }
+
+    /**
+     * Builds `SourceMetadata` without pinning its arity.
+     *
+     * The four strings are the whole of what we know about a feature jar, but spark's constructor is
+     * not a stable four. Paper 26.2 bundles spark 1.10.172, which added a `builtIn` flag and *replaced*
+     * the four-argument constructor rather than overloading it - so a hardcoded
+     * `getConstructor(String, String, String, String)` throws `NoSuchMethodException` and the whole
+     * splice is abandoned, taking per-module attribution down with it.
+     *
+     * So: take the shortest constructor whose first four parameters are the strings we have, and leave
+     * anything spark appends after them at its type's default. `builtIn` defaults to `false`, which is
+     * what a feature jar is - it is not part of the platform. That keeps this working across the next
+     * field too, and a shape we genuinely cannot fill still fails loudly at [install]'s catch.
+     */
+    private fun metadataFactory(metadataType: Class<*>): (String, String, String, String) -> Any {
+        val constructor = metadataType.constructors
+            .filter { it.parameterCount >= 4 && it.parameterTypes.take(4).all { p -> p == String::class.java } }
+            .minByOrNull { it.parameterCount }
+            ?: throw NoSuchMethodException("no (String, String, String, String, ...) constructor on ${metadataType.name}")
+        val trailing = constructor.parameterTypes.drop(4).map(::defaultValue).toTypedArray()
+        return { name, version, author, description ->
+            constructor.newInstance(name, version, author, description, *trailing)
+        }
+    }
+
+    /**
+     * The JVM's own default for [type]: `false`/zero for a primitive, null for anything else.
+     * A one-element array of the type holds exactly that, already boxed, for every type there is.
+     */
+    private fun defaultValue(type: Class<*>): Any? =
+        java.lang.reflect.Array.get(java.lang.reflect.Array.newInstance(type, 1), 0)
 
     /** [Class.getDeclaredField] walked up the hierarchy, made accessible. */
     private fun field(type: Class<*>, name: String): Field {

@@ -1,6 +1,5 @@
-package com.tricrotism.cryon.module
+package com.tricrotism.cryon.common.module
 
-import com.tricrotism.cryon.paper.api.scheduler.Schedulers
 import org.slf4j.Logger
 import java.io.File
 import java.nio.file.ClosedWatchServiceException
@@ -11,19 +10,22 @@ import java.nio.file.WatchKey
 import java.util.concurrent.TimeUnit
 
 /**
- * Watches `plugins/Cryon/modules/` on a daemon thread and drives hot add/remove/replace: a new jar
- * fires [onChanged], a replaced jar fires [onChanged] (the [ModuleLoader] reloads it), a deleted jar
- * fires [onDeleted]. Bursts are coalesced. File copies emit many `MODIFY` events, so after the
- * first event we keep draining for a short quiet window before dispatching one batch.
+ * Watches a feature-jar directory on a daemon thread and drives hot add/remove/replace: a new jar
+ * fires [onChanged], a replaced jar fires [onChanged] (the loader reloads it), a deleted jar fires
+ * [onDeleted]. Bursts are coalesced. File copies emit many `MODIFY` events, so after the first event
+ * we keep draining for a short quiet window before dispatching one batch.
  *
- * Filesystem events arrive off the main thread; both callbacks are invoked on the **main thread**
- * (via [Schedulers.global]) because they touch module lifecycle (listeners, commands). Dev-only,
- * gated behind config so production never runs it. Originals are never locked (the loader runs from
- * copies), so admins can freely delete/replace jars here.
+ * Filesystem events arrive on the watcher's own thread, and module lifecycle is single-writer on
+ * every platform, so both callbacks are handed to [dispatch] rather than invoked here: Paper funnels
+ * them onto the global region thread, the proxy and Geyser onto their loader executor.
+ *
+ * Dev-only, gated behind config so production never runs it. Originals are never locked (loaders run
+ * from cache copies), so admins can freely delete or replace jars underneath it.
  */
-class ModuleWatcher(
+class JarWatcher(
     private val dir: File,
     private val log: Logger,
+    private val dispatch: (() -> Unit) -> Unit,
     private val onChanged: (File) -> Unit,
     private val onDeleted: (File) -> Unit,
 ) {
@@ -76,7 +78,7 @@ class ModuleWatcher(
             if (changed.isEmpty() && deleted.isEmpty()) continue
             // Never let a dispatch failure kill the watcher thread (callbacks self-guard too).
             runCatching {
-                Schedulers.global {
+                dispatch {
                     deleted.forEach { onDeleted(File(dir, it)) }
                     changed.forEach { onChanged(File(dir, it)) }
                 }

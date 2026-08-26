@@ -41,7 +41,11 @@ class LocalMessenger(private val logger: Logger) : Messenger {
     /**
      * Runs [handle] responders. Canceled by [close], so no responder outlives the transport.
      */
-    private val scope = CoroutineScope(SupervisorJob() + CryonIO.dispatcher)
+    private val scope = CoroutineScope(
+        SupervisorJob() + CryonIO.dispatcher + CoroutineExceptionHandler { _, error ->
+            logger.error("Unhandled failure in a coroutine of the in-process messenger", error)
+        }
+    )
 
     init {
         subscribe(replyChannel) { onReply(it) }

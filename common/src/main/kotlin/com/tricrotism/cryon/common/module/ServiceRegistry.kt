@@ -59,6 +59,15 @@ class ServiceRegistry(private val logger: Logger) {
         return service as T
     }
 
+    /**
+     * Whether a service is registered under the API type named [className] (its binary name).
+     *
+     * By name rather than by type because the only caller is [Dependency.OnService] resolution, and a
+     * module declaring an optional dependency on a peer's api jar must be able to name that type
+     * without being able to load it.
+     */
+    fun has(className: String): Boolean = services.keys.any { it.java.name == className }
+
     /** The service for [type], or null, for optional dependencies. */
     fun <T : Any> find(type: KClass<T>): T? {
         @Suppress("UNCHECKED_CAST")

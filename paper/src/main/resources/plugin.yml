@@ -25,6 +25,9 @@ libraries:
     - com.mysql:mysql-connector-j:9.7.0
     - com.h2database:h2:2.3.232
     - io.lettuce:lettuce-core:6.7.1.RELEASE
+    # ConfigMigrator reads the operator's config.yml. Paper bundles SnakeYAML for its own use, but
+    # declaring it here is what makes it visible to this classloader on every build.
+    - org.yaml:snakeyaml:2.2
 
 permissions:
     cryon.admin:

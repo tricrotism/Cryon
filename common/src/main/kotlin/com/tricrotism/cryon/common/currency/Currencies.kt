@@ -319,8 +319,16 @@ class Currencies(
         )
     }
 
+    /**
+     * Make sure [player] has a row for [currency].
+     *
+     * A failure is logged rather than thrown: the row is created on the first real movement anyway,
+     * so this is a warm-up and not a precondition. It is logged because the alternative, returning
+     * normally from a call that did nothing, reads to the caller exactly like success.
+     */
     override suspend fun openAccount(currency: Currency, player: UUID, ranked: Boolean) {
         runCatching { ensureAccount(currency, player, ranked) }
+            .onFailure { logger.warn("Failed to open a '{}' account for {}", currency.id, player, it) }
     }
 
     /**
