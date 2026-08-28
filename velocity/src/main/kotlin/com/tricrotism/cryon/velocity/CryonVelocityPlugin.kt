@@ -60,7 +60,6 @@ class CryonVelocityPlugin @Inject constructor(
 ) {
     private var database: Database? = null
     private var registry: ServerRegistry? = null
-    private var presence: Presence? = null
 
     /**
      * What this proxy calls itself in the presence hash, resolved exactly as `NodeIdentity` resolves a
@@ -86,7 +85,7 @@ class CryonVelocityPlugin @Inject constructor(
      * The proxy's coroutine scope, canceled on shutdown.
      *
      * The proxy twin of `PaperModule.scope`: Velocity's event and command APIs are not suspending,
-     * so the places that call into `:common`'s suspending services bridge through this — `launch`
+     * so the places that call into `:common`'s suspending services bridge through this, `launch`
      * for fire-and-forget, `future` where Velocity wants a `CompletionStage` to resume on.
      */
     private val scope = CoroutineScope(
@@ -118,7 +117,6 @@ class CryonVelocityPlugin @Inject constructor(
 
     @Subscribe
     fun onProxyShutdown(event: ProxyShutdownEvent) {
-        scope.cancel("The proxy is shutting down")
         watchers.forEach { runCatching { it.close() } }
         watchers.clear()
         manager?.disableAll()
@@ -131,6 +129,9 @@ class CryonVelocityPlugin @Inject constructor(
         if (::messenger.isInitialized) messenger.close()
         if (::store.isInitialized) store.close()
         database?.close()
+        // Last: a launch on a canceled scope is silently inert, so cancelling ahead of the teardown
+        // above would drop the work it dispatches through this scope without a line in the log.
+        scope.cancel("The proxy is shutting down")
         CryonIO.shutdown()
     }
 
@@ -260,7 +261,6 @@ class CryonVelocityPlugin @Inject constructor(
      */
     private fun startPresence(interval: Duration) {
         val presence = Presence(store, logger)
-        this.presence = presence
         scope.launch {
             while (isActive) {
                 presence.announce(
@@ -298,7 +298,7 @@ class CryonVelocityPlugin @Inject constructor(
     /**
      * Gate every backend switch on whether the player may actually enter the target: maintenance,
      * node state, and per-server access. Installed after maintenance because it enforces it, and
-     * independent of the transport — a static one-node deployment still has both a maintenance
+     * independent of the transport. A static one-node deployment still has both a maintenance
      * toggle and closed servers.
      */
     private fun setupServerAccess(cfg: VelocityConfig) {

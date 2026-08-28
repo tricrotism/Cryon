@@ -38,7 +38,7 @@ tasks {
 
     shadowJar {
         // Append rather than overwrite same-named META-INF/services files. Nothing bundled today
-        // actually ships one — coroutines-core carries its wiring in code, not as a service — so this
+        // actually ships one, coroutines-core carries its wiring in code rather than as a service, so this
         // changes no current output; it is here so that adding a dependency that *does* use the
         // ServiceLoader cannot silently lose every provider but the last jar merged.
         mergeServiceFiles()

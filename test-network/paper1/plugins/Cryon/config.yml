@@ -1,34 +1,160 @@
+# Set true on live/production servers. Disables developer conveniences, currently just the
+# module hot-reload watcher (see modules.auto-reload). Does not affect the /cryon load|unload|scan
+# commands, which always work.
 production: false
 
 modules:
     auto-reload: true
+    # Watch plugins/Cryon/modules/ and automatically load, reload, and unload feature jars at
+    # runtime as they're added, replaced, or deleted, with no /cryon command needed. Intended for dev
+    # iteration. Defaults to the opposite of `production` (on in dev, off in prod); uncomment to
+    # override. Feature jars are loaded from private copies, so the originals here are never locked
+    # and can be freely swapped while running.
+    #auto-reload: true
 
+# Remote feature modules: pull feature jars from a Maven repository instead of copying them in by
+# hand. Off by default, and genuinely optional: with `enabled: false` nothing is parsed, no poller
+# starts, and `modules/` behaves exactly as it always has.
+#
+# The poller only ever WRITES jars into modules/. Whether a downloaded build then applies is decided
+# by modules.auto-reload above and nothing else: with the watcher running a replaced jar hot-swaps
+# just as if you had dropped it in yourself, and with the watcher off (a production server) the new
+# build waits on disk for the next restart or an explicit /cryon load. Use `/cryon remote` to see
+# what is tracked and `/cryon remote check` to poll immediately.
+#
+# CREDENTIALS ARE ENV-FIRST AND HAVE NO DEFAULT. For a repository named `internal` the poller reads
+# CRYON_MAVEN_INTERNAL_USERNAME and CRYON_MAVEN_INTERNAL_PASSWORD ahead of anything set below (the
+# name uppercased, every non-alphanumeric character replaced with `_`). A repository that resolves
+# to no username sends no auth header at all, which is right for a public repository and produces an
+# honest 401 in the log for a private one.
+remote:
+    enabled: false
+    # How often to check, in seconds. Minimum 30. The first check runs shortly after boot rather
+    # than during it, so an unreachable repository can never turn into an unbootable server.
+    poll-seconds: 300
+    repositories:
+        internal:
+            url: "https://maven.example.com/snapshots"
+            # Prefer the environment variables above. These exist for a local test network where
+            # there is no secret worth protecting.
+            username: ""
+            password: ""
+    # Maven has no branches, so a branch is spliced into the version: version 1.0.0 on branch main
+    # resolves to 1.0.0-main-SNAPSHOT, which is what CI publishes. Leave `branch` blank for a plain
+    # 1.0.0-SNAPSHOT. A version with no -SNAPSHOT anywhere is a PIN: it resolves to exactly one
+    # immutable jar, is fetched once, and never changes again, which is the right shape for a
+    # production server that wants remote delivery without remote surprises.
+    #
+    # Each artifact lands on a stable filename (cryon-economy.jar), so a new build replaces the old
+    # one rather than landing beside it.
+    artifacts: [ ]
+    #    - repository: internal
+    #      coords: "com.tricrotism.cryon:cryon-economy"
+    #      version: "1.0.0"
+    #      branch: "main"
+
+# This server's pool (the interchangeable set of nodes it belongs to, e.g. skyblock or hub). Also
+# the scope name server-scoped feature flags apply to, so a flag kills the whole pool at once. Kept
+# as a legacy alias for network.server below; prefer setting network.server.
 server-name: prison
 
+# Network / sharding. This server registers itself in the server registry and heartbeats its live
+# player count, so proxies can route to it and an orchestrator can scale the pool. All values are
+# env-first (a Kubernetes pod needs no baked config): CRYON_EXPECT, CRYON_SERVER,
+# CRYON_NODE (or HOSTNAME), CRYON_NODE_ADDRESS, CRYON_NODE_PORT.
 network:
-    mode: instanced
+    # Two words, and everything below uses them consistently:
+    #
+    #   server:  what a player joins and picks from a hub menu: "prison", "skyblock". One server can
+    #            be run by any number of interchangeable processes sharing its players and state.
+    #   node:    one of those processes. This is also the name the proxy registers it under, so a
+    #            node id and a Velocity server entry are the same thing.
+    #
+    # How many nodes you MEAN to run for this server. It is an assertion, not a switch: nothing
+    # behaves differently either way. What actually decides whether state crosses processes is
+    # redis.enabled. Declaring it is what lets the core compare intent against reality and say so
+    # when they disagree. See /cryon network.
+    #
+    #   one-node:    this process is the whole server. Redis is optional; the registry simply holds
+    #                one node (this one) and a flag toggle reaches its only audience.
+    #   many-nodes:  one of N interchangeable nodes. Redis and the database are then REQUIRED:
+    #                without them each node runs as its own island and they will silently disagree.
+    expect: many-nodes
+
     registry-enabled: true
-    family: prison
-    instance-id: paper1
+    # Which server this process serves. Blank falls back to server-name above, then "local".
+    server: prison
+    # Unique per process, and the name the proxy registers it under. Blank falls back to CRYON_NODE,
+    # then HOSTNAME, then a generated id.
+    node: paper1
+    # The address a proxy dials to reach this server. Blank falls back to 127.0.0.1.
     address: 127.0.0.1
+    # 0 falls back to the Paper server port.
     port: 25566
+    # 0 falls back to the Paper server max-players.
     max-players: 0
     heartbeat-seconds: 5
+
+    # Agones (Kubernetes game-server orchestration). Auto-detected via the injected sidecar env, so
+    # these only take effect inside an Agones-managed pod; elsewhere they are ignored.
     agones:
         health-seconds: 5
+        # Persistent shards: request Shutdown once empty for empty-grace-seconds, so the fleet can
+        # shrink. Guarded so it never kills the last min-instances of the server. Off by default,
+        # which is correct for singleton hubs and for ephemeral matches (they shut down on match end).
         shutdown-when-empty: false
         empty-grace-seconds: 60
         min-instances: 1
 
+# Storage and transport.
+#
+# database:  where state is written down. Needed for anything that must survive a restart, or follow
+#            a player between nodes: feature flag overrides, player language, module data.
+# redis:     how far a message travels. On, state is shared with every other process on the network.
+#            Off, it stays in this JVM, which is the whole network when network.expect is
+#            `one-node`.
+#            The API is identical either way, so features never branch on it.
 database:
     enabled: true
+    # Backend: postgresql, mysql, or h2. With h2 the DB is an embedded local file (`database` below is
+    # its path, host/port ignored), zero-setup but local to this process, not shared across servers.
+    type: postgresql
     host: 127.0.0.1
+    # Leave the port at the backend default (postgresql 5432, mysql 3306) or set your own.
     port: 5433
     database: cryon
     username: cryon
-    password: ""
+    password: ''
     max-pool-size: 10
 
 redis:
     enabled: true
-    uri: "redis://localhost:6379/0"
+    # redis://[:password@]host:port/db
+    uri: redis://localhost:6379/0
+
+# Command surface.
+#
+# menu:  what a bare /cryon gives a player. True opens the admin menu, false prints the help. Both
+#        always exist either way (/cryon menu and /cryon help), and the console always gets the help,
+#        having nowhere to put a window. Every menu action has a command that does the same thing, so
+#        turning this off costs nothing but clicks.
+commands:
+    menu: true
+
+# The currency ledger: balances, /balance, /pay, /currency, and the CurrencyService a feature spends
+# through.
+#
+# Off by default. Turn it on for the servers that actually run an economy. Off means the service is
+# never registered, so `services.find<CurrencyService>()` answers null and a feature that wants money
+# has to cope with its absence, the same contract the database has, and the three commands above are
+# not registered either. Nothing is deleted: balances stay in the table and are exactly where they
+# were when it is switched on again.
+#
+# Without a database this runs in memory and every balance resets on restart, which the log says at
+# boot.
+currency:
+    enabled: false
+    # How often the ranked leaderboards are recomputed, in seconds. One indexed query per ranked
+    # currency, off-thread. Minimum 30.
+    leaderboard-refresh-seconds: 300
+

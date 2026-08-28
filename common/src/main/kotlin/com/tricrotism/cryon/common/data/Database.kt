@@ -71,8 +71,8 @@ interface Database {
      * exception propagates to the caller.
      *
      * [body] is **not** a suspending block, deliberately. A suspension inside a transaction would let
-     * the coroutine be resumed on a different thread while the connection — and every row lock it
-     * holds — stays bound to this one, which is both a JDBC violation and an unbounded lock hold.
+     * the coroutine be resumed on a different thread while the connection, and every row lock it
+     * holds, stays bound to this one, which is both a JDBC violation and an unbounded lock hold.
      *
      * Two things a caller has to know. A transaction holds row locks until it ends, so keep [body]
      * short and put no scheduler hop, no future wait, and no lock acquisition inside it. And two

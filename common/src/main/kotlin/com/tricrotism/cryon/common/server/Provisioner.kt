@@ -3,7 +3,7 @@ package com.tricrotism.cryon.common.server
 /**
  * Which node a request should land on, expressed as a predicate rather than a name.
  *
- * The caller almost never wants *a specific node* — it wants "one with room", "the one already
+ * The caller almost never wants *a specific node*. It wants "one with room", "the one already
  * hosting this party", "an empty one". Saying that as a predicate lets [Provisioner] answer from the
  * live registry and, when nothing matches, decide whether creating one is appropriate.
  */
@@ -37,7 +37,7 @@ sealed interface ProvisionResult {
     data class Ready(val node: Node) : ProvisionResult
 
     /**
-     * Nothing matched and nothing was created — either [ProvisionRequest.createIfMissing] was false,
+     * Nothing matched and nothing was created, either [ProvisionRequest.createIfMissing] was false,
      * or creation is not possible on this deployment.
      */
     data object Unavailable : ProvisionResult
@@ -64,7 +64,7 @@ data class ProvisionRequest(
      * Whether to ask the orchestrator for a new node when nothing matches.
      *
      * False makes this a pure query over the registry, which is what a "send them if there's room"
-     * path wants — creating a shard because a hub happened to be full is rarely the intent.
+     * path wants. Creating a shard because a hub happened to be full is rarely the intent.
      */
     val createIfMissing: Boolean = false,
     /** How long to wait for a newly created node to report `READY`. */
@@ -79,12 +79,12 @@ data class ProvisionRequest(
  * Finds a node that fits, and creates one when none does.
  *
  * **The rung that was missing.** `ServerRegistry` says which nodes exist, `PlayerRouter` sends a
- * player to one, and `AgonesLifecycle` lets a node be reclaimed — but nothing joined them up, so
+ * player to one, and `AgonesLifecycle` lets a node be reclaimed, but nothing joined them up, so
  * "give this party a dungeon shard, starting one if the pool is full" had no home and every caller
  * would have had to write its own scan-then-scale loop against the registry.
  *
  * **Creation is orchestrator-dependent and honestly optional.** A [NodeAllocator] is what actually
- * knows how to make a node appear — Agones, a Kubernetes API, a fleet manager — and there is no such
+ * knows how to make a node appear, whether Agones, a Kubernetes API or a fleet manager, and there is no such
  * thing on a single server or a static pool. Without one this degrades to a query: the selector is
  * matched against the live registry and [ProvisionResult.Unavailable] is the answer when nothing
  * fits, which for a static deployment is the truth rather than a degraded mode.
@@ -112,7 +112,7 @@ interface NodeAllocator {
 
     /**
      * Ask for one more node of [serverId]. Answers whether the request was accepted, **not** whether
-     * a node is ready — readiness is observed through the registry, because the orchestrator's idea
+     * a node is ready. Readiness is observed through the registry, because the orchestrator's idea
      * of "created" and the server's idea of "accepting players" are different events.
      */
     suspend fun allocate(serverId: String): Boolean

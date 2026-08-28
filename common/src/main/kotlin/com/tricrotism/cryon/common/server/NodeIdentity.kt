@@ -5,7 +5,7 @@ import java.util.*
 /**
  * How a running process identifies itself to the network, generalizing the old single static
  * `server-name` into a [serverId] (the interchangeable pool a player may land on any member of) plus a
- * per-process [nodeId], under a declared [mode]. Env wins so a Kubernetes pod needs no baked
+ * per-process [nodeId], under a declared [expectation]. Env wins so a Kubernetes pod needs no baked
  * config; config and the platform's own values are the fallbacks.
  *
  * Registered into the module `ServiceRegistry` by the core, so a feature can ask who it is and how it

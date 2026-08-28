@@ -16,7 +16,7 @@ import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder
  *
  * The proxy is the only place this can live. A transfer can be started from a feature module on a
  * game server, from `/server`, from a forced host, or from Velocity's own fallback after a kick, and
- * none of those callers can see the target's state or the player's permissions at once — `PlayerRouter`
+ * none of those callers can see the target's state or the player's permissions at once. `PlayerRouter`
  * runs in `:common` with no player handle at all. `ServerPreConnectEvent` is the one point every path
  * passes through, so the rules are enforced here and the callers stay unaware of them.
  *

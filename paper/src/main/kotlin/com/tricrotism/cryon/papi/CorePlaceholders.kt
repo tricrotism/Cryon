@@ -26,5 +26,7 @@ class CorePlaceholders(identity: NodeIdentity) : PlaceholderProvider {
         "max_players" to identity.maxPlayers.toString(),
     )
 
+    override val placeholders: Collection<String> = values.keys
+
     override fun onRequest(player: OfflinePlayer?, params: String): String? = values[params.lowercase()]
 }

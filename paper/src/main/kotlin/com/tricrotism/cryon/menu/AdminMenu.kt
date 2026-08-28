@@ -8,6 +8,8 @@ import com.tricrotism.cryon.common.text.Mini
 import com.tricrotism.cryon.network.NetworkStatus
 import com.tricrotism.cryon.paper.api.bedrock.BedrockService
 import com.tricrotism.cryon.paper.api.bedrock.FormButton
+import com.tricrotism.cryon.paper.api.event.Events
+import com.tricrotism.cryon.paper.api.event.Subscription
 import com.tricrotism.cryon.paper.api.extension.toItem
 import com.tricrotism.cryon.paper.api.menu.MenuTree
 import com.tricrotism.cryon.paper.api.menu.branch
@@ -18,6 +20,7 @@ import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder
 import org.bukkit.Material
 import org.bukkit.Sound
 import org.bukkit.entity.Player
+import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.inventory.ItemStack
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
@@ -45,7 +48,7 @@ class AdminMenu(
 ) : AutoCloseable {
 
     /**
-     * One live session per viewer, replaced on re-open and dropped on [close].
+     * One live session per viewer, replaced on re-open, dropped on [quit] and on [close].
      *
      * InvUI holds the click handlers, and those handlers are this plugin's code reaching services the
      * core owns. There is no module classloader to strand here, but a window left open across a
@@ -53,6 +56,17 @@ class AdminMenu(
      * `Player`, so a stale entry cannot pin a disconnected player's object graph.
      */
     private val sessions = ConcurrentHashMap<UUID, MenuTree.Session>()
+
+    /**
+     * Drops a viewer's session when they disconnect.
+     *
+     * Without it the map fits none of the lifecycles a keyed map may have: re-opening replaces an
+     * entry and [close] takes the rest, but nothing removes one for a player who simply left, so an
+     * InvUI window and its click handlers stay reachable for the life of the process, one per admin
+     * who ever opened the menu.
+     */
+    private val quit: Subscription = Events.subscribe<PlayerQuitEvent>()
+        .handler { event -> sessions.remove(event.player.uniqueId)?.let { runCatching { it.close() } } }
 
     /**
      * Open the admin menu for [player]: an InvUI window on Java, Cumulus forms on Bedrock.
@@ -63,6 +77,7 @@ class AdminMenu(
     }
 
     override fun close() {
+        runCatching { quit.unregister() }
         sessions.values.toList().forEach { runCatching { it.close() } }
         sessions.clear()
     }

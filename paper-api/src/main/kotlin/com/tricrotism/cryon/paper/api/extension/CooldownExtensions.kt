@@ -23,7 +23,7 @@ fun CooldownService.remaining(player: Player, id: String): Duration = remaining(
  * The one-line gate for a command or interaction: claims the cooldown, or tells [player] how long is
  * left and answers false.
  *
- * The counterpart to `FeatureFlags.guard`, and used the same way — as the first line of a handler:
+ * The counterpart to `FeatureFlags.guard`, and used the same way, as the first line of a handler:
  *
  * ```
  * if (!cooldowns.guard(player, "kit.daily", 24.hours)) return

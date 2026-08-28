@@ -8,7 +8,7 @@ import kotlin.time.Duration.Companion.milliseconds
 /**
  * [Provisioner] over the [ServerRegistry], optionally backed by a [NodeAllocator].
  *
- * Matching is a scan of the registry's in-memory replica, so the query path costs no I/O at all —
+ * Matching is a scan of the registry's in-memory replica, so the query path costs no I/O at all,
  * which matters because "is there room" is asked on join, on warp and on every party action, and a
  * round trip per ask would put network latency on all of them.
  */
@@ -46,7 +46,7 @@ class RegistryProvisioner(
      * Wait for a newly allocated node to appear in the registry and match.
      *
      * Polls the replica rather than subscribing to registry events, because the replica *is* the
-     * event stream's product — a node becomes visible here exactly when its heartbeat lands, and a
+     * event stream's product. A node becomes visible here exactly when its heartbeat lands, and a
      * subscription would only move the same wait somewhere less obvious. The poll is a scan of a
      * list of tens, every quarter second, for at most one boot.
      */
@@ -56,8 +56,8 @@ class RegistryProvisioner(
             delay(POLL_MILLIS.milliseconds)
             match(request)?.let { return ProvisionResult.Ready(it) }
         }
-        // The node is probably still booting, so this is not the same answer as "nothing exists" —
-        // the caller should say "try again shortly", not "unavailable". See ProvisionResult.Pending.
+        // The node is probably still booting, so this is not the same answer as "nothing exists".
+        // The caller should say "try again shortly", not "unavailable". See ProvisionResult.Pending.
         logger.info(
             "Allocated a node of '{}' but none reported ready within {}ms",
             request.serverId, request.waitMillis,

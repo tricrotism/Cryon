@@ -6,10 +6,10 @@ modules:
 server-name: prison
 
 network:
-    mode: instanced
+    expect: many-nodes
     registry-enabled: true
-    family: prison
-    instance-id: paper2
+    server: prison
+    node: paper2
     address: 127.0.0.1
     port: 25567
     max-players: 0

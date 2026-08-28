@@ -3,15 +3,15 @@ package com.tricrotism.cryon.common.requirement
 /**
  * A named condition on a subject, composable into boolean trees.
  *
- * The point is not that it replaces `(Player) -> Boolean` — it is that a lambda cannot be combined,
+ * The point is not that it replaces `(Player) -> Boolean`. It is that a lambda cannot be combined,
  * inspected or reused. Menu visibility, shop unlock conditions, skill gates and command guards are
  * all "does this subject satisfy these conditions", and each one currently spells that out its own
  * way, so a condition written for a shop entry cannot be handed to a menu node.
  *
  * **Composition happens once; evaluation allocates nothing.** [and]/[or]/[not] build a tree at
  * declaration time and [test] walks it, short-circuiting exactly as `&&` and `||` do. That matters
- * because the call sites are warm rather than cold — a menu re-resolves every node's visibility for
- * its viewer on every page draw — so a combinator that allocated per evaluation would put garbage on
+ * because the call sites are warm rather than cold, a menu re-resolves every node's visibility for
+ * its viewer on every page draw, so a combinator that allocated per evaluation would put garbage on
  * a path that runs per click.
  *
  * ```
@@ -52,7 +52,7 @@ fun interface Requirement<in S> {
             else -> requirements.reduce { left, right -> left and right }
         }
 
-        /** Satisfied when any of [requirements] is. Empty is [NEVER] — "no way in" admits nothing. */
+        /** Satisfied when any of [requirements] is. Empty is [NEVER], since "no way in" admits nothing. */
         fun <S> any(requirements: List<Requirement<S>>): Requirement<S> = when (requirements.size) {
             0 -> NEVER
             1 -> requirements[0]

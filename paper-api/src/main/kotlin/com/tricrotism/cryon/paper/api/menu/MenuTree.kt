@@ -39,14 +39,14 @@ sealed interface MenuNode {
  * Where a branch's entries come from, one window at a time.
  *
  * **The window, not the whole list.** A branch backed by a `List` can afford to be filtered and
- * sliced per draw; a shop with ten thousand entries, an auction house or a leaderboard cannot — the
+ * sliced per draw; a shop with ten thousand entries, an auction house or a leaderboard cannot. The
  * nodes would all have to exist before the first page could be shown, and every redraw would walk
  * them again. Asking for `[offset, offset + limit)` lets the source do the work its own way: a list
  * scans once with an early exit, a database adds `LIMIT`/`OFFSET`.
  *
  * **There is deliberately no `size`.** The menu asks for one entry more than it can display and uses
  * the overflow to decide whether the "next" arrow lights up, so a source never has to answer a
- * `COUNT` — the query that gets expensive on exactly the tables this exists for.
+ * `COUNT`, the query that gets expensive on exactly the tables this exists for.
  *
  * Suspending, so a page may be a query. It runs on the viewer's own dispatcher, so hop to
  * `CryonDispatchers.Async` inside for I/O; whatever it returns is rendered back on their thread.
@@ -60,7 +60,7 @@ fun interface MenuContent {
         /**
          * A fixed list, filtered by visibility as it is walked.
          *
-         * One pass with an early exit and one allocation the size of the window — where the obvious
+         * One pass with an early exit and one allocation the size of the window, where the obvious
          * `filter { }.drop(n).take(m)` builds two intermediate lists per draw and visits every node
          * even to render the first page.
          */
@@ -90,7 +90,7 @@ class MenuBranch(
     private val visible: (Player) -> Boolean = { true },
 ) : MenuNode {
 
-    /** A branch over a fixed list of children — the shape the `branch { }` DSL builds. */
+    /** A branch over a fixed list of children, the shape the `branch { }` DSL builds. */
     constructor(
         id: String,
         title: Component,
@@ -276,7 +276,7 @@ object MenuTree {
          *
          * Launched rather than awaited because every caller is a click handler or a scheduler
          * callback. The dispatcher is the viewer's, so the window is fetched and the InvUI window
-         * built on the thread that owns them — and a suspending content source resumes back there.
+         * built on the thread that owns them, and a suspending content source resumes back there.
          */
         internal fun navigate(branch: MenuBranch, page: Int, pushPath: Boolean) {
             if (closed.get()) return

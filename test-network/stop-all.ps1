@@ -21,7 +21,7 @@ Get-Process redis-server -ErrorAction SilentlyContinue | ForEach-Object {
     Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
 }
 
-# Only our test cluster on 5433 — never touches a Postgres on the default 5432.
+# Only our test cluster on 5433. Never touches a Postgres on the default 5432.
 & "$root\postgres\bin\pg_ctl.exe" -D "$root\postgres\data" -m fast stop 2> $null
 if ($LASTEXITCODE -ne 0)
 {

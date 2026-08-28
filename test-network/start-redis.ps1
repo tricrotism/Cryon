@@ -1,4 +1,4 @@
-# Redis — the shared transport. Everything cross-server (registry, routing, handoff, maintenance,
+# Redis, the shared transport. Everything cross-server (registry, routing, handoff, maintenance,
 # flag sync) rides on this. Start it FIRST. Runs in the foreground; Ctrl+C to stop.
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot

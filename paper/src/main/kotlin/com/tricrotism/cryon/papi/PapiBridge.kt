@@ -10,9 +10,13 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * The [PlaceholderService] impl: turns each registered [PlaceholderProvider] into a [CryonExpansion]
  * registered with PlaceholderAPI, one per module namespace, and remembers which owner registered which
- * namespace so `/cryon info <id>` can list them. Best-effort. When PlaceholderAPI is absent, [register]
- * still records the namespace (so info stays honest) but installs no expansion, and features never
+ * provider so `/cryon info <id>` can list them. Best-effort. When PlaceholderAPI is absent, [register]
+ * still records the provider (so info stays honest) but installs no expansion, and features never
  * branch on its presence.
+ *
+ * The providers themselves are kept, not just their namespaces, because a namespace is not what an
+ * admin needs to paste into a scoreboard config. [placeholders] asks each one what keys it answers and
+ * renders them whole.
  *
  * PlaceholderAPI is a `softdepend`, so if present it has enabled before our modules register; its
  * classes are only touched on the [available] path, so this bridge loads fine without it (the same lazy
@@ -22,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap
 class PapiBridge(private val plugin: Plugin, private val log: Logger) : PlaceholderService {
 
     private val available: Boolean = plugin.server.pluginManager.getPlugin("PlaceholderAPI") != null
-    private val namespaces = ConcurrentHashMap<String, MutableSet<String>>()
+    private val providers = ConcurrentHashMap<String, MutableSet<PlaceholderProvider>>()
 
     init {
         if (!available) log.info("PlaceholderAPI not installed; Cryon placeholder providers are inert")
@@ -30,8 +34,8 @@ class PapiBridge(private val plugin: Plugin, private val log: Logger) : Placehol
 
     override fun register(owner: String, provider: PlaceholderProvider): AutoCloseable {
         val identifier = provider.identifier
-        namespaces.computeIfAbsent(owner) { Collections.newSetFromMap(ConcurrentHashMap()) }.add(identifier)
-        val untrack = AutoCloseable { namespaces[owner]?.remove(identifier) }
+        providers.computeIfAbsent(owner) { Collections.newSetFromMap(ConcurrentHashMap()) }.add(provider)
+        val untrack = AutoCloseable { providers[owner]?.remove(provider) }
 
         if (!available) return untrack
         val expansion = CryonExpansion(provider, plugin)
@@ -52,5 +56,22 @@ class PapiBridge(private val plugin: Plugin, private val log: Logger) : Placehol
     }
 
     override fun identifiers(owner: String): Collection<String> =
-        namespaces[owner]?.sorted() ?: emptyList()
+        providers[owner]?.map { it.identifier }?.distinct()?.sorted() ?: emptyList()
+
+    /**
+     * A provider that declares nothing is listed as its bare namespace rather than dropped, since
+     * "this module owns `%warps_…%` and will not say what is in it" is the useful answer and silence
+     * is not. A provider whose keys throw is treated as declaring none, for the same reason
+     * `ModuleManager` treats an unreadable declaration as empty: a broken accessor must not cost an
+     * operator the rest of the listing.
+     */
+    override fun placeholders(owner: String): List<String> =
+        providers[owner].orEmpty().flatMap { provider ->
+            val keys = runCatching { provider.placeholders }.getOrElse {
+                log.warn("Provider '{}' of module '{}' failed to list its keys", provider.identifier, owner, it)
+                emptyList()
+            }
+            if (keys.isEmpty()) listOf("%${provider.identifier}_…%")
+            else keys.map { key -> "%${provider.identifier}_$key%" }
+        }.distinct().sorted()
 }

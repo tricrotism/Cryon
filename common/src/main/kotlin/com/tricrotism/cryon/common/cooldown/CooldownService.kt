@@ -7,7 +7,7 @@ import kotlin.time.Duration
  * Per-subject rate limits, shared so that every feature needing one stops writing its own.
  *
  * **[trigger] is the whole API.** It answers whether the caller may act *and* starts the next
- * cooldown, in one indivisible step. The obvious alternative — ask [remaining], then mark — is a
+ * cooldown, in one indivisible step. The obvious alternative, asking [remaining] and then marking, is a
  * check-then-act race, and on Folia it is not a theoretical one: two of a player's actions can be
  * handled on different region threads at the same instant, both read zero, and both proceed. Every
  * gate therefore reads:
@@ -19,14 +19,14 @@ import kotlin.time.Duration
  * }
  * ```
  *
- * [remaining] exists only to *describe* a refusal that [trigger] already made — never to decide one.
+ * [remaining] exists only to *describe* a refusal that [trigger] already made, never to decide one.
  * That is the same split the currency layer draws between `withdraw` and `cachedBalance`, for the
  * same reason.
  *
  * **Scope is one process, and deliberately not the network.** A cooldown is nearly always about
  * pacing one player's interaction with what is in front of them, which is local by nature, and
  * making every check a Redis round trip would put network latency on a click. Where a limit really
- * must hold network-wide — a daily reward, a global claim — that is a *claim* rather than a
+ * must hold network-wide, as a daily reward or a global claim does, that is a *claim* rather than a
  * cooldown, and `KeyValueStore.delete`'s atomic boolean or a `DistributedLock` is the honest tool.
  *
  * State does not survive a restart. That is the right trade for pacing and the wrong one for a
@@ -41,7 +41,7 @@ interface CooldownService {
      * Claim the next use of [id] for [subject], answering whether it was granted.
      *
      * True means the caller now holds the cooldown and may act. False means it is still running and
-     * **nothing was changed** — a refused attempt does not extend the wait, so mashing a button
+     * **nothing was changed**. A refused attempt does not extend the wait, so mashing a button
      * cannot lock someone out longer than the original [duration].
      *
      * A non-positive [duration] always grants and records nothing.

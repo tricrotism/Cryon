@@ -27,7 +27,7 @@ import kotlin.time.toJavaDuration
  *    silent self-deadlock against Redis into an ordinary local wait.
  * 3. **Renewal that cancels rather than warns.** While the body runs, a watchdog pushes the lease out
  *    at half the TTL. If a renewal is refused the lease is gone, so the body is cancelled and
- *    [LockLostException] is thrown — the caller learns the work did not complete, instead of the work
+ *    [LockLostException] is thrown. The caller learns the work did not complete, instead of the work
  *    running on with no lock and nobody noticing.
  *
  * **Fails closed.** A store that throws while acquiring propagates rather than falling through into
@@ -177,13 +177,19 @@ class StoreDistributedLock(
         }
     }
 
-    private suspend fun release(storeKey: String, token: String, full: String) {
+    /**
+     * Hand the lease back, [NonCancellable] because this runs from a `finally`.
+     *
+     * Without it a canceled caller, a module unloading mid-section, cannot make the release round
+     * trip at all: a suspending call on a canceled coroutine throws before it reaches the store, so
+     * the key would sit there blocking every other node until its ttl lapsed. Everything this holds
+     * is already over by the time it runs, so there is nothing left for the cancellation to protect.
+     */
+    private suspend fun release(storeKey: String, token: String, full: String) = withContext(NonCancellable) {
         try {
             if (!store.deleteIfEqual(storeKey, token)) {
                 logger.warn("Released '{}' but the lease was no longer ours", full)
             }
-        } catch (e: CancellationException) {
-            throw e
         } catch (e: Exception) {
             logger.error("Failed to release the lock on '{}'; it will expire on its own", full, e)
         }

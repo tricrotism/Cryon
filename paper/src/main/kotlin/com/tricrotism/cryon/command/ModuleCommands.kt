@@ -41,7 +41,7 @@ import java.util.*
  * Feature kill switches: `flags [scope]`, `flag enable|disable|clear <feature> [scope]`,
  * `flag status <feature> [player]`, `flag delete <feature>`, `flag reload`. **A scope is `global`
  * (the default), `server` for this server's own pool, another server's name, or simply a player's
- * name** — `player:<name>` still parses, but nothing suggests it any more, because decorating a name
+ * name**. `player:<name>` still parses, but nothing suggests it any more, because decorating a name
  * is work the command can do itself.
  *
  * Three things exist to keep the surface findable. Bare `/cryon` opens the menu or prints the help,
@@ -332,17 +332,25 @@ class ModuleCommands(
         )
     }
 
-    /** List the PlaceholderAPI namespaces the module owns, e.g. `%afkarea_…%`. Omitted when it has none. */
+    /**
+     * List every placeholder the module provides, ready to paste.
+     *
+     * The namespace alone was what this used to print, and it is the one thing an admin already knows
+     * by the time they are asking: what they came for is which keys exist inside it. A provider that
+     * declares none still contributes its `%warps_…%` line, so the listing never reads as complete
+     * when it is not.
+     */
     private fun printPlaceholders(sender: CommandSender, id: String) {
-        val namespaces = placeholders.identifiers(id)
-        if (namespaces.isEmpty()) return
+        val entries = placeholders.placeholders(id)
+        if (entries.isEmpty()) return
         sender.sendMessage(Mini.format("  <off_white>Placeholders:"))
-        for (namespace in namespaces) {
+        for (entry in entries) {
             sender.sendMessage(
                 Mini.format(
-                    "      <sky_blue>%<namespace>_…%</sky_blue>",
-                    Placeholder.unparsed("namespace", namespace),
-                )
+                    "      <sky_blue><placeholder></sky_blue>",
+                    Placeholder.unparsed("placeholder", entry),
+                ).clickEvent(ClickEvent.copyToClipboard(entry))
+                    .hoverEvent(HoverEvent.showText(CommandUi.hover("sky_blue", entry, "Click to copy")))
             )
         }
     }
@@ -517,8 +525,8 @@ class ModuleCommands(
      *
      * The check nothing else can do for a loader framework: a jar's classes stay resident until its
      * classloader is collected, and a module that left a listener, a task or a captured lambda
-     * behind pins it forever. Server-wide tooling cannot attribute this — every module is
-     * `com.tricrotism.cryon.*` to a package-prefix heap histogram — so the only honest evidence is
+     * behind pins it forever. Server-wide tooling cannot attribute this. Every module is
+     * `com.tricrotism.cryon.*` to a package-prefix heap histogram, so the only honest evidence is
      * watching the loader itself go away.
      *
      * **Read the trend, not one number.** A live count of 1 immediately after an unload usually just
@@ -550,7 +558,7 @@ class ModuleCommands(
         if (report.values.any { it.live > 0 }) {
             sender.sendMessage(
                 Mini.format(
-                    "<slate_gray>A live count right after an unload is normal — no collection has run. " +
+                    "<slate_gray>A live count right after an unload is normal. No collection has run yet. " +
                             "One that climbs across reloads of the same jar is a leak."
                 )
             )
@@ -717,7 +725,7 @@ class ModuleCommands(
                         Placeholder.unparsed("count", states.size.toString())
                     )
                 ),
-                button(
+                CommandUi.button(
                     "↻ refresh", "sky_blue", "/cryon modules",
                     Mini.format("<sky_blue><b>↻ Refresh</b></sky_blue><newline><slate_gray>Re-run this list"),
                 ),
@@ -770,16 +778,16 @@ class ModuleCommands(
     /** The clickable action row shown after a module, a state-aware toggle plus reload and info. */
     private fun actionButtons(id: String, state: ModuleState): Component {
         val toggle = if (state == ModuleState.ENABLED) {
-            button("■", "scarlet", "/cryon disable $id", actionHover("scarlet", "■ Disable", "disable", id))
+            CommandUi.button("■", "scarlet", "/cryon disable $id", actionHover("scarlet", "■ Disable", "disable", id))
         } else {
-            button("▶", "emerald", "/cryon enable $id", actionHover("emerald", "▶ Enable", "enable", id))
+            CommandUi.button("▶", "emerald", "/cryon enable $id", actionHover("emerald", "▶ Enable", "enable", id))
         }
         return Component.textOfChildren(
             toggle,
             Component.space(),
-            button("↻", "sky_blue", "/cryon reload $id", actionHover("sky_blue", "↻ Reload", "reload", id)),
+            CommandUi.button("↻", "sky_blue", "/cryon reload $id", actionHover("sky_blue", "↻ Reload", "reload", id)),
             Component.space(),
-            button("ⓘ", "gold", "/cryon info $id", actionHover("gold", "ⓘ Info", "view details for", id)),
+            CommandUi.button("ⓘ", "gold", "/cryon info $id", actionHover("gold", "ⓘ Info", "view details for", id)),
         )
     }
 
@@ -862,14 +870,14 @@ class ModuleCommands(
         )
         val arg = commandScope(scope) ?: return base
         val toggle = if (enabled) {
-            button(
+            CommandUi.button(
                 "■",
                 "scarlet",
                 "/cryon flag disable $feature $arg",
                 actionHover("scarlet", "■ Disable", "turn off", feature)
             )
         } else {
-            button(
+            CommandUi.button(
                 "▶",
                 "emerald",
                 "/cryon flag enable $feature $arg",
@@ -880,7 +888,7 @@ class ModuleCommands(
             base,
             toggle,
             Component.space(),
-            button(
+            CommandUi.button(
                 "↺",
                 "sky_blue",
                 "/cryon flag clear $feature $arg",
@@ -945,12 +953,6 @@ class ModuleCommands(
         val profile = Bukkit.createProfile(uuid)
         return if (profile.completeFromCache()) profile.name else null
     }
-
-    /** A bracketed, palette-coloured label that runs [command] on click and shows [hover] on mouse-over. */
-    private fun button(label: String, tag: String, command: String, hover: Component): Component =
-        Mini.format("<slate_gray>[</slate_gray><$tag>$label</$tag><slate_gray>]</slate_gray>")
-            .clickEvent(ClickEvent.runCommand(command))
-            .hoverEvent(HoverEvent.showText(hover))
 
     private fun actionHover(tag: String, title: String, action: String, id: String): Component =
         Mini.format(
@@ -1027,6 +1029,7 @@ class ModuleCommands(
             HelpEntry("Flags", "cryon flag disable <feature> [scope]", "Turn a feature off"),
             HelpEntry("Flags", "cryon flag clear <feature> [scope]", "Drop one scope's override"),
             HelpEntry("Flags", "cryon flag status <feature> [player]", "The layered breakdown"),
+            HelpEntry("Flags", "cryon flag delete <feature>", "Erase a flag from every scope (console only)"),
             HelpEntry("Flags", "cryon flag reload", "Re-read the flags from the database"),
             HelpEntry("Server", "cryon network", "This server's deployment shape"),
             HelpEntry("Server", "cryon retention", "Whether unloaded module jars were actually collected"),

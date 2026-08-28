@@ -5,7 +5,7 @@ package com.tricrotism.cryon.common.colony
  * requests for it.
  *
  * The distinction the whole package exists for: a scheduled world event, a market tick, an auction
- * sweep or a leaderboard rebuild must happen **once** across ten shards, not ten times — but the
+ * sweep or a leaderboard rebuild must happen **once** across ten shards, not ten times, but the
  * command that reads its result can be answered anywhere. So one node is elected **queen** and does
  * the work; the rest are **drones** and route to it.
  *
@@ -13,7 +13,7 @@ package com.tricrotism.cryon.common.colony
  * server. This is about which **process** owns a job.
  */
 data class ClusterService(
-    /** Stable across restarts and identical on every node — it is what the election hashes. */
+    /** Stable across restarts and identical on every node. It is what the election hashes. */
     val id: String,
 
     /**
@@ -38,7 +38,7 @@ sealed interface QueenStatus {
     /**
      * More than one node is claiming the crown.
      *
-     * Transient and self-healing — the losers demote themselves on their next tick, because every
+     * Transient and self-healing, the losers demote themselves on their next tick, because every
      * node derives the same winner from the same view. Routing waits it out rather than picking,
      * since picking is how you get two nodes acting on the same answer.
      */
@@ -51,7 +51,7 @@ sealed interface QueenStatus {
 /**
  * Which node a message for a sharded service should go to.
  *
- * Shard `0` is reserved and means **the queen** — that is how a caller says "whoever owns this",
+ * Shard `0` is reserved and means **the queen**. That is how a caller says "whoever owns this",
  * without knowing who that is. Anything else selects a shard by `abs(shard) % shards.size`.
  */
 fun interface ShardingStrategy {
@@ -97,7 +97,7 @@ interface ColonyListener {
      * This node is now the queen for [service] and should start doing its work.
      *
      * **Load whatever state the job needs from SQL here, do not expect it handed over.** The
-     * previous queen may have died rather than resigned, so there is nothing to hand over — which is
+     * previous queen may have died rather than resigned, so there is nothing to hand over, which is
      * why a queen's durable state belongs in the database and not in its heap.
      */
     suspend fun onPromote(service: ClusterService) {}
@@ -112,19 +112,19 @@ interface ColonyListener {
  * **The election is a hash, not a consensus protocol.** Every node writes a heartbeat advertisement
  * listing what it claims, reads the whole set, and computes the winner with rendezvous hashing:
  * `min by fnv1a(serviceId, nodeId)`. Given the same view, every node independently arrives at the
- * same answer — so there is no lock to acquire, no CAS to lose, and no leader to elect the leader.
+ * same answer, so there is no lock to acquire, no CAS to lose, and no leader to elect the leader.
  * A node that finds itself claiming a crown the hash says belongs elsewhere demotes on its next
  * tick, which is what makes a split brain self-healing rather than something to page about.
  *
  * The cost of that simplicity is honest and bounded: the view is only as fresh as the heartbeat
  * interval, so during a failover there is a window where the old queen is gone and the new one has
- * not noticed. Work under a crown must therefore be **idempotent or resumable** — the same rule that
+ * not noticed. Work under a crown must therefore be **idempotent or resumable**, the same rule that
  * applies to anything under `DistributedLock`, and for the same reason.
  *
  * Without Redis this runs in-process: one node, which is trivially the queen of everything, and the
  * same code path. Nothing branches on the deployment shape.
  *
- * [tick] is driven by the platform rather than a timer in here, because `:common` has no scheduler —
+ * [tick] is driven by the platform rather than a timer in here, because `:common` has no scheduler,
  * the same arrangement `CurrencyService.refreshLeaderboards` uses.
  */
 interface Colony {
@@ -132,7 +132,7 @@ interface Colony {
     /** Declare that this node hosts [service]. Call once, on enable, before the first [tick]. */
     fun register(service: ClusterService, listener: ColonyListener? = null)
 
-    /** Whether this node currently holds the crown. Synchronous — cheap enough for a task guard. */
+    /** Whether this node currently holds the crown. Synchronous, cheap enough for a task guard. */
     fun isQueen(service: ClusterService): Boolean
 
     /** What the cluster believes about [service]'s queen, as of the last [tick]. */
@@ -144,7 +144,7 @@ interface Colony {
     /**
      * The node a message for [service] should go to, or null when there is nowhere to send it.
      *
-     * Retries briefly across an unsettled election rather than answering null immediately — a queen
+     * Retries briefly across an unsettled election rather than answering null immediately, a queen
      * that is one heartbeat away is worth waiting for, and a caller that got null would have to
      * invent its own retry anyway.
      */

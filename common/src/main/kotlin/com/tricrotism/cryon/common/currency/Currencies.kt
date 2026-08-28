@@ -196,7 +196,7 @@ class Currencies(
     /**
      * The debit itself, with the failure left on the future.
      *
-     * [withdrawLocked] folds a failure into `false` because its callers only ask "may I hand the
+     * [withdraw] folds a failure into `false` because its callers only ask "may I hand the
      * goods over", and both answers to that are no. [transfer] needs the two apart: it has to tell
      * the sender whether they were short or whether the store is down.
      */
@@ -354,7 +354,7 @@ class Currencies(
 
     /**
      * Every ranked currency refreshed together, and one failure does not cost the others their
-     * ranking — each `async` absorbs its own, so a single bad query cannot cancel the siblings the
+     * ranking. Each `async` absorbs its own, so a single bad query cannot cancel the siblings the
      * way an escaping exception inside `coroutineScope` would.
      */
     override suspend fun refreshLeaderboards() {

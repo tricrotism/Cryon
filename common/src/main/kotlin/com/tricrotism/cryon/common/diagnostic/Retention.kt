@@ -7,23 +7,23 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Answers the one question a heap dump is normally needed for: **did that actually get collected?**
  *
- * Hand it something that ought to become garbage — a module's classloader, a closed session, a
- * cache entry — and it holds a phantom reference to it. Once the collector reclaims the object the
+ * Hand it something that ought to become garbage, a module's classloader, a closed session, a
+ * cache entry, and it holds a phantom reference to it. Once the collector reclaims the object the
  * reference is enqueued, and [report] can say so. Nothing here keeps the object alive, so tracking
  * something can never be the reason it leaks.
  *
  * **Why this exists for Cryon in particular.** Hot-swapping module jars is the framework's headline
- * feature and a stranded classloader is its documented failure mode — a module that left a listener,
+ * feature and a stranded classloader is its documented failure mode, a module that left a listener,
  * a task or a captured lambda behind keeps its whole jar's classes resident, and the symptom is a
  * slow metaspace climb across reloads that nothing reports until the server dies of it. External
  * tooling cannot see this: `LagFinder` attributes heap by package prefix, and every Cryon module is
  * `com.tricrotism.cryon.*`, so its histogram credits them all to the core plugin. This does not
- * attribute by name at all — it observes reclamation directly, which is the only evidence that
+ * attribute by name at all. It observes reclamation directly, which is the only evidence that
  * actually settles the question.
  *
  * **What a negative result means, precisely.** `live > 0` says the object was *not yet* reclaimed,
  * not that it leaked: nothing has necessarily run a collection since it was dropped. Read it after a
- * GC, and read a *rising* live count across repeated reloads as the real signal — one survivor is
+ * GC, and read a *rising* live count across repeated reloads as the real signal, one survivor is
  * noise, ten reloads leaving ten survivors is a leak. That is the same discipline LagFinder's old-gen
  * trend uses, applied to objects you can name instead of to the heap as a whole.
  *
@@ -38,7 +38,7 @@ class Retention {
      * A weak reference is cleared *before* finalization and before the object is genuinely gone; a
      * phantom is enqueued only once the collector has finished with it, which is the fact being
      * measured. The key rides on the reference itself because by the time it is enqueued the
-     * referent is unavailable by definition — there is nothing left to ask what it was.
+     * referent is unavailable by definition. There is nothing left to ask what it was.
      */
     private class Tracked(
         referent: Any,
@@ -65,7 +65,7 @@ class Retention {
     /**
      * Watch [value] under [key] and report on it later.
      *
-     * [key] is a bucket, not an identity — track every reload of one module under the same key and
+     * [key] is a bucket, not an identity. Track every reload of one module under the same key and
      * the count across reloads is what tells the story.
      */
     fun track(key: String, value: Any) {
@@ -123,7 +123,7 @@ class Retention {
 
     /**
      * [live] is the count not yet reclaimed. Read it after a collection, and read its trend across
-     * repeated reloads rather than any single value — see the note on [Retention].
+     * repeated reloads rather than any single value. See the note on [Retention].
      */
     data class Retained(val registered: Int, val collected: Int, val live: Int) {
         override fun toString(): String = "$live live / $registered tracked ($collected collected)"

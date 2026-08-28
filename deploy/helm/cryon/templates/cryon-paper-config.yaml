@@ -1,4 +1,4 @@
-# Core config shared by every game server. Per-pod identity (family/instance/address) is left blank
+# Core config shared by every game server. Per-pod identity (server/node/address) is left blank
 # so the plugin reads it from CRYON_* env; the DB password and forwarding secret are placeholders the
 # entrypoint fills from Secrets. paper-global.yml enables Velocity modern forwarding on the backends.
 apiVersion: v1
@@ -13,9 +13,11 @@ data:
             auto-reload: false
         server-name: ""
         network:
+            # Blank: CRYON_EXPECT, CRYON_SERVER and CRYON_NODE supply these per pod.
+            expect: ""
             registry-enabled: true
-            family: ""
-            instance-id: ""
+            server: ""
+            node: ""
             address: ""
             port: 0
             max-players: 0

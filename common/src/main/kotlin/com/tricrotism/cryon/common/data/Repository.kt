@@ -8,7 +8,7 @@ import java.sql.ResultSet
  *
  * [columns] excludes `id` and `version`, which every repository table carries and [Repository] owns.
  * [write] must emit values in exactly [columns] order, and [read] must consume them in that order
- * starting at index 1 — the repository builds its `SELECT` from [columns], so the two line up as
+ * starting at index 1, the repository builds its `SELECT` from [columns], so the two line up as
  * long as neither is reordered independently.
  */
 interface RowCodec<T : Any> {
@@ -24,15 +24,15 @@ interface RowCodec<T : Any> {
  * A write-behind keyed store over one SQL table: reads served from memory, writes accumulated and
  * flushed in batches.
  *
- * **This is the shape five features had already hand-rolled** — a `ConcurrentHashMap`, a dirty flag,
- * a periodic save that rewrites everything, and a load on join — each with its own bugs. What it is
+ * **This is the shape five features had already hand-rolled**, a `ConcurrentHashMap`, a dirty flag,
+ * a periodic save that rewrites everything, and a load on join, each with its own bugs. What it is
  * *not* is an ORM: the feature declares its own table (through `migrate`) and its own [RowCodec], and
  * no query is generated beyond the four this needs.
  *
  * **The consistency model is single-owner, and that is a real precondition rather than a shrug.**
  * Writes are last-write-wins, which is correct exactly because `PlayerHandoff` guarantees one server
  * owns a player's state at a time: the source instance flushes before the target loads. Use this for
- * state that follows a player. Do **not** use it for anything several servers write at once — that
+ * state that follows a player. Do **not** use it for anything several servers write at once. That
  * is what `CurrencyService`'s compare-and-set is for, and a balance flushed from two nodes would lose
  * one node's writes wholesale.
  *
@@ -41,14 +41,14 @@ interface RowCodec<T : Any> {
  * which is a handoff bug worth a log line, not something to silently merge.
  *
  * Every table needs `id VARCHAR(64) NOT NULL PRIMARY KEY` and `version BIGINT NOT NULL DEFAULT 0`
- * alongside the codec's columns — see [BASE_COLUMNS_DDL].
+ * alongside the codec's columns. See [BASE_COLUMNS_DDL].
  */
 interface Repository<T : Any> {
 
     /**
      * The cached value for [id], or null when this process has not loaded one.
      *
-     * Synchronous and safe on a tick thread — that is the point of the cache. **Null means "not
+     * Synchronous and safe on a tick thread. That is the point of the cache. **Null means "not
      * loaded here", never "absent"**; the same distinction `CurrencyService.cachedBalance` draws, and
      * for the same reason: deciding anything from a null you have not proved is a null read.
      */
@@ -64,8 +64,8 @@ interface Repository<T : Any> {
      * Replace [id]'s value in memory and mark it for the next [flush].
      *
      * Synchronous: the write a player can observe is the one in memory, and the durable one follows
-     * at the checkpoint. That is the trade the whole type exists to make — per-event SQL is what it
-     * removes — so anything that must survive an unclean kill immediately wants [put] instead.
+     * at the checkpoint. That is the trade the whole type exists to make. Per-event SQL is what it
+     * removes, so anything that must survive an unclean kill immediately wants [put] instead.
      */
     fun stage(id: String, value: T)
 

@@ -10,7 +10,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * Expiry is lazy: an entry past its deadline reads as absent and is dropped when next touched, so a
  * key nothing ever reads again keeps its (dead) slot rather than being swept. That is a deliberate
- * trade — no sweeper thread — and it holds because the keys here are per-player or per-instance and
+ * trade, no sweeper thread, and it holds because the keys here are per-player or per-instance and
  * are bounded by the population of a single server, not by traffic through it.
  *
  * [tryHold] and the hash operations run under [ConcurrentHashMap.compute]'s per-bin lock, giving the
@@ -102,9 +102,9 @@ class MemoryKeyValueStore : KeyValueStore {
     }
 
     /**
-     * All three hash operations run inside [ConcurrentHashMap.compute], so a field write cannot lose
-     * a concurrent one and [hdel]'s answer is a real claim — the same guarantees Redis gives by
-     * being single-threaded.
+     * Every hash operation runs inside [ConcurrentHashMap.compute], reads included, so a field write
+     * cannot lose a concurrent one and [hdel]'s answer is a real claim, the same guarantees Redis
+     * gives by being single-threaded.
      */
     override suspend fun hset(key: String, field: String, value: String, ttl: Duration) {
         val now = System.currentTimeMillis()
@@ -129,10 +129,22 @@ class MemoryKeyValueStore : KeyValueStore {
         return claimed
     }
 
+    /**
+     * Copied inside the remap, not after it. [Hash.fields] is a plain map the write paths above
+     * mutate in place under the same bin lock, so reading it once [compute] has returned races them:
+     * a concurrent [hset] can resize the table mid-copy and the caller sees a torn view or a
+     * ConcurrentModificationException, which is precisely the atomicity this class claims to match
+     * Redis on.
+     */
     override suspend fun hgetAll(key: String): Map<String, String> {
         val now = System.currentTimeMillis()
-        val hash = hashes.compute(key) { _, existing -> existing?.takeIf { !it.expired(now) } }
-        return hash?.fields?.toMap() ?: emptyMap()
+        var snapshot: Map<String, String> = emptyMap()
+        hashes.compute(key) { _, existing ->
+            val live = existing?.takeIf { !it.expired(now) } ?: return@compute null
+            snapshot = HashMap(live.fields)
+            live
+        }
+        return snapshot
     }
 
     override suspend fun hdel(key: String, field: String): Boolean {

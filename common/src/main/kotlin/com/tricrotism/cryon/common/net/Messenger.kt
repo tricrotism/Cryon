@@ -26,7 +26,7 @@ interface Messenger {
      * ordering guarantee: messages on a connection arrive in the order they were sent, and one
      * ordered thread is what preserves it. Launching each message into a scope would deliver them
      * concurrently and quietly reorder anything that depended on the sequence. So keep the handler
-     * cheap — read the payload, hand it on — and where it must do I/O, `launch` into your own
+     * cheap, read the payload and hand it on, and where it must do I/O, `launch` into your own
      * module scope, which is an explicit choice to give up ordering rather than an accidental one.
      */
     fun subscribe(channel: String, handler: (String) -> Unit): MessengerSubscription
@@ -36,15 +36,15 @@ interface Messenger {
      *
      * Suspending, and run in the messenger's own scope rather than on the delivery thread, so
      * answering may take as long as it needs (flushing a player to SQL, say) without stalling other
-     * channels. Unlike [subscribe] there is no ordering to preserve — requests carry their own
-     * correlation ids — so concurrent responders are correct here.
+     * channels. Unlike [subscribe] there is no ordering to preserve, requests carry their own
+     * correlation ids, so concurrent responders are correct here.
      */
     fun handle(channel: String, responder: suspend (String) -> String): MessengerSubscription
 
     /**
      * Send a request on [channel] and return the first reply.
      *
-     * Throws [java.util.concurrent.TimeoutException] if no reply arrives within [timeout] — a real
+     * Throws [java.util.concurrent.TimeoutException] if no reply arrives within [timeout], a real
      * failure rather than a cancellation, so a caller's `try`/`catch` sees it and the surrounding
      * coroutine is not torn down by a peer that simply went away.
      */

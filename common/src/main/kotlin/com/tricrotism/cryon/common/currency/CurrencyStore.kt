@@ -74,7 +74,7 @@ internal interface CurrencyStore {
      * Null means [from] could not afford it and neither row was touched. An exception means the move
      * did not happen, not that it half happened: that is the whole reason this is one call rather
      * than a withdraw followed by a deposit. Two separate writes cannot be made safe from above,
-     * because the gap between them is not an error path — a process killed there leaves the money
+     * because the gap between them is not an error path. A process killed there leaves the money
      * gone with nothing thrown and nothing to log.
      */
     suspend fun transfer(

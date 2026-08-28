@@ -1,8 +1,10 @@
 package com.tricrotism.cryon.paper.api.bar
 
 import com.tricrotism.cryon.paper.api.event.Events
+import com.tricrotism.cryon.paper.api.event.Subscription
 import net.kyori.adventure.bossbar.BossBar
 import net.kyori.adventure.text.Component
+import org.bukkit.Bukkit
 import org.bukkit.entity.Player
 import org.bukkit.event.player.PlayerQuitEvent
 import java.util.*
@@ -15,7 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * **Close it.** A bar is an object living on other people's connections: nothing about it is
  * reachable from the module that made it once the module is gone, so a bar left open after a
  * hot-unload keeps rendering with no owner, and a reload adds a second one beside it. It is
- * [AutoCloseable] precisely so `track(…)` handles that — the same rule as an open menu.
+ * [AutoCloseable] precisely so `track(…)` handles that, the same rule as an open menu.
  *
  * ```
  * private val bar = track(BossBars.create("<gold>Event".mm(), color = BossBar.Color.YELLOW))
@@ -33,7 +35,7 @@ class CryonBossBar internal constructor(private val bar: BossBar) : AutoCloseabl
      * Who is being shown this bar, by uuid.
      *
      * Tracked here rather than read back from [BossBar.viewers] because that answers `Audience`s,
-     * which cannot be compared against a quitting player without resolving each one — and this is
+     * which cannot be compared against a quitting player without resolving each one, and this is
      * walked on every disconnect.
      */
     private val viewers = ConcurrentHashMap.newKeySet<UUID>()
@@ -94,7 +96,7 @@ class CryonBossBar internal constructor(private val bar: BossBar) : AutoCloseabl
         if (!closed.compareAndSet(false, true)) return
         BossBars.forget(this)
         for (id in viewers) {
-            org.bukkit.Bukkit.getPlayer(id)?.hideBossBar(bar)
+            Bukkit.getPlayer(id)?.hideBossBar(bar)
         }
         viewers.clear()
     }
@@ -116,7 +118,7 @@ object BossBars {
     private val live = ConcurrentHashMap.newKeySet<CryonBossBar>()
 
     @Volatile
-    private var quit: com.tricrotism.cryon.paper.api.event.Subscription? = null
+    private var quit: Subscription? = null
 
     /**
      * Start pruning disconnected viewers. Called once by the core; a second call is a no-op.

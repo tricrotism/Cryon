@@ -57,7 +57,7 @@ class FeatureFlags(
      * The in-memory update stays **synchronous** and the SQL write and broadcast are launched
      * behind it, which is what the futures did before. That split is the contract, not an
      * implementation detail: [isEnabled] is a map read on an event-handler path and [register] is
-     * called from a module's `onEnable`, neither of which is a coroutine — making them suspend would
+     * called from a module's `onEnable`, neither of which is a coroutine. Making them suspend would
      * push the colour through every caller to buy nothing, since the durable write was never what a
      * flag check waited on.
      */

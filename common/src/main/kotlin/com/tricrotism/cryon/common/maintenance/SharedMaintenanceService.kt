@@ -56,8 +56,8 @@ class SharedMaintenanceService(
 
     /**
      * Owns the persistence behind every mutation. The in-memory update stays synchronous and the SQL
-     * write plus broadcast are launched behind it, which is exactly what the futures did before —
-     * see `FeatureFlags`, which this deliberately mirrors.
+     * write plus broadcast are launched behind it, which is exactly what the futures did before.
+     * See `FeatureFlags`, which this deliberately mirrors.
      */
     private val scope = CoroutineScope(
         SupervisorJob() + CryonIO.dispatcher + CoroutineExceptionHandler { _, error ->

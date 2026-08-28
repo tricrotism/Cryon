@@ -6,7 +6,7 @@ import java.util.concurrent.ConcurrentHashMap
  * One node's advertisement: what it claims, and when it last said so.
  *
  * Encoded as a line rather than JSON because `KeyValueStore` speaks strings and this is written once
- * per heartbeat by every node — a format with no parser is one less thing between a stall and a
+ * per heartbeat by every node. A format with no parser is one less thing between a stall and a
  * diagnosis in `redis-cli`.
  */
 data class ColonyAdvertisement(
@@ -54,8 +54,8 @@ data class ColonyAdvertisement(
  * The election itself, with no I/O in it.
  *
  * Kept separate from the transport for one reason: this is the only part that can be *wrong* in a
- * way that matters, and separating it means the whole algorithm can be reasoned about — and
- * exercised — by handing it a list of advertisements and reading back what it decided, with no Redis
+ * way that matters, and separating it means the whole algorithm can be reasoned about, and
+ * exercised, by handing it a list of advertisements and reading back what it decided, with no Redis
  * and no clock involved.
  */
 class ColonyElector(private val nodeId: String) {
@@ -131,7 +131,7 @@ class ColonyElector(private val nodeId: String) {
 
             when {
                 // Split brain: two nodes claimed it, and the hash says the other one won. Stepping
-                // down is unconditional and immediate — both sides run this, both agree who the
+                // down is unconditional and immediate. Both sides run this, both agree who the
                 // loser is, so the contest resolves in one tick without anybody arbitrating.
                 mine == ColonyMode.Queen && canonical != null && canonical != nodeId -> {
                     local[serviceId] = ColonyMode.Drone
@@ -168,7 +168,7 @@ class ColonyElector(private val nodeId: String) {
      *
      * The property that makes the whole design work is that this is a **pure function of the view**,
      * so every node computes the same winner without talking to any other node. The second property
-     * is that losing a node only re-elects the services that node held — a modulo over a sorted list
+     * is that losing a node only re-elects the services that node held, a modulo over a sorted list
      * would reshuffle every service whenever the pool changed size, which is a stampede of handovers
      * for a scaling event that should have moved almost nothing.
      *
@@ -180,8 +180,8 @@ class ColonyElector(private val nodeId: String) {
     private companion object {
 
         /**
-         * FNV-1a over `service|node`. Chosen for being cheap, well-spread and — the part that
-         * matters — **identical on every node and every JVM version**, which `String.hashCode` also
+         * FNV-1a over `service|node`. Chosen for being cheap, well-spread and, the part that
+         * matters, **identical on every node and every JVM version**, which `String.hashCode` also
          * is but `Objects.hash` and friends are not.
          */
         fun fnv1a(a: String, b: String): Int {

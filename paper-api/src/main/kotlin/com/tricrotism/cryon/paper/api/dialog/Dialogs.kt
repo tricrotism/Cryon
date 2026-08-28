@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 
 /**
- * Native client dialogs — the way to ask a player for a *value* rather than a click.
+ * Native client dialogs, the way to ask a player for a *value* rather than a click.
  *
  * Paper's dialog API is the right tool where Cryon previously had nothing: an anvil rename is a hack
  * with a durability cost and one field, and a chat prompt hijacks the chat box and loses the player's
@@ -45,12 +45,12 @@ import kotlin.coroutines.resume
  *
  * **Exactly one outcome, always.** The discipline `BedrockService`'s `FormSession` established, for
  * the same reason: anything escrowed behind an unanswered prompt hangs forever. There are three ways
- * out — a button, a disconnect, or the caller being canceled — and they collapse onto one latch, so
- * a caller resumes exactly once no matter which happens first.
+ * out: a button, a disconnect, or the caller being canceled. They collapse onto one latch, so a
+ * caller resumes exactly once no matter which happens first.
  *
  * **Escape is disabled and every exit is a button.** Paper fires no event when a player dismisses a
  * dialog, so an escape-closable prompt is one the server cannot tell apart from a player still
- * thinking about it — it would need a timeout, and a timeout on a prompt is either too short to type
+ * thinking about it. It would need a timeout, and a timeout on a prompt is either too short to type
  * into or too long to leave state pending. Making every exit a button removes the ambiguity.
  *
  * These run on the player's own thread and return there, so the result can be used with the Bukkit
@@ -61,7 +61,7 @@ object Dialogs {
     /**
      * Ask [player] for a line of text. Null if they canceled.
      *
-     * [maxLength] bounds what the client will send. Bound it to what the value is for — this is
+     * [maxLength] bounds what the client will send. Bound it to what the value is for. This is
      * player input and it arrives exactly as typed.
      */
     suspend fun text(
@@ -198,7 +198,7 @@ object Dialogs {
     /**
      * A dropdown. The selected entry's [Option.id] comes back through `getText(key)`.
      *
-     * At most one option may be pre-selected — the client honours the first that is, so two would
+     * At most one option may be pre-selected, the client honours the first that is, so two would
      * quietly disagree with whatever the caller thought the default was.
      */
     fun optionInput(key: String, label: Component, options: List<Option>): DialogInput {
@@ -219,7 +219,7 @@ object Dialogs {
      *
      * [type] is handed a [Buttons] factory whose products *resolve* the dialog: clicking one answers
      * the coroutine with whatever its reader returns, and `cancel` answers null. That indirection is
-     * what lets one implementation serve a confirmation, a notice and an N-way choice — those shapes
+     * what lets one implementation serve a confirmation, a notice and an N-way choice. Those shapes
      * differ only in how many resolving buttons they have and what each answers with, so the latch,
      * the quit listener and the cancellation handling are written once.
      */
@@ -329,7 +329,7 @@ object Dialogs {
     /**
      * One use, and a lifetime that outlives any reasonable deliberation.
      *
-     * `uses(1)` makes the client-side callback single-shot — belt to the latch's braces. The latch
+     * `uses(1)` makes the client-side callback single-shot, belt to the latch's braces. The latch
      * already collapses duplicates; there is simply no reason to keep a live callback registered on
      * the server once it has fired. The lifetime reclaims one for a dialog nobody ever answered.
      */

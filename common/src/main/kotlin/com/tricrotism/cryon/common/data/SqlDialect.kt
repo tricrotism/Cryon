@@ -161,6 +161,32 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
             "jdbc:h2:file:${config.database};AUTO_SERVER=TRUE;MODE=PostgreSQL"
 
         override val longText: String get() = "VARCHAR"
+
+        /**
+         * `SMALLINT`, for the same reason [POSTGRESQL] spells it that way: `MODE=PostgreSQL` rejects
+         * `TINYINT` with "Unknown data type", and the base default here is the MySQL spelling.
+         *
+         * Inheriting that default made every table with a tiny column fail at `CREATE TABLE` on the
+         * one backend that needs no setup at all, which is every schema-version table in the module
+         * family. Found by running a module's schema against H2 rather than by reading it.
+         */
+        override val tinyInt: String get() = "SMALLINT"
+
+        /**
+         * Unqualified `VARBINARY`, which H2 treats as its maximum width — the same trick [longText]
+         * uses, and the unqualified half of the [binary] this dialect already spells `VARBINARY(n)`.
+         *
+         * `MODE=PostgreSQL` rejects the inherited `BLOB` with "Unknown data type", so every table
+         * holding a blob failed at `CREATE TABLE`: the island world store and the carried-quest set.
+         * `BYTEA` and `BINARY LARGE OBJECT` are both accepted too; this one is chosen because it
+         * keeps the bounded and unbounded binary types the same word.
+         *
+         * Verified by round-tripping 256 KB through all three rather than by reading the manual: a
+         * type that parsed and then silently truncated would corrupt an island instead of refusing
+         * one, which is the worse failure by far.
+         */
+        override val largeBinary: String get() = "VARBINARY"
+
         // No creation members: H2 makes the file on first connect, so a missing database is not a
         // state this backend can be in.
 
@@ -173,11 +199,30 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
             "MERGE INTO $table (${list(columns)}) KEY (${list(keys)}) VALUES (${placeholders(columns.size)})"
 
         /**
+         * The source row for the two `MERGE … USING` forms, typed by the **target table** rather than
+         * by the parameters.
+         *
+         * `USING (VALUES (?, ?))` reads naturally and quietly corrupts binary columns: H2 infers the
+         * derived table's types from the parameter metadata, decides a `byte[]` is character data,
+         * and round-trips it through a charset. The bytes come back the right count of *characters*
+         * and the wrong bytes, so a stored world or a carried-quest blob fails its checksum on the
+         * next read with nothing thrown at write time. `MERGE … KEY` and a plain `INSERT` are both
+         * unaffected, because there the column types come from the table.
+         *
+         * `SELECT cols FROM table WHERE 1=0` contributes no rows and every column type, and the
+         * `UNION ALL` forces the parameters to those types. The parameters stay in [columns] order,
+         * which is the contract every caller binds against.
+         */
+        private fun typedSource(table: String, columns: List<String>): String =
+            "(SELECT ${list(columns)} FROM $table WHERE 1=0 " +
+                    "UNION ALL SELECT ${placeholders(columns.size)})"
+
+        /**
          * `MERGE … KEY` always overwrites, so leaving an existing row alone needs the standard
          * `MERGE … USING` form with only a not-matched branch.
          */
         override fun insertIfAbsent(table: String, keys: List<String>, columns: List<String>): String =
-            "MERGE INTO $table USING (VALUES (${placeholders(columns.size)})) AS s(${list(columns)}) " +
+            "MERGE INTO $table USING ${typedSource(table, columns)} AS s(${list(columns)}) " +
                     "ON ${keys.joinToString(" AND ") { "$table.$it = s.$it" }} " +
                     "WHEN NOT MATCHED THEN INSERT (${list(columns)}) " +
                     "VALUES (${columns.joinToString(", ") { "s.$it" }})"
@@ -191,7 +236,7 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
         ): String {
             val updates = columns - keys.toSet()
             if (updates.isEmpty()) return insertIfAbsent(table, keys, columns)
-            return "MERGE INTO $table USING (VALUES (${placeholders(columns.size)})) AS s(${list(columns)}) " +
+            return "MERGE INTO $table USING ${typedSource(table, columns)} AS s(${list(columns)}) " +
                     "ON ${keys.joinToString(" AND ") { "$table.$it = s.$it" }} " +
                     "WHEN MATCHED AND $table.$guard < s.$guard THEN UPDATE SET " +
                     updates.joinToString(", ") { "$it = s.$it" } + " " +

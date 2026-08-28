@@ -68,9 +68,11 @@ class CryonGeyserExtension : Extension {
     private var database: Database? = null
     private var registry: ServerRegistry? = null
 
-    /** What this Geyser calls itself in the presence hash, resolved as `NodeIdentity` resolves a node id,
-     * random suffix and all: the presence hash is keyed by this name, so two processes falling back to
-     * the same literal would silently overwrite each other and read as one. */
+    /**
+     * What this Geyser calls itself in the presence hash, resolved as `NodeIdentity` resolves a node
+     * id, random suffix and all: the presence hash is keyed by this name, so two processes falling
+     * back to the same literal would silently overwrite each other and read as one.
+     */
     private val geyserId: String by lazy {
         sequenceOf(System.getenv("CRYON_NODE"), System.getenv("HOSTNAME"))
             .firstOrNull { !it.isNullOrBlank() }
@@ -135,7 +137,6 @@ class CryonGeyserExtension : Extension {
 
     @Subscribe
     fun onShutdown(event: GeyserShutdownEvent) {
-        scope.cancel("Geyser is shutting down")
         watchers.forEach { runCatching { it.close() } }
         watchers.clear()
         manager?.disableAll()
@@ -146,6 +147,9 @@ class CryonGeyserExtension : Extension {
         if (::messenger.isInitialized) messenger.close()
         if (::store.isInitialized) store.close()
         database?.close()
+        // Last: a launch on a canceled scope is silently inert, so cancelling ahead of the teardown
+        // above would drop the work it dispatches through this scope without a line in the log.
+        scope.cancel("Geyser is shutting down")
         CryonIO.shutdown()
     }
 

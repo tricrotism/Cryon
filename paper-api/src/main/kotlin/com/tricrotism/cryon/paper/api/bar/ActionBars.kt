@@ -75,7 +75,7 @@ object ActionBars {
      * Show [message] on [player]'s action bar for [durationMillis].
      *
      * Sent immediately as well as on the next tick, so a one-off acknowledgement is not delayed by up
-     * to the refresh interval — which for something answering a click is the difference between
+     * to the refresh interval, which for something answering a click is the difference between
      * feedback and lag. A higher [priority] wins while both are live.
      *
      * The entry lands in one step. Resolving this player's map and then writing into it would let
@@ -109,9 +109,14 @@ object ActionBars {
     /**
      * Re-send the winning entry to everyone who has one, dropping what has expired.
      *
-     * Runs on the global region thread. Sending is a packet write on the player's connection rather
-     * than a read or mutation of their entity, so it needs no per-player hop — the same reasoning
-     * `StaffFeed` applies to `sendMessage`.
+     * Runs on the global region thread, and deliberately does not hop per player.
+     *
+     * Sending an action bar builds one packet and hands it to the connection: on Folia 26.2 there is
+     * no thread assertion anywhere on that path, not in `CraftPlayer`, not in
+     * `ServerCommonPacketListenerImpl.send`, and not in `Connection`. It reads and mutates no entity
+     * state, so there is nothing here for a region to own. A hop per entry per interval would buy
+     * nothing and cost a scheduled task each, in the one class whose whole promise is that it costs
+     * nothing while nobody is using it.
      */
     private fun tick() {
         if (entries.isEmpty()) return

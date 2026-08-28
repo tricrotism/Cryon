@@ -15,6 +15,15 @@ interface PlaceholderService {
      */
     fun register(owner: String, provider: PlaceholderProvider): AutoCloseable
 
-    /** The `%…%` namespaces [owner] currently provides. What `/cryon info <id>` lists for a module. */
+    /** The `%…%` namespaces [owner] currently provides. */
     fun identifiers(owner: String): Collection<String>
+
+    /**
+     * Every placeholder [owner] provides, rendered ready to paste: `%warps_count%`, `%warps_list%`.
+     *
+     * What `/cryon info <id>` lists. A namespace whose provider declares no
+     * [PlaceholderProvider.placeholders] contributes one `%warps_…%` line instead, so the answer is
+     * always the whole truth about that namespace and never a partial set presented as complete.
+     */
+    fun placeholders(owner: String): List<String>
 }

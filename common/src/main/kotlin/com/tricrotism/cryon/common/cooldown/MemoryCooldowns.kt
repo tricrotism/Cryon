@@ -14,12 +14,12 @@ import kotlin.time.Duration.Companion.milliseconds
  * **Caffeine rather than a `ConcurrentHashMap` of deadlines**, because the entries that most need
  * removing are the ones nobody will ever ask about again: a player uses a command once and never
  * returns, and a map only cleaned when the same key is read next would hold their entry for the rest
- * of the server's uptime. Every entry here carries its own TTL — the cooldown's own duration — so it
+ * of the server's uptime. Every entry here carries its own TTL, the cooldown's own duration, so it
  * evicts itself whether or not anyone asks again, and [MAX_TRACKED] bounds a join flood on top.
  *
  * **Expiry is the backstop, not the answer.** Caffeine evicts lazily, so an entry can outlive its
  * deadline by a maintenance cycle; every read compares the stored deadline against the clock instead
- * of treating presence as proof. That also keeps the two mechanisms independent — the cache decides
+ * of treating presence as proof. That also keeps the two mechanisms independent, the cache decides
  * when memory is reclaimed, the deadline decides when the cooldown is over, and neither has to be
  * exact for the other to be right.
  *

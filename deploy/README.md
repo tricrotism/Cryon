@@ -114,7 +114,6 @@ helm upgrade --install cryon deploy/helm/cryon -n cryon
   players present before going live.
 - The `paper-global.yml` here is a minimal overlay; verify Paper accepts it (modern forwarding on,
   the same secret as the proxy) on your exact build.
-- The config ConfigMaps still spell the network block the old way (`server-name`, `network.family`,
-  `network.instance-id`). Those are read as aliases for one more release and log a rename warning at boot; the current
-  names are `network.server`, `network.node` and `network.expect`. Rename them before the aliases go, and note that
-  `network.expect` has no old spelling at all, so a pool currently declares no intent and gets no validation banner.
+- `server-name` in the ConfigMap is the legacy alias for `network.server` and is read for one more release, logging a
+  rename warning at boot. It is left blank here because `CRYON_SERVER` supplies the value, so nothing depends on it;
+  drop the line whenever the aliases go.

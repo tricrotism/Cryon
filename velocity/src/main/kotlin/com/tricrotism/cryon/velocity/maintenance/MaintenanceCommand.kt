@@ -42,7 +42,7 @@ class MaintenanceCommand(
     /**
      * The toggle is acknowledged immediately and the write is launched behind it. `set` already
      * applied the new state to this proxy's own memory before it suspends, so the ack is not a
-     * prediction — what is still in flight is the durable row and the broadcast to the other proxies.
+     * prediction. What is still in flight is the durable row and the broadcast to the other proxies.
      */
     private fun flip(source: CommandSource, enabled: Boolean, message: String?, key: String) {
         scope.launch { maintenance.set(enabled, message) }

@@ -305,10 +305,18 @@ commands and `Schedulers.global` land on the global region thread.
 
 - **A plain `HashMap`/`mutableListOf` field on a manager or `object` is a race** even with no
   `async` anywhere in the file. This is the rule that costs people, not the scheduler ones.
-- **A snapshot is not a licence to touch.** `server.onlinePlayers` is safe to *read* from anywhere, but `sendMessage`
-  /inventory/`updateCommands` on each element needs a per-player
-  `Schedulers.entity(player) { … }`. They don't share a thread. `CommandRegistry.refresh` and
-  `DefaultInventorySearch` are the two worked examples.
+- **Sending is not touching, and the line between them is the packet.** `server.onlinePlayers` is safe to *read* from
+  anywhere, and so is writing to a player's connection: `sendMessage`, `sendActionBar`, `showBossBar`/`hideBossBar`,
+  `sendPlayerListHeader`. On Folia 26.2 those build a packet and hand it to `Connection.send`, and neither
+  `CraftPlayer` (no thread assertion anywhere in the class), `ServerCommonPacketListenerImpl.send` nor `Connection`
+  carries one. That is what lets `ActionBars` re-send every entry from the global thread without a hop per player, and
+  it is the reason the core can answer a command from `ModuleCommands.onLoaderThread`. **Reading or mutating a player's
+  state is the other half and always needs `Schedulers.entity(player) { … }`**:
+  inventories, effects, attributes, health, `getLocation`, `closeInventory`, and `updateCommands` (it re-evaluates every
+  command node's requirement against a source stack built from the entity). Absence of a thrown assertion is not
+  permission here, an inventory is a plain array with no synchronisation, so the failure is a torn read rather than an
+  exception. `DefaultInventorySearch` and `CommandRegistry.refresh` are the worked examples of the second half;
+  `ActionBars.tick` and `BossBars.close` of the first.
 - **`Schedulers.global` never runs inline**. It always defers to a later tick. So a check-then-act whose mutation is
   hopped reads state its own write hasn't applied yet; the burst races itself with no second actor involved. Perform the
   authoritative mutation inline and branch on what it returns.
@@ -1013,15 +1021,22 @@ into `track(…)`. Cancel or rewrite in the handler (`event.isCancelled = true`)
 
 **PlaceholderAPI (`…paper.api.placeholder`, bridge in `…cryon.papi`).** Optional integration, structured
 like the module system itself: the **core** owns the single PAPI dependency and each module gets its **own**
-`%<identifier>_…%` namespace without ever touching PAPI classes (they can't, isolated
-classloaders). A module implements `PlaceholderProvider` (`identifier` + `onRequest(player, params)`)
-and publishes it with **`PaperModule.registerPlaceholders(provider)`** in `onEnable` (auto-unregistered
-on disable). The core `PlaceholderService` impl (`PapiBridge`) wraps each provider in a `CryonExpansion`
-(`PlaceholderExpansion`, `persist()=true`, provider throws → swallowed so a feature bug can't break PAPI
-server-wide) and registers it, keyed by the owning module id so **`/cryon info <id>` lists that module's
-`%<namespace>_…%`** alongside its commands. **Best-effort like spark:** PAPI is a `softdepend` +
-`compileOnly`; absent → the namespace is still recorded (so info stays honest) but no expansion installs, and features
-never branch on it. `onRequest` runs on PAPI's thread (maybe async, maybe hot). Keep it
+`%<identifier>_…%` namespace without ever touching PAPI classes (they can't, isolated classloaders). A module implements
+`PlaceholderProvider` (`identifier` + `onRequest(player, params)`, plus the optional `placeholders`) and publishes it
+with **`PaperModule.registerPlaceholders(provider)`** in `onEnable`
+(auto-unregistered on disable). The core `PlaceholderService` impl (`PapiBridge`) wraps each provider in a
+`CryonExpansion` (`PlaceholderExpansion`, `persist()=true`, provider throws → swallowed so a feature bug can't break
+PAPI server-wide) and registers it, keyed by the owning module id.
+
+**`/cryon info <id>` lists the placeholders themselves, not the namespace holding them**, because the namespace is the
+one thing an admin already knows by the time they are asking. **Declare `placeholders`** (bare keys, no
+`%<identifier>_` wrapper; a key taking an argument declares its stem, `"top_"`) and each is rendered whole and
+click-to-copy. It defaults to empty, and leaving it empty is the honest answer for a provider that cannot enumerate
+itself: the listing falls back to one `%<namespace>_…%` line rather than presenting a partial set as complete.
+
+**Best-effort like spark:** PAPI is a `softdepend` + `compileOnly`; absent → the provider is still recorded (so info
+stays honest) but no expansion installs, and features never branch on it. `onRequest` runs on PAPI's thread (maybe
+async, maybe hot). Keep it
 cheap, thread-safe, no Bukkit API off-main. Built-in namespace `%cryon_…%` (`CorePlaceholders`):
 `server`/`node`/`expect`/`max_players` off the immutable `NodeIdentity`.
 
@@ -1428,7 +1443,8 @@ of populated shards on node upgrades. Add infrastructure **and document it here 
 | `get<BedrockService>()` on the proxy for Bedrock identity         | Reading a Floodgate prefix off `player.username` by hand        |
 | Close your module's windows in `onDisable`                        | Leaving them open (leaks the module classloader on hot-unload)  |
 | `Schedulers.async/global/region/entity`                           | raw `Bukkit.getScheduler()`                                     |
-| `Schedulers.entity(p)` per player when iterating online players   | Touching each `onlinePlayers` element from one thread           |
+| `Schedulers.entity(p)` to read or mutate a player's state         | Reading an inventory or location from another region thread     |
+| Send packets (`sendMessage`/`sendActionBar`) from any thread      | A hop per player for output that is only a packet write         |
 | Mutate authoritatively inline, branch on the result               | Guard read + hopped mutation (`global` never runs inline)       |
 | `timer`/`asyncTimer`/`track(…)` on `PaperModule`                  | Raw `Schedulers.*Timer` in a module with no cancel on disable   |
 | `Events.subscribe(...).filter{}.handler{}`                        | ad-hoc `Listener` plumbing for one handler                      |
@@ -1448,6 +1464,7 @@ of populated shards on node upgrades. Add infrastructure **and document it here 
 | A command for every menu action                                   | A menu as the only way to do something (console can't click)    |
 | `branch { leaf(...) }` from `…api.menu` to build a tree           | Hand-building `MenuBranch`/`MenuLeaf` node lists                |
 | `PlaceholderProvider` + `registerPlaceholders(...)`               | Extending `PlaceholderExpansion` in a module (can't see PAPI)   |
+| Declare `placeholders` so `/cryon info` can list the keys         | Leaving an admin to guess what is inside a namespace            |
 | `player.resolvedLocale()` for messages                            | `player.locale()` directly (ignores overrides)                  |
 | `services.find<Database>()` (genuinely optional)                  | `get<Database>()` assuming SQL is enabled                       |
 | `get<Messenger>()`/`get<KeyValueStore>()`/`get<ServerRegistry>()` | Null-checking them, or branching on the deployment mode         |

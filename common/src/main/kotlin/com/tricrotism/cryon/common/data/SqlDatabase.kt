@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * **Blocking JDBC runs on a daemon pool sized to the connection pool, and the suspending API is a
  * `withContext` onto it.** The pool stays platform-threaded and stays that size on purpose: threads
  * here are not the scarce resource, connections are, so a wider pool would only move the queue from
- * the executor to `getConnection` — where waiting is bounded by Hikari's timeout and surfaces as a
+ * the executor to `getConnection`, where waiting is bounded by Hikari's timeout and surfaces as a
  * thrown exception rather than as backpressure. Bounding at the executor makes a burst of queries
  * wait quietly instead of failing.
  */
@@ -97,7 +97,7 @@ class SqlDatabase(config: DatabaseConfig) : Database {
      * wedged statement hold the server up forever.
      *
      * Module scopes are cancelled before this runs, which unblocks anything *suspended* on the way to
-     * a statement — but a thread already inside `executeUpdate` is not at a suspension point and runs
+     * a statement, but a thread already inside `executeUpdate` is not at a suspension point and runs
      * to completion regardless. That is what the drain is still here for.
      */
     override fun close() {

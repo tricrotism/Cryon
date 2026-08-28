@@ -1,6 +1,6 @@
 # Serves the client resource pack over HTTP on port 8085.
 #
-# PackModule hands the client a URL, and a client will only take one over http(s) — a file:// path or
+# PackModule hands the client a URL, and a client will only take one over http(s). A file:// path or
 # a local directory is not something it can be pointed at. So even an entirely local test network
 # needs something listening, and this is it.
 #
@@ -13,7 +13,7 @@ $zip = "$root\cryon-pixelmon-pack.zip"
 
 if (-not (Test-Path $zip))
 {
-    Write-Host "No pack zip at $zip — run the clientPack task first." -ForegroundColor Red
+    Write-Host "No pack zip at $zip. Run the clientPack task first." -ForegroundColor Red
     exit 1
 }
 

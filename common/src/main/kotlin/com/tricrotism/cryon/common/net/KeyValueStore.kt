@@ -35,7 +35,7 @@ interface KeyValueStore {
      * caller created it.
      *
      * The claim primitive: on Redis this is one `SET NX PX`, so of any number of callers racing for
-     * the same key exactly one is told true. [set] cannot be used for this — it overwrites, so every
+     * the same key exactly one is told true. [set] cannot be used for this. It overwrites, so every
      * racer would "succeed" and they would all believe they hold the same thing.
      */
     suspend fun setIfAbsent(key: String, value: String, ttl: Duration): Boolean
@@ -44,7 +44,7 @@ interface KeyValueStore {
      * Remove [key], but **only if it still holds [value]**. True if this caller removed it.
      *
      * The release half of the claim, and the reason [delete] is not good enough for one. A holder
-     * whose TTL lapsed no longer owns the key — someone else may already have claimed it — and an
+     * whose TTL lapsed no longer owns the key, someone else may already have claimed it, and an
      * unconditional delete at that point releases *their* claim, silently letting two callers into a
      * section that is supposed to admit one. Comparing the value first makes a late release a no-op
      * instead, which is the only safe way for it to fail.
@@ -62,7 +62,7 @@ interface KeyValueStore {
     /**
      * Every key matching [pattern] (glob, e.g. `prefix*`), gathered without ever blocking the store.
      *
-     * Cursor-based, so it never stalls Redis — but it still walks the **whole** keyspace, and the
+     * Cursor-based, so it never stalls Redis, but it still walks the **whole** keyspace, and the
      * pattern only filters what comes back. That makes the cost proportional to the size of the
      * store rather than to the number of matches. For a group of related entries that is read as a
      * unit, prefer a hash ([hset]/[hgetAll]) and pay one O(size-of-group) lookup instead.
@@ -77,7 +77,7 @@ interface KeyValueStore {
      *
      * A hash is the answer to "several related entries, read together, written independently".
      * Writing a field is atomic against every other field, so concurrent writers cannot lose each
-     * other's entries the way they would racing on one serialized value — while [hgetAll] still
+     * other's entries the way they would racing on one serialized value, while [hgetAll] still
      * reads the group in a single round trip rather than a keyspace walk.
      *
      * **The TTL is the hash's, not the field's.** Every [hset] pushes the expiry of the whole hash
@@ -94,7 +94,7 @@ interface KeyValueStore {
      * The hash counterpart to [setIfAbsent], and the reason it exists rather than callers doing
      * [hgetAll] then [hset]: that pair is a check-then-act, so two callers racing the same field both
      * read it absent and both believe they claimed it. One round trip instead of two, and the boolean
-     * is a real claim rather than a prediction — safe to gate a reward on.
+     * is a real claim rather than a prediction, safe to gate a reward on.
      */
     suspend fun hsetIfAbsent(key: String, field: String, value: String, ttl: Duration): Boolean
 

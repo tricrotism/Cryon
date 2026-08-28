@@ -26,8 +26,8 @@ class PlayerLocaleStore(
     private val cache = ConcurrentHashMap<UUID, Optional<Locale>>()
 
     /**
-     * Runs the re-reads an invalidation triggers. The subscription handler is not suspending — it
-     * runs on the transport's ordered delivery thread — so the SQL read it needs has to be launched
+     * Runs the re-reads an invalidation triggers. The subscription handler is not suspending. It
+     * runs on the transport's ordered delivery thread, so the SQL read it needs has to be launched
      * rather than awaited, and this is what owns and cancels those.
      */
     private val scope = CoroutineScope(

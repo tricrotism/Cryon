@@ -106,7 +106,7 @@ abstract class PaperModule : Module {
     /**
      * Read [name] out of **this module's own jar**, rather than through the classloader.
      *
-     * `getResourceAsStream` delegates to the parent first, and the parent here is the core — whose
+     * `getResourceAsStream` delegates to the parent first, and the parent here is the core, whose
      * jar also contains a `config.yml`. A module asking for its own default would silently be handed
      * the core's and write that into its folder, which looks like a corrupted default rather than a
      * lookup landing one classloader too high. Going straight to the code source cannot be ambiguous.
@@ -127,8 +127,8 @@ abstract class PaperModule : Module {
      *
      * **Launch every coroutine here, never in `GlobalScope` or an ad-hoc `CoroutineScope`.** A
      * coroutine is a live reference to the code that started it, so one still suspended after
-     * `/cryon unload` — parked on a database call, waiting out a `delay`, sitting in a `Mutex` queue
-     * — holds this module's classloader open and eventually resumes into classes that are gone. That
+     * `/cryon unload`, parked on a database call, waiting out a `delay`, sitting in a `Mutex` queue,
+     * holds this module's classloader open and eventually resumes into classes that are gone. That
      * is the same leak [track] exists for, and the scope is how the suspending half of the module
      * gets it: cancelling the parent cancels every child, transitively, in one move.
      *
@@ -140,7 +140,7 @@ abstract class PaperModule : Module {
      * which module it came from.
      *
      * **Cancellation is cooperative.** It unblocks anything suspended at a suspension point, but a
-     * thread already inside a blocking JDBC or Redis call runs to completion — teardown that must
+     * thread already inside a blocking JDBC or Redis call runs to completion. Teardown that must
      * *finish* rather than merely stop belongs in [onDisable] before the super call, not in a
      * coroutine racing it.
      */
@@ -287,7 +287,7 @@ abstract class PaperModule : Module {
      *
      * It suspends, and the transfer waits on it: returning before the write lands defeats the point,
      * and never returning stalls the player on the loading screen. It is invoked by the core rather
-     * than from this module's [scope], so it keeps running through a disable — which is deliberate,
+     * than from this module's [scope], so it keeps running through a disable, which is deliberate,
      * since the last flush has to survive teardown.
      */
     protected fun onFlush(

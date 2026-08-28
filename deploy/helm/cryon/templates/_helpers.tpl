@@ -16,6 +16,10 @@ resolves it env-first; the DB password and forwarding secret come from Secrets. 
       fieldPath: status.podIP
 - name: CRYON_SERVER
   value: "{{ .family }}"
+# A Fleet is by definition more than one node of the same server, so say so: the core compares this
+# against what it can actually see and complains when they disagree.
+- name: CRYON_EXPECT
+  value: "many-nodes"
 - name: CRYON_NODE
   valueFrom:
     fieldRef:

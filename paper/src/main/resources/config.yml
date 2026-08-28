@@ -1,15 +1,15 @@
-# Set true on live/production servers. Disables developer conveniences — currently the module
-# hot-reload watcher (see modules.auto-reload). Does not affect the /cryon load|unload|scan
+# Set true on live/production servers. Disables developer conveniences, currently just the
+# module hot-reload watcher (see modules.auto-reload). Does not affect the /cryon load|unload|scan
 # commands, which always work.
-production: false
+production: true
 
 modules:
     # Watch plugins/Cryon/modules/ and automatically load, reload, and unload feature jars at
-    # runtime as they're added, replaced, or deleted — no /cryon command needed. Intended for dev
+# runtime as they're added, replaced, or deleted, with no /cryon command needed. Intended for dev
     # iteration. Defaults to the opposite of `production` (on in dev, off in prod); uncomment to
     # override. Feature jars are loaded from private copies, so the originals here are never locked
     # and can be freely swapped while running.
-    auto-reload: true
+#auto-reload: true
 
 # Remote feature modules: pull feature jars from a Maven repository instead of copying them in by
 # hand. Off by default, and genuinely optional: with `enabled: false` nothing is parsed, no poller
@@ -52,31 +52,31 @@ remote:
     #      version: "1.0.0"
     #      branch: "main"
 
-# This server's family (the interchangeable pool it belongs to, e.g. skyblock or hub). Also the
-# scope name server-scoped feature flags apply to, so a flag kills the whole pool at once. Kept as a
-# legacy alias for network.family below; prefer setting network.family.
+# This server's pool (the interchangeable set of nodes it belongs to, e.g. skyblock or hub). Also
+# the scope name server-scoped feature flags apply to, so a flag kills the whole pool at once. Kept
+# as a legacy alias for network.server below; prefer setting network.server.
 server-name: local
 
 # Network / sharding. This server registers itself in the server registry and heartbeats its live
 # player count, so proxies can route to it and an orchestrator can scale the pool. All values are
-# env-first (a Kubernetes pod needs no baked config): CRYON_NETWORK_MODE, CRYON_SERVER_FAMILY,
-# CRYON_INSTANCE_ID (or HOSTNAME), CRYON_INSTANCE_ADDRESS, CRYON_INSTANCE_PORT.
+# env-first (a Kubernetes pod needs no baked config): CRYON_EXPECT, CRYON_SERVER,
+# CRYON_NODE (or HOSTNAME), CRYON_NODE_ADDRESS, CRYON_NODE_PORT.
 network:
     # Two words, and everything below uses them consistently:
     #
-    #   server — what a player joins and picks from a hub menu: "prison", "skyblock". One server can
+    #   server:  what a player joins and picks from a hub menu: "prison", "skyblock". One server can
     #            be run by any number of interchangeable processes sharing its players and state.
-    #   node   — one of those processes. This is also the name the proxy registers it under, so a
+    #   node:    one of those processes. This is also the name the proxy registers it under, so a
     #            node id and a Velocity server entry are the same thing.
     #
     # How many nodes you MEAN to run for this server. It is an assertion, not a switch: nothing
     # behaves differently either way. What actually decides whether state crosses processes is
     # redis.enabled. Declaring it is what lets the core compare intent against reality and say so
-    # when they disagree — see /cryon network.
+    # when they disagree. See /cryon network.
     #
-    #   one-node   — this process is the whole server. Redis is optional; the registry simply holds
+    #   one-node:    this process is the whole server. Redis is optional; the registry simply holds
     #                one node (this one) and a flag toggle reaches its only audience.
-    #   many-nodes — one of N interchangeable nodes. Redis and the database are then REQUIRED:
+    #   many-nodes:  one of N interchangeable nodes. Redis and the database are then REQUIRED:
     #                without them each node runs as its own island and they will silently disagree.
     expect: one-node
 
@@ -107,15 +107,16 @@ network:
 
 # Storage and transport.
 #
-# database — where state is written down. Needed for anything that must survive a restart, or follow
-#            a player between instances: feature flag overrides, player language, module data.
-# redis    — how far a message travels. On, state is shared with every other process on the network.
-#            Off, it stays in this JVM, which is the whole network when network.mode is `single`.
+# database:  where state is written down. Needed for anything that must survive a restart, or follow
+#            a player between nodes: feature flag overrides, player language, module data.
+# redis:     how far a message travels. On, state is shared with every other process on the network.
+#            Off, it stays in this JVM, which is the whole network when network.expect is
+#            `one-node`.
 #            The API is identical either way, so features never branch on it.
 database:
     enabled: false
     # Backend: postgresql, mysql, or h2. With h2 the DB is an embedded local file (`database` below is
-    # its path, host/port ignored) — zero-setup, but local to this process, not shared across servers.
+    # its path, host/port ignored), zero-setup but local to this process, not shared across servers.
     type: postgresql
     host: localhost
     # Leave the port at the backend default (postgresql 5432, mysql 3306) or set your own.
@@ -132,7 +133,7 @@ redis:
 
 # Command surface.
 #
-# menu — what bare /cryon gives a player: true opens the admin menu, false prints the help. Both
+# menu:  what a bare /cryon gives a player. True opens the admin menu, false prints the help. Both
 #        always exist either way (/cryon menu and /cryon help), and the console always gets the help,
 #        having nowhere to put a window. Every menu action has a command that does the same thing, so
 #        turning this off costs nothing but clicks.
@@ -142,7 +143,7 @@ commands:
 # The currency ledger: balances, /balance, /pay, /currency, and the CurrencyService a feature spends
 # through.
 #
-# Off by default — turn it on for the servers that actually run an economy. Off means the service is
+# Off by default. Turn it on for the servers that actually run an economy. Off means the service is
 # never registered, so `services.find<CurrencyService>()` answers null and a feature that wants money
 # has to cope with its absence, the same contract the database has, and the three commands above are
 # not registered either. Nothing is deleted: balances stay in the table and are exactly where they

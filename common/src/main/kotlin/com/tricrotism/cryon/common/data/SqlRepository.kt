@@ -7,7 +7,7 @@ import java.util.concurrent.ConcurrentHashMap
  * [Repository] over a [Database]. See that interface for the consistency model before using it.
  *
  * @param table the table, which must already exist with [Repository.BASE_COLUMNS_DDL] plus the
- *   codec's columns. Creating it belongs in the feature's own `migrate` call, not here — schema is
+ *   codec's columns. Creating it belongs in the feature's own `migrate` call, not here. Schema is
  *   `SchemaMigrator`'s job and duplicating it would give one table two owners.
  */
 class SqlRepository<T : Any>(
@@ -35,7 +35,7 @@ class SqlRepository<T : Any>(
 
     private val selectSql = "SELECT $selectColumns FROM $table WHERE id = ?"
 
-    /** `SET col = ?, … , version = ? WHERE id = ? AND version = ?` — the guarded write. */
+    /** `SET col = ?, … , version = ? WHERE id = ? AND version = ?`, the guarded write. */
     private val updateSql = buildString {
         append("UPDATE ").append(table).append(" SET ")
         codec.columns.joinTo(this, ", ") { "$it = ?" }
@@ -53,7 +53,7 @@ class SqlRepository<T : Any>(
             Entry(codec.read(row), row.getLong(codec.columns.size + 1))
         }.firstOrNull()
         if (entry == null) {
-            // Absent in SQL means absent, so drop any stale cached copy — but only if nothing has
+            // Absent in SQL means absent, so drop any stale cached copy, but only if nothing has
             // been staged for it since, or a read would silently discard an unflushed write.
             if (id !in dirty) cache.remove(id)
             return null
@@ -112,7 +112,7 @@ class SqlRepository<T : Any>(
     /**
      * Write [pending] in one transaction: guarded updates first, then inserts for whatever had no row.
      *
-     * Two batched statements rather than a portable upsert, because the guard is the point — an
+     * Two batched statements rather than a portable upsert, because the guard is the point, an
      * upsert would overwrite a row another node had moved, which is precisely the case worth
      * reporting. A row the update misses is either new (insert it) or contended (logged).
      */
@@ -147,7 +147,7 @@ class SqlRepository<T : Any>(
         if (written < pending.size) {
             // Reachable when a guarded update matched no row, which under the single-owner model this
             // type assumes should be impossible: another node wrote a row this server believed it
-            // owned. Worth a line — it points at a handoff bug, not a SQL one.
+            // owned. Worth a line. It points at a handoff bug, not a SQL one.
             logger.warn(
                 "Flushed {} of {} rows to {}; the rest were written by another node",
                 written, pending.size, table,
@@ -166,7 +166,7 @@ class SqlRepository<T : Any>(
         return out.toTypedArray()
     }
 
-    /** `id`, then the value columns, then the starting version — matching [insertColumns]. */
+    /** `id`, then the value columns, then the starting version, matching [insertColumns]. */
     private fun insertRow(id: String, entry: Entry<T>): Array<out Any?> {
         val out = ArrayList<Any?>(codec.columns.size + 2)
         out.add(id)

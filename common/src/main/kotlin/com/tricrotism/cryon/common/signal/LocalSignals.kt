@@ -7,7 +7,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * The one [Signals] implementation. In-process by definition — see the note on [Signals].
+ * The one [Signals] implementation. In-process by definition. See the note on [Signals].
  *
  * **Subscriptions are indexed by exact type and the assignable set is cached per dispatched type.**
  * The obvious implementation walks every subscription on every dispatch asking `isInstance`, which
@@ -79,7 +79,7 @@ class LocalSignals(private val logger: Logger) : Signals {
      * Every handler registered against [type] or any of its supertypes, in dispatch order.
      *
      * Walks the registered keys rather than the class hierarchy, because the set of subscribed types
-     * is small and known while the hierarchy of a signal is not — and an interface a signal picks up
+     * is small and known while the hierarchy of a signal is not, and an interface a signal picks up
      * three levels down would be missed by a naive superclass walk.
      */
     private fun chainFor(type: Class<*>): List<Entry> =

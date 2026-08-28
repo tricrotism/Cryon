@@ -85,7 +85,7 @@ internal object CommandUi {
      */
     fun usage(path: String, description: String): Component = Component.textOfChildren(
         Mini.format(
-            "  <sky_blue>/<path></sky_blue> <slate_gray>— <desc>",
+            "  <sky_blue>/<path></sky_blue> <slate_gray>- <desc>",
             Placeholder.unparsed("path", path),
             Placeholder.unparsed("desc", description),
         ).clickEvent(ClickEvent.suggestCommand("/${path.substringBefore(" <")}"))

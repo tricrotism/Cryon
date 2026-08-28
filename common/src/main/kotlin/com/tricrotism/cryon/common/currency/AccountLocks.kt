@@ -15,14 +15,14 @@ import java.util.concurrent.atomic.AtomicInteger
  * reporting a balance that belongs to a different transfer, and how two concurrent deposits each
  * raise a change event claiming the other's total.
  *
- * A `synchronized` block still cannot be used here — holding a monitor across a database round trip
+ * A `synchronized` block still cannot be used here. Holding a monitor across a database round trip
  * would park a region or Netty thread until the answer came back, and a monitor cannot be held
  * across a suspension point at all. A coroutine [Mutex] is the right shape instead: a waiter
  * suspends rather than blocking, so the thread goes off and does other work while the queue drains.
  *
  * **In-process only.** These locks order this node's own callers; they say nothing about another
  * node touching the same account. That is deliberate and sufficient, because the operations they
- * guard are each individually atomic *in the database* — the lock removes local interleaving, and
+ * guard are each individually atomic *in the database*. The lock removes local interleaving, and
  * the compare-and-set removes cross-node interleaving. Where a genuinely cross-node critical section
  * is needed, that is a `DistributedLock`, not this.
  */
@@ -52,7 +52,7 @@ internal class AccountLocks {
      *
      * The two are always taken in a fixed order regardless of the order asked for. Without that,
      * `transfer(a, b)` and `transfer(b, a)` running together would each hold what the other is
-     * waiting on and neither would ever proceed — a deadlock no retry escapes, because these locks
+     * waiting on and neither would ever proceed, a deadlock no retry escapes, because these locks
      * have no timeout.
      */
     suspend fun <T> withLocks(first: String, second: String, action: suspend () -> T): T {
@@ -65,8 +65,8 @@ internal class AccountLocks {
      * Take a reference to [key]'s entry, creating it if needed.
      *
      * The reference count is what makes removal safe. Dropping the entry the moment a lock is
-     * released would let a second caller — already holding the same `Entry` and waiting on its
-     * mutex — be joined by a third that finds nothing in the map, creates a *fresh* `Entry`, and
+     * released would let a second caller, already holding the same `Entry` and waiting on its
+     * mutex, be joined by a third that finds nothing in the map, creates a *fresh* `Entry`, and
      * proceeds concurrently with the second. Two callers would then be inside the same account's
      * critical section holding different mutexes, which is precisely the interleaving this class
      * exists to prevent. Counting means the map entry survives exactly as long as somebody needs it.

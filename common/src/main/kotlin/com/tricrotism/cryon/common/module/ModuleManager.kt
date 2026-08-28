@@ -109,7 +109,11 @@ class ModuleManager(
         val tree = subtree(id)
         if (tree.any { states[it] == ModuleState.ENABLED }) return false
         modules = LinkedHashMap(modules).apply { tree.forEach { remove(it) } }
-        tree.forEach { states.remove(it); parents.remove(it); declared.remove(it) }
+        for (member in tree) {
+            states.remove(member)
+            parents.remove(member)
+            declared.remove(member)
+        }
         return true
     }
 
@@ -181,7 +185,7 @@ class ModuleManager(
             // Throwable, not Exception: a stale/mislinked jar throws Errors (NoSuchMethodError,
             // NoClassDefFoundError, ServiceConfigurationError). One bad module must never crash the server.
             states[id] = ModuleState.FAILED
-            logger.error("Failed to load module '{}',' left disabled, server continues", id, e)
+            logger.error("Failed to load module '{}', left disabled, server continues", id, e)
             false
         }
     }

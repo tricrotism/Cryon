@@ -25,7 +25,7 @@ import kotlin.time.Duration.Companion.milliseconds
  *    `publish` (and on the main server thread), so code that worked here would deadlock or reorder
  *    against real Redis, a fidelity gap in the worst direction.
  *
- * [publish] returns once the message is handed to that thread, not once handlers have run — the same
+ * [publish] returns once the message is handed to that thread, not once handlers have run, the same
  * promise Redis makes, where a publish completes on server ack rather than on delivery.
  */
 class LocalMessenger(private val logger: Logger) : Messenger {

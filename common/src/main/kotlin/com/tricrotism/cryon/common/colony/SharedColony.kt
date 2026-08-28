@@ -13,7 +13,7 @@ import kotlin.math.absoluteValue
  *
  * **Advertisements live in one hash, not one key per node.** A key-per-node scheme would need
  * `keys("prefix*")` to read the cluster, and that walks the whole keyspace rather than the handful
- * of entries it wants — the cost scales with everything else stored in Redis. One `hgetAll` is a
+ * of entries it wants. The cost scales with everything else stored in Redis. One `hgetAll` is a
  * single round trip proportional to the pool.
  *
  * The consequence is that the hash's TTL is not a per-node liveness signal: `KeyValueStore.hset`
@@ -131,7 +131,7 @@ class SharedColony(
 
     /**
      * A listener that throws must not stop the others being told, and must not leave the elector
-     * disagreeing with reality — the mode has already changed by the time this runs, so the failure
+     * disagreeing with reality. The mode has already changed by the time this runs, so the failure
      * is the feature's to handle, not a reason to un-elect.
      */
     private suspend fun notify(

@@ -70,7 +70,7 @@ Requires **JDK 25**.
 Production publishes/consumes the API from `repo.striveservices.org` rather than mavenLocal. There are no unit tests,
 verify on a local server.
 
-A ready-made local stack (Velocity + 2 Paper instances + Redis + Postgres, instanced mode) lives in
+A ready-made local stack (Velocity + 2 Paper nodes + Redis + Postgres, many-nodes) lives in
 [`test-network/`](test-network).
 
 ---
@@ -116,14 +116,14 @@ dropped into the proxy's `plugins/cryon/modules/`.
 family jar sets, and a Helm chart of Agones Fleets + autoscalers for a Kubernetes deployment. See
 [`deploy/README.md`](deploy/README.md).
 
-A deployment is one of two shapes, declared in `network.mode`:
+A deployment is one of two shapes, declared in `network.expect`:
 
-- **`single`**. This server is the whole family (a proxy still fronts it). Redis optional.
-- **`instanced`**. One of N interchangeable instances of `network.family`, players load-balanced onto
+- **`one-node`**. This process is the whole server (a proxy still fronts it). Redis optional.
+- **`many-nodes`**. One of N interchangeable nodes of `network.server`, players load-balanced onto
   the healthiest. Redis + Postgres required.
 
-The mode declares intent only; whether state actually crosses processes is decided by `redis.enabled`.
-Feature code is written once and never branches on the mode.
+The expectation declares intent only; whether state actually crosses processes is decided by
+`redis.enabled`. Feature code is written once and never branches on it.
 
 ---
 

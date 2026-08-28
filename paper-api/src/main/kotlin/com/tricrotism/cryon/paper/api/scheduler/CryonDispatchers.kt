@@ -16,16 +16,16 @@ import kotlin.coroutines.CoroutineContext
  * Coroutine dispatchers over Paper's threaded-region schedulers, the suspending counterpart to
  * [Schedulers]. Pick the scope that owns the data you touch, exactly as you would there:
  *
- * - [Global] — server-wide work with no world context.
- * - [region] — work scoped to a `Location`'s region.
- * - [entity] — work following an entity across region threads.
- * - [Async] — off the server threads entirely (I/O, network); no Bukkit API.
+ * - [Global] for server-wide work with no world context.
+ * - [region] for work scoped to a `Location`'s region.
+ * - [entity] for work following an entity across region threads.
+ * - [Async] for work off the server threads entirely, I/O and network. No Bukkit API.
  *
  * **Each one elides the hop when it is already on the right thread.** A dispatcher whose
  * `isDispatchNeeded` answers false resumes the coroutine inline, in the caller's own frame, instead
  * of scheduling it. That matters more than it looks: `Schedulers.global` *always* defers to a later
  * tick, so a `withContext(Global)` that blindly scheduled would cost a tick per hop even when the
- * caller was already on the global thread — and a read-then-write pair split across two ticks is the
+ * caller was already on the global thread, and a read-then-write pair split across two ticks is the
  * check-then-act race the core's currency layer exists to avoid. Here the common case costs nothing
  * and the ordering is the caller's own.
  *
@@ -41,7 +41,7 @@ object CryonDispatchers {
     val Global: CoroutineDispatcher = GlobalRegionDispatcher
 
     /**
-     * Off-server work — blocking I/O, Redis, HTTP. **No Bukkit API.**
+     * Off-server work: blocking I/O, Redis, HTTP. **No Bukkit API.**
      *
      * The Paper-side name for [CryonIO.dispatcher], so features reach one shared virtual-thread pool
      * through the same object as the region dispatchers rather than having to know about `:common`'s
@@ -55,7 +55,7 @@ object CryonDispatchers {
     /**
      * The region owning [entity], following it as it moves between regions.
      *
-     * If the entity is gone — already removed, or retired before the task ran — the coroutine is
+     * If the entity is gone, already removed or retired before the task ran, the coroutine is
      * **cancelled** rather than left suspended forever. See [EntityDispatcher].
      */
     fun entity(entity: Entity): CoroutineDispatcher = EntityDispatcher(entity)
@@ -146,8 +146,8 @@ object CryonDispatchers {
      * Follows one entity's owning region.
      *
      * **A retired entity cancels the coroutine instead of stranding it.** Paper's entity scheduler
-     * refuses work for an entity that has been removed — it answers null, or invokes the `retired`
-     * callback — and a dispatcher that simply dropped the block there would leave the coroutine
+     * refuses work for an entity that has been removed. It answers null, or invokes the `retired`
+     * callback, and a dispatcher that simply dropped the block there would leave the coroutine
      * suspended for the rest of the process's life, holding whatever it captured. That is the leak
      * shape this whole migration is meant to remove, so the dispatcher takes the other option:
      * cancel the job, then run the block anyway so the machinery observes the cancellation and
@@ -155,7 +155,7 @@ object CryonDispatchers {
      *
      * The unwind runs on [Async], not on a server thread, because by then there is no region that
      * owns this entity to run it on. A `finally` on this path must therefore be cleanup, not Bukkit
-     * work — which is the same rule that already applies to any cleanup racing a player's logout.
+     * work, which is the same rule that already applies to any cleanup racing a player's logout.
      */
     private class EntityDispatcher(private val entity: Entity) : RegionAwareDispatcher() {
 

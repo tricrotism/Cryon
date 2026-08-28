@@ -2,7 +2,7 @@
 #
 # Source is the bundled English bundle; translations land beside it as <locale>.properties and are
 # auto-registered at runtime by LangScanner (no code, no manifest). `%locale_with_underscore%` yields
-# the en_US / de_DE filename style the loader parses. Credentials come from env — see TRANSLATING.md.
+# the en_US / de_DE filename style the loader parses. Credentials come from env. See TRANSLATING.md.
 project_id_env: CROWDIN_PROJECT_ID
 api_token_env: CROWDIN_PERSONAL_TOKEN
 preserve_hierarchy: true

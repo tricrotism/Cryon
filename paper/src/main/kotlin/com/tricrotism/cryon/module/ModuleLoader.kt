@@ -41,8 +41,8 @@ class ModuleLoader(
     /**
      * Watches whether an unloaded jar's classloader is actually reclaimed.
      *
-     * The one measurement that says whether a hot-swap really worked. Everything else — services
-     * dropped, commands unregistered, windows closed, tasks cancelled — is this loader *trying* to
+     * The one measurement that says whether a hot-swap really worked. Everything else, services
+     * dropped, commands unregistered, windows closed, tasks cancelled, is this loader *trying* to
      * remove the last references to a jar; only the collector can confirm it succeeded. A live count
      * that climbs across reloads of the same jar is the module leaking, and nothing else in the
      * server can see it (see [Retention]).
