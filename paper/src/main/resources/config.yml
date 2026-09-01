@@ -52,6 +52,67 @@ remote:
     #      version: "1.0.0"
     #      branch: "main"
 
+# GitOps delivery. Off by default. When on, this server polls a git repository and lays its contents
+# down where the loaders already look: config.yml, the lang overrides, per-module configs, and
+# module jars. Which files it takes is decided by deploy.folder below.
+#
+# What happens next is deliberately NOT decided here. A jar written into modules/ hot-swaps when
+# modules.auto-reload is on and waits for a restart when it is not, exactly as if an operator had
+# dropped it in; a second switch letting a commit apply where a local change could not would be a
+# surprise nobody asked for. config.yml is the one exception and is re-read immediately, because
+# nothing was watching it before.
+#
+# Nothing is ever deleted. A file removed from the repository stays on this disk, so a bad merge
+# cannot empty a server.
+deploy:
+    enabled: false
+    # git's own smart-HTTP advertisement: the clone URL plus this suffix. Every forge serves it, and
+    # it returns a few kilobytes, so polling costs almost nothing.
+    refs-url: "https://github.com/your-org/cryon-deploy.git/info/refs?service=git-upload-pack"
+    # The zip archive, with {ref} where the commit goes. Zip rather than tar because the JDK reads
+    # zip and has no tar reader. GitHub is shown; GitLab is
+    # https://gitlab.com/org/repo/-/archive/{ref}/repo-{ref}.zip and Gitea
+    # https://gitea.example.com/org/repo/archive/{ref}.zip
+    archive-url: "https://codeload.github.com/your-org/cryon-deploy/zip/{ref}"
+    # The branch to deploy from, as a bare name. Anything already starting with refs/ is taken
+    # verbatim, which is how you pin a server to a tag: refs/tags/v1.4.0
+    #
+    # A branch this repository does not have is NOT an error. It falls back, in order, to the
+    # repository's own default branch (whatever HEAD points at, which is the only place that is
+    # actually stated), then main, then master. So deleting a merged feature branch returns the
+    # servers following it to the trunk instead of freezing them on its last commit.
+    branch: "main"
+    poll-seconds: 60
+    timeout-seconds: 30
+    # Prefer CRYON_DEPLOY_USERNAME and CRYON_DEPLOY_PASSWORD (a personal access token goes in the
+    # password). These exist for a local test network where there is no secret worth protecting;
+    # config.yml is the file most likely to get pasted into a support channel.
+    username: ""
+    password: ""
+    # The directory in the repository holding this server's files. One repository can then carry
+    # geyser/, velocity/, lifesteal8/ side by side, and a file only ever reaches the server whose
+    # folder it sits in.
+    #
+    # {server} resolves to this node's pool name (network.server), which is the right default for a
+    # pool of interchangeable nodes. Name it explicitly when the folder is not called after the pool.
+    folder: "{server}"
+    # Where each kind of thing lives INSIDE that folder. Blank turns that one off.
+    #
+    # data/ mirrors plugins/Cryon/data/<module-id>/, so a server folder holds only the module configs
+    # it actually changes. A module the folder does not carry is not overridden at all: it extracts
+    # the default bundled in its own jar, exactly as it would with no deploy configured.
+    #
+    #   lifesteal8/
+    #       config.yml
+    #       lang/en_US.properties
+    #       data/cryon-economy/config.yml
+    #       modules/cryon-economy.jar
+    paths:
+        config: "config.yml"
+        lang: "lang"
+        modules: "modules"
+        data: "data"
+
 # This server's pool (the interchangeable set of nodes it belongs to, e.g. skyblock or hub). Also
 # the scope name server-scoped feature flags apply to, so a flag kills the whole pool at once. Kept
 # as a legacy alias for network.server below; prefer setting network.server.
@@ -156,3 +217,12 @@ currency:
     # How often the ranked leaderboards are recomputed, in seconds. One indexed query per ranked
     # currency, off-thread. Minimum 30.
     leaderboard-refresh-seconds: 300
+    # How often to retry deposits that were queued while the database was unreachable.
+    #
+    # A deposit the ledger will not take is written to currency-journal.bin and applied when it comes
+    # back, so players keep what they earned through an outage. Spending is refused for the duration
+    # instead: taking money needs a balance read nobody can make while the database is gone, and
+    # guessing is how an outage turns into duplicated money.
+    #
+    # Costs nothing when the queue is empty; the check is a file-size read.
+    drain-seconds: 30

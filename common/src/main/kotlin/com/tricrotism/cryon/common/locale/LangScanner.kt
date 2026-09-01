@@ -17,7 +17,9 @@ object LangScanner {
 
     private val PATTERN = Regex("""^lang/([A-Za-z0-9_]+)\.properties$""")
 
-    /** A [MessageSource] from every `lang/<locale>.properties` in [jar], or `null` if there are none. */
+    /**
+     * A [MessageSource] from every `lang/<locale>.properties` in [jar], or `null` if there are none.
+     */
     fun fromJar(jar: File): MessageSource? {
         if (!jar.isFile) return null
         val byLocale = HashMap<Locale, Map<String, String>>()
@@ -35,7 +37,9 @@ object LangScanner {
         return if (byLocale.isEmpty()) null else MapMessageSource(byLocale)
     }
 
-    /** Parse a `lang` filename tag (`en`, `en_US`, `en_US_POSIX`) into a [Locale]. */
+    /**
+     * Parse a `lang` filename tag (`en`, `en_US`, `en_US_POSIX`) into a [Locale].
+     */
     fun parseLocale(tag: String): Locale {
         val parts = tag.split('_')
         return when (parts.size) {

@@ -21,7 +21,9 @@ suspend fun Player.setLanguage(locale: Locale) {
     Locales.store?.set(uniqueId, locale)
 }
 
-/** Clear this player's override so they fall back to their client locale again. */
+/**
+ * Clear this player's override so they fall back to their client locale again.
+ */
 suspend fun Player.clearLanguage() {
     Locales.store?.clear(uniqueId)
 }

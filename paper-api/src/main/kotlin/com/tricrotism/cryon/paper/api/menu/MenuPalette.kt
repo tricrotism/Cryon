@@ -50,9 +50,7 @@ object MenuPalette {
         'f' to Material.WHITE_STAINED_GLASS_PANE,
     )
 
-    /**
-     * The character that means "leave this slot empty" (air), not a pane.
-     */
+    // The character that means "leave this slot empty" (air), not a pane
     const val EMPTY = '.'
 
     /**

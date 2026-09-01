@@ -25,11 +25,9 @@ class PlayerLocaleStore(
     // present-value = override; present-empty = no override; absent = this player isn't on this server.
     private val cache = ConcurrentHashMap<UUID, Optional<Locale>>()
 
-    /**
-     * Runs the re-reads an invalidation triggers. The subscription handler is not suspending. It
-     * runs on the transport's ordered delivery thread, so the SQL read it needs has to be launched
-     * rather than awaited, and this is what owns and cancels those.
-     */
+    // Runs the re-reads an invalidation triggers. The subscription handler is not suspending. It
+    // runs on the transport's ordered delivery thread, so the SQL read it needs has to be launched
+    // rather than awaited, and this is what owns and cancels those
     private val scope = CoroutineScope(
         SupervisorJob() + CryonIO.dispatcher + CoroutineExceptionHandler { _, error ->
             logger.error("Unhandled failure in the player locale store", error)
@@ -38,14 +36,18 @@ class PlayerLocaleStore(
 
     private val subscription: MessengerSubscription = messenger.subscribe(CHANNEL, ::onInvalidate)
 
-    /** Create the backing table. */
+    /**
+     * Create the backing table.
+     */
     suspend fun init() {
         database.update(
             "CREATE TABLE IF NOT EXISTS $TABLE (uuid VARCHAR(36) PRIMARY KEY, locale VARCHAR(35) NOT NULL)"
         )
     }
 
-    /** Load [uuid]'s stored override into the cache. Call on join. */
+    /**
+     * Load [uuid]'s stored override into the cache. Call on join.
+     */
     suspend fun load(uuid: UUID) {
         cache.putIfAbsent(uuid, Optional.empty())
         reread(uuid)
@@ -64,22 +66,30 @@ class PlayerLocaleStore(
         cache.computeIfPresent(uuid) { _, _ -> stored }
     }
 
-    /** Evict [uuid] from the cache. Call on quit. */
+    /**
+     * Evict [uuid] from the cache. Call on quit.
+     */
     fun unload(uuid: UUID) {
         cache.remove(uuid)
     }
 
-    /** The cached override for [uuid], or null (no override, or not loaded). Synchronous. */
+    /**
+     * The cached override for [uuid], or null (no override, or not loaded). Synchronous.
+     */
     override fun cached(uuid: UUID): Locale? = cache[uuid]?.orElse(null)
 
-    /** Set [uuid]'s override, persist it, and invalidate other servers. */
+    /**
+     * Set [uuid]'s override, persist it, and invalidate other servers.
+     */
     override suspend fun set(uuid: UUID, locale: Locale) {
         database.upsert(TABLE, KEYS, COLUMNS, uuid.toString(), locale.toString())
         cache.computeIfPresent(uuid) { _, _ -> Optional.of(locale) }
         messenger.publish(CHANNEL, uuid.toString())
     }
 
-    /** Clear [uuid]'s override. */
+    /**
+     * Clear [uuid]'s override.
+     */
     override suspend fun clear(uuid: UUID) {
         database.update("DELETE FROM $TABLE WHERE uuid = ?", uuid.toString())
         cache.computeIfPresent(uuid) { _, _ -> Optional.empty() }

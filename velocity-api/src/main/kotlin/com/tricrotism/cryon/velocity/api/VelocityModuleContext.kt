@@ -12,9 +12,9 @@ import java.nio.file.Path
 interface VelocityModuleContext : ModuleContext {
     val proxy: ProxyServer
 
-    /** The Velocity plugin instance, passed to `eventManager`/`commandManager` registrations. */
+    // The Velocity plugin instance, passed to `eventManager`/`commandManager` registrations
     val plugin: Any
 
-    /** The proxy loader's own directory. A module's folder is [VelocityModule.dataFolder] under it. */
+    // The proxy loader's own directory. A module's folder is [VelocityModule.dataFolder] under it
     val dataDirectory: Path
 }

@@ -2,12 +2,14 @@ package com.tricrotism.cryon.velocity
 
 import com.google.inject.Inject
 import com.tricrotism.cryon.common.concurrent.CryonIO
-import com.tricrotism.cryon.common.config.ConfigDefaults
+import com.tricrotism.cryon.common.config.Config
 import com.tricrotism.cryon.common.config.ConfigMigrator
-import com.tricrotism.cryon.common.data.Database
-import com.tricrotism.cryon.common.data.DatabaseConfig
-import com.tricrotism.cryon.common.data.SqlDatabase
-import com.tricrotism.cryon.common.data.SqlDialect
+import com.tricrotism.cryon.common.config.CoreKeys
+import com.tricrotism.cryon.common.config.YamlConfigSource
+import com.tricrotism.cryon.common.data.*
+import com.tricrotism.cryon.common.deploy.DeployKeys
+import com.tricrotism.cryon.common.deploy.DeployResult
+import com.tricrotism.cryon.common.deploy.GitDeploy
 import com.tricrotism.cryon.common.locale.DirectoryMessageSource
 import com.tricrotism.cryon.common.locale.LangScanner
 import com.tricrotism.cryon.common.locale.MessageService
@@ -24,7 +26,7 @@ import com.tricrotism.cryon.velocity.api.bedrock.BedrockService
 import com.tricrotism.cryon.velocity.api.command.AnnotationCommands
 import com.tricrotism.cryon.velocity.bedrock.BedrockBridge
 import com.tricrotism.cryon.velocity.command.ModuleCommands
-import com.tricrotism.cryon.velocity.config.VelocityConfig
+import com.tricrotism.cryon.velocity.config.VelocityKeys
 import com.tricrotism.cryon.velocity.maintenance.MaintenanceCommand
 import com.tricrotism.cryon.velocity.maintenance.MaintenanceListener
 import com.tricrotism.cryon.velocity.motd.Motd
@@ -61,12 +63,10 @@ class CryonVelocityPlugin @Inject constructor(
     private var database: Database? = null
     private var registry: ServerRegistry? = null
 
-    /**
-     * What this proxy calls itself in the presence hash, resolved exactly as `NodeIdentity` resolves a
-     * node id, so a proxy and a game server in the same pod agree on their name. The random suffix
-     * matters: the presence hash is keyed by this name, so two proxies falling back to the same
-     * literal would silently overwrite each other and read as one.
-     */
+    // What this proxy calls itself in the presence hash, resolved exactly as `NodeIdentity` resolves a
+    // node id, so a proxy and a game server in the same pod agree on their name. The random suffix
+    // matters: the presence hash is keyed by this name, so two proxies falling back to the same
+    // literal would silently overwrite each other and read as one
     private val proxyId: String by lazy {
         sequenceOf(System.getenv("CRYON_NODE"), System.getenv("HOSTNAME"))
             .firstOrNull { !it.isNullOrBlank() }
@@ -80,14 +80,14 @@ class CryonVelocityPlugin @Inject constructor(
     private var manager: ModuleManager? = null
     private var loader: VelocityModuleLoader? = null
     private val watchers = ArrayList<JarWatcher>()
+    private var gitDeploy: GitDeploy? = null
+    private var deployTask: com.velocitypowered.api.scheduler.ScheduledTask? = null
 
-    /**
-     * The proxy's coroutine scope, canceled on shutdown.
-     *
-     * The proxy twin of `PaperModule.scope`: Velocity's event and command APIs are not suspending,
-     * so the places that call into `:common`'s suspending services bridge through this, `launch`
-     * for fire-and-forget, `future` where Velocity wants a `CompletionStage` to resume on.
-     */
+    // The proxy's coroutine scope, canceled on shutdown.
+    //
+    // The proxy twin of `PaperModule.scope`: Velocity's event and command APIs are not suspending,
+    // so the places that call into `:common`'s suspending services bridge through this, `launch`
+    // for fire-and-forget, `future` where Velocity wants a `CompletionStage` to resume on
     private val scope = CoroutineScope(
         SupervisorJob() + CryonIO.dispatcher + CoroutineExceptionHandler { _, error ->
             logger.error("Unhandled failure in a Cryon proxy coroutine", error)
@@ -112,11 +112,15 @@ class CryonVelocityPlugin @Inject constructor(
         setupBedrock(services)
         setupMotd(services)
         setupModules(services, cfg)
+        startGitDeploy(services, cfg)
         logger.info("Cryon proxy loader enabled")
     }
 
     @Subscribe
     fun onProxyShutdown(event: ProxyShutdownEvent) {
+        deployTask?.cancel()
+        deployTask = null
+        gitDeploy = null
         watchers.forEach { runCatching { it.close() } }
         watchers.clear()
         manager?.disableAll()
@@ -132,6 +136,7 @@ class CryonVelocityPlugin @Inject constructor(
         // Last: a launch on a canceled scope is silently inert, so cancelling ahead of the teardown
         // above would drop the work it dispatches through this scope without a line in the log.
         scope.cancel("The proxy is shutting down")
+        SpillStore.install(null)
         CryonIO.shutdown()
     }
 
@@ -139,7 +144,7 @@ class CryonVelocityPlugin @Inject constructor(
      * Load `config.yml`, first bringing it up to date with the one shipped in this jar so a key
      * added since it was written is actually there to read. See [ConfigMigrator].
      */
-    private fun loadConfig(): VelocityConfig {
+    private fun loadConfig(): Config {
         Files.createDirectories(dataDirectory)
         val configFile = dataDirectory.resolve("config.yml")
         val template = javaClass.getResourceAsStream("/config.yml")?.use { it.readBytes().decodeToString() }
@@ -150,7 +155,7 @@ class CryonVelocityPlugin @Inject constructor(
                 .onFailure { logger.error("Failed to migrate config.yml, continuing with what is on disk", it) }
                 .onSuccess { if (it) logger.info("config.yml updated with keys added since it was written") }
         }
-        return VelocityConfig.load(configFile)
+        return Config(YamlConfigSource.load(configFile))
     }
 
     /**
@@ -171,18 +176,18 @@ class CryonVelocityPlugin @Inject constructor(
         File(javaClass.protectionDomain.codeSource.location.toURI())
     }.getOrNull()
 
-    private fun setupInfrastructure(services: ServiceRegistry, cfg: VelocityConfig) {
-        if (cfg.boolean("database.enabled", ConfigDefaults.DATABASE_ENABLED)) {
+    private fun setupInfrastructure(services: ServiceRegistry, cfg: Config) {
+        if (cfg[CoreKeys.DATABASE_ENABLED]) {
             try {
-                val dialect = SqlDialect.of(cfg.string("database.type", ConfigDefaults.DATABASE_TYPE))
+                val dialect = SqlDialect.of(cfg[CoreKeys.DATABASE_TYPE])
                 val db = SqlDatabase.connect(
                     DatabaseConfig(
-                        host = cfg.string("database.host", ConfigDefaults.DATABASE_HOST),
-                        port = cfg.int("database.port", dialect.defaultPort),
-                        database = cfg.string("database.database", ConfigDefaults.DATABASE_NAME),
-                        username = cfg.string("database.username", ConfigDefaults.DATABASE_USERNAME),
-                        password = cfg.string("database.password", ConfigDefaults.DATABASE_PASSWORD),
-                        maxPoolSize = cfg.int("database.max-pool-size", ConfigDefaults.DATABASE_MAX_POOL_SIZE),
+                        host = cfg[CoreKeys.DATABASE_HOST],
+                        port = cfg.find(CoreKeys.DATABASE_PORT) ?: dialect.defaultPort,
+                        database = cfg[CoreKeys.DATABASE_NAME],
+                        username = cfg[CoreKeys.DATABASE_USERNAME],
+                        password = cfg[CoreKeys.DATABASE_PASSWORD],
+                        maxPoolSize = cfg[CoreKeys.DATABASE_MAX_POOL_SIZE],
                         dialect = dialect,
                     ),
                     logger,
@@ -197,11 +202,13 @@ class CryonVelocityPlugin @Inject constructor(
         setupTransport(services, cfg)
     }
 
-    /** Install the transport every other service is built on. Mirrors the Paper core exactly. */
-    private fun setupTransport(services: ServiceRegistry, cfg: VelocityConfig) {
-        if (cfg.boolean("redis.enabled", ConfigDefaults.REDIS_ENABLED)) {
+    /**
+     * Install the transport every other service is built on. Mirrors the Paper core exactly.
+     */
+    private fun setupTransport(services: ServiceRegistry, cfg: Config) {
+        if (cfg[CoreKeys.REDIS_ENABLED]) {
             try {
-                val config = RedisConfig(cfg.string("redis.uri", ConfigDefaults.REDIS_URI))
+                val config = RedisConfig(cfg[CoreKeys.REDIS_URI])
                 messenger = RedisMessenger(config, logger)
                 store = RedisKeyValueStore(config)
                 sharedTransport = true
@@ -226,16 +233,16 @@ class CryonVelocityPlugin @Inject constructor(
      * nodes being discovered and flushed live in other JVMs), so unlike the Paper core's registry
      * this genuinely has nothing to do without a shared transport, and says so.
      */
-    private fun setupNetwork(services: ServiceRegistry, cfg: VelocityConfig) {
+    private fun setupNetwork(services: ServiceRegistry, cfg: Config) {
         if (!sharedTransport) {
             logger.info("Dynamic routing off (no redis). Configure backends in velocity.toml")
             return
         }
-        if (!cfg.boolean("network.registry-enabled", ConfigDefaults.REGISTRY_ENABLED)) {
+        if (!cfg[CoreKeys.REGISTRY_ENABLED]) {
             logger.info("Server registry disabled by config (network.registry-enabled=false)")
             return
         }
-        val heartbeat = cfg.long("network.heartbeat-seconds", ConfigDefaults.HEARTBEAT_SECONDS).coerceAtLeast(1)
+        val heartbeat = cfg[CoreKeys.HEARTBEAT_SECONDS]
         startPresence(Duration.ofSeconds(heartbeat))
         val reg = SharedServerRegistry(store, messenger, database, Duration.ofSeconds(heartbeat * 3), logger)
         reg.init()
@@ -247,7 +254,7 @@ class CryonVelocityPlugin @Inject constructor(
 
         // Hold each backend switch open until the server being left has saved the player. See
         // HandoffListener. Only meaningful once a player can move between nodes at all.
-        val timeout = Duration.ofSeconds(cfg.long("network.handoff-timeout-seconds", 5).coerceAtLeast(1))
+        val timeout = Duration.ofSeconds(cfg[VelocityKeys.HANDOFF_TIMEOUT_SECONDS])
         proxy.eventManager.register(this, HandoffListener(messenger, reg, timeout, logger, scope))
         logger.info("Player handoff on. Transfers wait up to {}s for the source server to flush", timeout.toSeconds())
     }
@@ -278,17 +285,17 @@ class CryonVelocityPlugin @Inject constructor(
      * arrive, and a single-server deployment still has exactly one proxy, so in-process state is
      * already network-wide truth.
      */
-    private fun setupMaintenance(services: ServiceRegistry, cfg: VelocityConfig) {
+    private fun setupMaintenance(services: ServiceRegistry, cfg: Config) {
         val service = SharedMaintenanceService(
             database,
             messenger,
-            cfg.string("maintenance.default-message", ConfigDefaults.MAINTENANCE_MESSAGE),
+            cfg[CoreKeys.MAINTENANCE_MESSAGE],
             logger,
-            Duration.ofSeconds(cfg.long("maintenance.refresh-seconds", ConfigDefaults.MAINTENANCE_REFRESH_SECONDS)),
+            Duration.ofSeconds(cfg[CoreKeys.MAINTENANCE_REFRESH_SECONDS]),
         ).also { it.init() }
         maintenance = service
         services.register<MaintenanceService>(service)
-        val listener = MaintenanceListener(service, cfg.int("maintenance.ping-protocol", -1))
+        val listener = MaintenanceListener(service, cfg[VelocityKeys.MAINTENANCE_PING_PROTOCOL])
         maintenanceListener = listener
         proxy.eventManager.register(this, listener)
         AnnotationCommands.register(proxy.commandManager, MaintenanceCommand(service, proxy, scope))
@@ -301,9 +308,9 @@ class CryonVelocityPlugin @Inject constructor(
      * independent of the transport. A static one-node deployment still has both a maintenance
      * toggle and closed servers.
      */
-    private fun setupServerAccess(cfg: VelocityConfig) {
+    private fun setupServerAccess(cfg: Config) {
         val service = maintenance ?: return
-        val restricted = cfg.strings("network.restricted-servers").map { it.lowercase() }.toSet()
+        val restricted = cfg[VelocityKeys.RESTRICTED_SERVERS].map { it.lowercase() }.toSet()
         proxy.eventManager.register(this, ServerAccessListener(registry, service, restricted))
         if (restricted.isNotEmpty()) {
             logger.info("Access-restricted servers: {} (permission cryon.server.<id>)", restricted.joinToString())
@@ -319,7 +326,9 @@ class CryonVelocityPlugin @Inject constructor(
         services.register<BedrockService>(BedrockBridge.create(proxy, logger))
     }
 
-    /** The MOTD system: a top/bottom line of left/center/right anchored segments, `/motd reload`able. */
+    /**
+     * The MOTD system: a top/bottom line of left/center/right anchored segments, `/motd reload`able.
+     */
     private fun setupMotd(services: ServiceRegistry) {
         val maintenanceService = maintenance ?: return
         val motd = Motd(dataDirectory.resolve("config.yml")).also { it.reload() }
@@ -328,10 +337,13 @@ class CryonVelocityPlugin @Inject constructor(
         logger.info("MOTD available (/motd reload)")
     }
 
-    private fun setupModules(services: ServiceRegistry, cfg: VelocityConfig) {
+    private fun setupModules(services: ServiceRegistry, cfg: Config) {
         val dataDir = dataDirectory.toFile()
         val apiDir = File(dataDir, "api").apply { mkdirs() }
         val modulesDir = File(dataDir, "modules").apply { mkdirs() }
+        // Before any module builds a repository. See the Paper loader for why it sits beside
+        // `modules/` rather than inside it.
+        SpillStore.install(dataDirectory.resolve(".spill"))
         val mgr = ModuleManager(logger, PluginPresence { proxy.pluginManager.getPlugin(it).isPresent })
         services.register<ModuleManager>(mgr)
         val ctx = VelocityContext(proxy, this, logger, services, dataDirectory)
@@ -356,9 +368,52 @@ class CryonVelocityPlugin @Inject constructor(
      * feature jar on its own and a production one does not. `/cryon load|unload|scan|reload-api`
      * works either way. Best-effort: a watcher that fails to start degrades to manual hot-swap.
      */
-    private fun startWatchers(cfg: VelocityConfig, modulesDir: File, apiDir: File, ldr: VelocityModuleLoader) {
-        val production = cfg.boolean("production", ConfigDefaults.PRODUCTION)
-        if (!cfg.boolean("modules.auto-reload", !production)) {
+    /**
+     * Poll the deploy repository, the proxy twin of the core's. See `GitDeploy`.
+     *
+     * `{server}` resolves to `proxy` here rather than to a pool name: a proxy belongs to no pool, so
+     * a repository holds its config at `servers/proxy/config.yml`.
+     */
+    private fun startGitDeploy(services: ServiceRegistry, cfg: Config) {
+        val configFile = dataDirectory.resolve("config.yml")
+        val deploy = GitDeploy.from(
+            config = cfg,
+            serverId = "proxy",
+            dataFolder = dataDirectory,
+            configFile = configFile,
+            langDirectory = dataDirectory.resolve("lang"),
+            modulesDirectory = dataDirectory.resolve("modules"),
+            onConfigChanged = {
+                cfg.reload(YamlConfigSource.load(configFile))
+                    .forEach { logger.error("A config reload listener failed", it) }
+                logger.info("config.yml reloaded from the deploy repository")
+            },
+            onLangChanged = {
+                services.find(MessageService::class)?.reload()
+                logger.info("Language files reloaded from the deploy repository")
+            },
+            logger = logger,
+        ) ?: return
+
+        gitDeploy = deploy
+        val seconds = cfg[DeployKeys.POLL_SECONDS]
+        deployTask = proxy.scheduler.buildTask(this) { ->
+            when (val result = deploy.poll()) {
+                is DeployResult.UpToDate -> Unit
+                is DeployResult.Applied -> logger.info(
+                    "Deployed {} ({} file(s)): {}",
+                    result.commit.take(8), result.changed.size, result.changed.joinToString(", "),
+                )
+
+                is DeployResult.Failed -> logger.warn("Deploy poll failed: {}", result.reason)
+            }
+        }.delay(java.time.Duration.ofSeconds(15)).repeat(java.time.Duration.ofSeconds(seconds)).schedule()
+        logger.info("Deploying branch {} every {}s", cfg[DeployKeys.BRANCH], seconds)
+    }
+
+    private fun startWatchers(cfg: Config, modulesDir: File, apiDir: File, ldr: VelocityModuleLoader) {
+        val production = cfg[CoreKeys.PRODUCTION]
+        if (!(cfg.find(CoreKeys.MODULES_AUTO_RELOAD) ?: !production)) {
             logger.info(
                 "Hot-reload watchers off (production={}); use /cryon load|unload|scan|reload-api to hot-swap",
                 production,

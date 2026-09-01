@@ -31,13 +31,15 @@ internal class AccountLocks {
     private class Entry {
         val mutex = Mutex()
 
-        /** Callers holding or queued on [mutex]. The entry is removable only at zero. */
+        // Callers holding or queued on [mutex]. The entry is removable only at zero
         val users = AtomicInteger(0)
     }
 
     private val entries = ConcurrentHashMap<String, Entry>()
 
-    /** Run [action] with [key]'s lock held. */
+    /**
+     * Run [action] with [key]'s lock held.
+     */
     suspend fun <T> withLock(key: String, action: suspend () -> T): T {
         val entry = acquire(key)
         try {

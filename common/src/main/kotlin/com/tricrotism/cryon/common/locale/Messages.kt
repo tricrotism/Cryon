@@ -1,6 +1,5 @@
 package com.tricrotism.cryon.common.locale
 
-import com.tricrotism.cryon.common.locale.Messages.install
 import com.tricrotism.cryon.common.text.Mini
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver
@@ -23,17 +22,25 @@ object Messages {
 
     fun service(): MessageService? = service
 
-    /** Best raw template for [key] across [locale]'s fallback chain, or `null`. */
+    /**
+     * Best raw template for [key] across [locale]'s fallback chain, or `null`.
+     */
     fun raw(locale: Locale, key: String): String? = service?.template(locale, key)
 
-    /** Raw template for [key], or [fallback] if absent / no service installed. */
+    /**
+     * Raw template for [key], or [fallback] if absent / no service installed.
+     */
     fun rawOr(locale: Locale, key: String, fallback: String): String = raw(locale, key) ?: fallback
 
-    /** Localized component for [key]; missing → `⟨key⟩`. */
+    /**
+     * Localized component for [key]; missing → `⟨key⟩`.
+     */
     fun get(locale: Locale, key: String, vararg resolvers: TagResolver): Component =
         service?.render(locale, key, *resolvers) ?: Mini.format("⟨$key⟩")
 
-    /** Localized component for [key], or [fallback] (a MiniMessage template) if absent. */
+    /**
+     * Localized component for [key], or [fallback] (a MiniMessage template) if absent.
+     */
     fun getOr(locale: Locale, key: String, fallback: String, vararg resolvers: TagResolver): Component {
         val template = raw(locale, key) ?: fallback
         return if (resolvers.isEmpty()) Mini.format(template) else Mini.format(template, *resolvers)

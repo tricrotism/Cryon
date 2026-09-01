@@ -16,7 +16,9 @@ class ServiceRegistry(private val logger: Logger) {
 
     private val services = ConcurrentHashMap<KClass<*>, Any>()
 
-    /** Publish [service] under its API [type]. One implementation per type. */
+    /**
+     * Publish [service] under its API [type]. One implementation per type.
+     */
     fun <T : Any> register(type: KClass<T>, service: T) {
         require(services.putIfAbsent(type, service) == null) {
             "Service ${type.simpleName} is already registered"
@@ -52,7 +54,9 @@ class ServiceRegistry(private val logger: Logger) {
         services.clear()
     }
 
-    /** The service for [type], or throw, a missing required service is a wiring bug. */
+    /**
+     * The service for [type], or throw, a missing required service is a wiring bug.
+     */
     fun <T : Any> get(type: KClass<T>): T {
         val service = services[type] ?: error("No service registered for ${type.simpleName}")
         @Suppress("UNCHECKED_CAST")
@@ -68,13 +72,17 @@ class ServiceRegistry(private val logger: Logger) {
      */
     fun has(className: String): Boolean = services.keys.any { it.java.name == className }
 
-    /** The service for [type], or null, for optional dependencies. */
+    /**
+     * The service for [type], or null, for optional dependencies.
+     */
     fun <T : Any> find(type: KClass<T>): T? {
         @Suppress("UNCHECKED_CAST")
         return services[type] as T?
     }
 
-    /** Always spell out the type argument (`register<Api>(impl)`): letting it infer keys the entry by the concrete class, not the API interface. */
+    /**
+     * Always spell out the type argument (`register<Api>(impl)`): letting it infer keys the entry by the concrete class, not the API interface.
+     */
     inline fun <reified T : Any> register(service: T) = register(T::class, service)
     inline fun <reified T : Any> get(): T = get(T::class)
     inline fun <reified T : Any> find(): T? = find(T::class)

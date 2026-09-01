@@ -1,26 +1,6 @@
 package com.tricrotism.cryon.common.signal
 
 /**
- * A value that modules pass around and each other may change on the way past.
- *
- * Marker-only: implementing it says "this type travels the bus", which is what makes a `dispatch`
- * call's intent readable at the call site and stops arbitrary objects being broadcast by accident.
- */
-interface Signal
-
-/**
- * A signal whose journey can be stopped.
- *
- * Distinct from *modifying* a signal: a cancelled signal means the thing it describes should not
- * happen at all, which the emitter has to check for. [Signals.dispatch] returns the value either
- * way and does not decide on the emitter's behalf, because a bus that silently swallowed the result
- * would make "nobody cancelled" and "somebody cancelled and I ignored it" look identical.
- */
-interface Cancellable : Signal {
-    var cancelled: Boolean
-}
-
-/**
  * The in-process bus for values that cross module boundaries.
  *
  * **What it is for, and why `Events` is not enough.** `Events` carries Bukkit events and `Packets`
@@ -78,11 +58,15 @@ interface Signals {
      */
     fun <T : Signal> on(type: Class<T>, priority: Int = 0, handler: suspend (T) -> Unit): SignalSubscription
 
-    /** Handle to a subscription. Register through `PaperModule.track(…)` so it dies with the module. */
+    /**
+     * Handle to a subscription. Register through `PaperModule.track(…)` so it dies with the module.
+     */
     fun interface SignalSubscription : AutoCloseable
 }
 
-/** Reified [Signals.on]: `signals.on<SellPayout> { … }`. */
+/**
+ * Reified [Signals.on]: `signals.on<SellPayout> { … }`.
+ */
 inline fun <reified T : Signal> Signals.on(
     priority: Int = 0,
     noinline handler: suspend (T) -> Unit,
@@ -95,3 +79,4 @@ inline fun <reified T : Signal> Signals.on(
  * the caller has to remember to inspect, which is the way this goes wrong.
  */
 suspend fun <T : Cancellable> Signals.allows(signal: T): Boolean = dispatch(signal).let { !it.cancelled }
+

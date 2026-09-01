@@ -56,7 +56,9 @@ object ActionBars {
     @Volatile
     private var quit: Subscription? = null
 
-    /** Start the ticker and the disconnect cleanup. Called once by the core. */
+    /**
+     * Start the ticker and the disconnect cleanup. Called once by the core.
+     */
     fun install() {
         if (task != null) return
         quit = Events.subscribe<PlayerQuitEvent>().handler { entries.remove(it.player.uniqueId) }
@@ -94,14 +96,18 @@ object ActionBars {
         if (best(id) === entry) player.sendActionBar(message)
     }
 
-    /** Drop one entry. Whatever was underneath it reappears on the next tick. */
+    /**
+     * Drop one entry. Whatever was underneath it reappears on the next tick.
+     */
     fun clear(player: Player, key: String = DEFAULT_KEY) {
         val id = player.uniqueId
         entries[id]?.remove(key) ?: return
         prune(id)
     }
 
-    /** Drop everything this player is being shown. */
+    /**
+     * Drop everything this player is being shown.
+     */
     fun clearAll(player: Player) {
         entries.remove(player.uniqueId)
     }
@@ -145,12 +151,12 @@ object ActionBars {
 
     private fun best(player: UUID): Entry? = entries[player]?.values?.maxWithOrNull(ORDER)
 
-    /** Highest priority wins; the later expiry breaks a tie, so a refresh beats what it replaced. */
+    // Highest priority wins; the later expiry breaks a tie, so a refresh beats what it replaced
     private val ORDER = compareBy<Entry>({ it.priority }, { it.expiresAt })
 
     private const val DEFAULT_KEY = "default"
 
-    /** Comfortably inside the client's ~3s fade. */
+    // Comfortably inside the client's ~3s fade
     private const val REFRESH_TICKS = 30L
 
     private const val DEFAULT_DURATION_MILLIS = 3_000L

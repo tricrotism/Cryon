@@ -26,11 +26,9 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class ModuleManager(
     private val logger: Logger,
-    /**
-     * How to answer a [Dependency.OnPlugin]. Null (the default) means this manager cannot see the
-     * host's plugins, so those dependencies are skipped rather than failed: refusing a module over a
-     * question we are unable to ask would be worse than letting it fail on its own terms.
-     */
+    // How to answer a [Dependency.OnPlugin]. Null (the default) means this manager cannot see the
+    // host's plugins, so those dependencies are skipped rather than failed: refusing a module over a
+    // question we are unable to ask would be worse than letting it fail on its own terms
     private val plugins: PluginPresence? = null,
 ) {
 
@@ -41,7 +39,7 @@ class ModuleManager(
     private val parents = ConcurrentHashMap<String, String>()
     private val declared = ConcurrentHashMap<String, List<Dependency>>()
 
-    /** Captured at load, so an enable can check service dependencies against the live registry. */
+    // Captured at load, so an enable can check service dependencies against the live registry
     @Volatile
     private var context: ModuleContext? = null
 
@@ -165,7 +163,9 @@ class ModuleManager(
         for (id in ordered()) load(id, context)
     }
 
-    /** Run `onLoad` for a single `REGISTERED` module (the hot-add path). True if it reached `LOADED`. */
+    /**
+     * Run `onLoad` for a single `REGISTERED` module (the hot-add path). True if it reached `LOADED`.
+     */
     fun load(id: String, context: ModuleContext): Boolean {
         this.context = context
         val module = modules[id] ?: return false
@@ -204,7 +204,9 @@ class ModuleManager(
         }
     }
 
-    /** Enable a single module at runtime. True if it transitioned to [ModuleState.ENABLED]. */
+    /**
+     * Enable a single module at runtime. True if it transitioned to [ModuleState.ENABLED].
+     */
     fun enable(id: String): Boolean {
         val module = modules[id] ?: return false
         if (states[id] == ModuleState.ENABLED) return false
@@ -246,10 +248,14 @@ class ModuleManager(
     fun has(id: String): Boolean = modules.containsKey(id)
     fun ids(): List<String> = modules.keys.toList()
 
-    /** The owning module's id, or null for a top-level module. */
+    /**
+     * The owning module's id, or null for a top-level module.
+     */
     fun parentOf(id: String): String? = parents[id]
 
-    /** Ids of [id]'s direct sub-modules, in declaration order. */
+    /**
+     * Ids of [id]'s direct sub-modules, in declaration order.
+     */
     fun childrenOf(id: String): List<String> = modules.keys.filter { parents[it] == id }
 
     /**
@@ -263,7 +269,9 @@ class ModuleManager(
         return ordered().filter { it in wanted }
     }
 
-    /** What [id] declared it needs, as read at registration. */
+    /**
+     * What [id] declared it needs, as read at registration.
+     */
     fun dependenciesOf(id: String): List<Dependency> = declared[id].orEmpty()
 
     fun states(): Map<String, ModuleState> {
@@ -299,13 +307,17 @@ class ModuleManager(
         return out
     }
 
-    /** Ids that must come before [id]: its parent, and every module it names as a dependency. */
+    /**
+     * Ids that must come before [id]: its parent, and every module it names as a dependency.
+     */
     private fun prerequisites(id: String): List<String> = buildList {
         parents[id]?.let(::add)
         for (dependency in declared[id].orEmpty()) if (dependency is Dependency.OnModule) add(dependency.id)
     }
 
-    /** Every id in [id]'s subtree, parent first, depth-first. */
+    /**
+     * Every id in [id]'s subtree, parent first, depth-first.
+     */
     private fun subtree(id: String): List<String> = buildList {
         add(id)
         for (child in childrenOf(id)) addAll(subtree(child))
@@ -324,7 +336,9 @@ class ModuleManager(
         }
     }
 
-    /** Hard dependencies that only become answerable once every module has loaded. */
+    /**
+     * Hard dependencies that only become answerable once every module has loaded.
+     */
     private fun unmetAtEnable(id: String): List<Dependency> = declared[id].orEmpty().filter {
         it.hard && when (it) {
             is Dependency.OnModule -> states[it.id] != ModuleState.ENABLED

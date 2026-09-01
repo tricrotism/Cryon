@@ -18,14 +18,12 @@ class NetworkStatus(
     private val registry: () -> ServerRegistry?,
 ) {
 
-    /**
-     * The last presence sweep, refreshed by a timer and read synchronously.
-     *
-     * Proxies and Geyser are not in the registry by design, so they are read from [Presence], which
-     * suspends. A menu draws on the calling thread and cannot await anything, so this holds a snapshot
-     * the same way the currency leaderboard does. Empty means "nothing has announced", which without
-     * Redis is simply the truth.
-     */
+    // The last presence sweep, refreshed by a timer and read synchronously.
+    //
+    // Proxies and Geyser are not in the registry by design, so they are read from [Presence], which
+    // suspends. A menu draws on the calling thread and cannot await anything, so this holds a snapshot
+    // the same way the currency leaderboard does. Empty means "nothing has announced", which without
+    // Redis is simply the truth
     @Volatile
     private var presence: List<PresenceEntry> = emptyList()
 
@@ -33,16 +31,22 @@ class NetworkStatus(
         presence = entries
     }
 
-    /** How far state travels: the difference between a pool and ten strangers. */
+    // How far state travels: the difference between a pool and ten strangers
     val transport: String get() = if (sharedTransport) "redis (shared)" else "in-process"
 
-    /** Live instances of our own serverId, as this process currently sees them. */
+    /**
+     * Live instances of our own serverId, as this process currently sees them.
+     */
     fun nodeCount(): Int = registry()?.nodesOf(identity.serverId)?.size ?: 0
 
-    /** Announced proxies, newest heartbeat first. */
+    /**
+     * Announced proxies, newest heartbeat first.
+     */
     fun proxies(): List<PresenceEntry> = presence.filter { it.kind == PresenceKind.PROXY }
 
-    /** Announced Geyser instances, newest heartbeat first. */
+    /**
+     * Announced Geyser instances, newest heartbeat first.
+     */
     fun geysers(): List<PresenceEntry> = presence.filter { it.kind == PresenceKind.GEYSER }
 
     /**
@@ -93,7 +97,9 @@ class NetworkStatus(
         return warnings
     }
 
-    /** Log the current state, and make any disagreement impossible to scroll past. */
+    /**
+     * Log the current state, and make any disagreement impossible to scroll past.
+     */
     fun report(logger: Logger) {
         logger.info(
             "Cryon network: server={} node={} expect={} transport={} database={}",

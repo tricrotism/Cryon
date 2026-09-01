@@ -25,7 +25,7 @@ internal object CommandUi {
      * A bracketed label that runs [command] on click. For an action the sender is choosing to take.
      */
     fun button(label: String, tag: String, command: String, hover: Component): Component =
-        Mini.format("<slate_gray>[</slate_gray><$tag>$label</$tag><slate_gray>]</slate_gray>")
+        Mini.format(bracket(tag), Placeholder.unparsed("label", label))
             .clickEvent(ClickEvent.runCommand(command))
             .hoverEvent(HoverEvent.showText(hover))
 
@@ -33,9 +33,18 @@ internal object CommandUi {
      * As [button], but only fills the chat box, for anything that still needs an argument typed.
      */
     fun suggestButton(label: String, tag: String, command: String, hover: Component): Component =
-        Mini.format("<slate_gray>[</slate_gray><$tag>$label</$tag><slate_gray>]</slate_gray>")
+        Mini.format(bracket(tag), Placeholder.unparsed("label", label))
             .clickEvent(ClickEvent.suggestCommand(command))
             .hoverEvent(HoverEvent.showText(hover))
+
+    /**
+     * The bracketed shell both buttons share, with the label left as a placeholder.
+     *
+     * [tag] is a palette tag name and so is spliced in, but the label is data: a module or currency
+     * id carrying something that reads as a tag would otherwise be parsed rather than shown.
+     */
+    private fun bracket(tag: String): String =
+        "<slate_gray>[</slate_gray><$tag><label></$tag><slate_gray>]</slate_gray>"
 
     fun hover(tag: String, title: String, detail: String): Component = Mini.format(
         "<$tag><b><title></b></$tag><newline><slate_gray><detail>",

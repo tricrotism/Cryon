@@ -41,24 +41,19 @@ class SharedMaintenanceService(
     @Volatile
     private var message = defaultMessage
 
-    /**
-     * Lowercased names allowed to bypass maintenance.
-     *
-     * A concurrent set mutated by delta, not a snapshot swapped wholesale, because both ends of that
-     * were lossy: `allowed = allowed + name` is a read-modify-write, and broadcasting the whole set
-     * made every proxy adopt the sender's view of it. Two admins adding a name at once dropped one of
-     * them from every proxy's memory while its row sat in the database, and nothing repaired that
-     * until a restart. Per-name adds and removes are idempotent instead, so our own echo is a no-op
-     * and a concurrent change on another proxy composes with ours. Same shape as `FeatureFlags`.
-     */
+    // Lowercased names allowed to bypass maintenance.
+    //
+    // A concurrent set mutated by delta, not a snapshot swapped wholesale, because both ends of that
+    // were lossy: `allowed = allowed + name` is a read-modify-write, and broadcasting the whole set
+    // made every proxy adopt the sender's view of it. Two admins adding a name at once dropped one of
+    // them from every proxy's memory while its row sat in the database, and nothing repaired that
+    // until a restart. Per-name adds and removes are idempotent instead, so our own echo is a no-op
+    // and a concurrent change on another proxy composes with ours. Same shape as `FeatureFlags`
     private val allowed: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
-
-    /**
-     * Owns the persistence behind every mutation. The in-memory update stays synchronous and the SQL
-     * write plus broadcast are launched behind it, which is exactly what the futures did before.
-     * See `FeatureFlags`, which this deliberately mirrors.
-     */
+    // Owns the persistence behind every mutation. The in-memory update stays synchronous and the SQL
+    // write plus broadcast are launched behind it, which is exactly what the futures did before.
+    // See `FeatureFlags`, which this deliberately mirrors
     private val scope = CoroutineScope(
         SupervisorJob() + CryonIO.dispatcher + CoroutineExceptionHandler { _, error ->
             logger.error("Unhandled failure in a coroutine of the maintenance service", error)
@@ -229,7 +224,7 @@ class SharedMaintenanceService(
     }
 
     private companion object {
-        /** How often the durable state is re-pulled. Overridable per deployment. */
+        // How often the durable state is re-pulled. Overridable per deployment
         private val DEFAULT_REFRESH: Duration = Duration.ofSeconds(30)
 
         private const val TABLE = "cryon_maintenance"

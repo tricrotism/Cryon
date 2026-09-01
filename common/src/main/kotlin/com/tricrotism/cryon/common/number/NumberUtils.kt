@@ -38,11 +38,15 @@ object NumberUtils {
     fun format(value: Double): String = grouped2.get().format(value)
     fun format(value: BigDecimal): String = grouped0.get().format(value)
 
-    /** Grouped with exactly two decimals. */
+    /**
+     * Grouped with exactly two decimals.
+     */
     fun formatDouble(value: BigDecimal): String = grouped2.get().format(value)
     fun formatDouble(value: Double): String = grouped2.get().format(value)
 
-    /** Grouped with up to ten decimals; `NaN` renders as `"NaN"`. */
+    /**
+     * Grouped with up to ten decimals; `NaN` renders as `"NaN"`.
+     */
     fun formatCommas(value: Int): String = commas.get().format(value.toLong())
     fun formatCommas(value: Long): String = commas.get().format(value)
     fun formatCommas(value: Double): String = if (value.isNaN()) "NaN" else commas.get().format(value)
@@ -72,7 +76,9 @@ object NumberUtils {
         return sign + body + (if (isLong) LONG_SUFFIXES[power] else SUFFIX_CHARS[power].toString())
     }
 
-    /** Alias for the compact (single-letter) balance form. */
+    /**
+     * Alias for the compact (single-letter) balance form.
+     */
     fun formatBalanceCompact(number: BigDecimal?): String = formatBalance(number, isLong = false)
 
     /**

@@ -73,24 +73,11 @@ interface DistributedLock {
     ): T?
 
     companion object {
-        /** Long enough to survive an ordinary hiccup, short enough that a dead holder frees it soon. */
+        // Long enough to survive an ordinary hiccup, short enough that a dead holder frees it soon
         val DEFAULT_TTL: Duration = 30.seconds
 
-        /** Long enough for a short section to finish ahead of us, short enough not to hang a command. */
+        // Long enough for a short section to finish ahead of us, short enough not to hang a command
         val DEFAULT_WAIT: Duration = 10.seconds
     }
 }
 
-/** The lock was still held by somebody else when the wait ran out. Nothing was run. */
-class LockUnavailableException(namespace: String, key: String, wait: Duration) :
-    RuntimeException("Could not acquire '$namespace:$key' within $wait")
-
-/**
- * The lease was lost while the body was running, so the body was canceled part-way.
- *
- * Whatever it was doing is in an unknown state. It stopped at a suspension point, not at a
- * boundary it chose. Treat it as a failed attempt and let whoever holds the lock now redo it, which
- * is why the work under a lock should be safe to repeat.
- */
-class LockLostException(namespace: String, key: String) :
-    RuntimeException("Lost the lease on '$namespace:$key' while holding it")

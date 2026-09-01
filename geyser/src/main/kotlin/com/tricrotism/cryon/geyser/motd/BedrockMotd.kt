@@ -1,8 +1,11 @@
 package com.tricrotism.cryon.geyser.motd
 
+import com.tricrotism.cryon.common.config.Config
+import com.tricrotism.cryon.common.config.ConfigKey
+import com.tricrotism.cryon.common.config.CoreKeys
+import com.tricrotism.cryon.common.config.YamlConfigSource
 import com.tricrotism.cryon.common.text.Mini
 import com.tricrotism.cryon.geyser.api.toGeyserString
-import com.tricrotism.cryon.geyser.config.GeyserConfig
 import java.nio.file.Path
 
 /**
@@ -26,19 +29,20 @@ class BedrockMotd(private val configFile: Path) {
     private var lines: Pair<String, String>? = null
 
     fun reload() {
-        val config = GeyserConfig.load(configFile)
-        lines = if (!config.boolean("motd.enabled", false)) null else {
-            line(config, "top") to line(config, "bottom")
+        val config = Config(YamlConfigSource.load(configFile))
+        lines = if (!config[CoreKeys.MOTD_ENABLED]) null else {
+            line(config, CoreKeys.MOTD_TOP_LEFT, CoreKeys.MOTD_TOP_CENTER, CoreKeys.MOTD_TOP_RIGHT) to
+                    line(config, CoreKeys.MOTD_BOTTOM_LEFT, CoreKeys.MOTD_BOTTOM_CENTER, CoreKeys.MOTD_BOTTOM_RIGHT)
         }
     }
 
-    /** The primary and secondary MOTD, or `null` when disabled (the caller leaves the ping alone). */
+    /**
+     * The primary and secondary MOTD, or `null` when disabled (the caller leaves the ping alone).
+     */
     fun render(): Pair<String, String>? = lines
 
-    private fun line(config: GeyserConfig, section: String): String {
-        val segments = listOf("left", "center", "right")
-            .map { config.string("motd.$section.$it", "") }
-            .filter { it.isNotEmpty() }
+    private fun line(config: Config, vararg segmentKeys: ConfigKey<String>): String {
+        val segments = segmentKeys.map { config[it] }.filter { it.isNotEmpty() }
         if (segments.isEmpty()) return ""
         return Mini.format(segments.joinToString(" ")).toGeyserString()
     }

@@ -19,22 +19,6 @@ import java.util.*
 import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
 
-/** What one artifact's poll did. Failures are per-artifact so one bad coordinate cannot stall the rest. */
-sealed interface UpdateResult {
-
-    val artifact: RemoteArtifact
-
-    data class Installed(
-        override val artifact: RemoteArtifact,
-        val from: String?,
-        val to: String,
-    ) : UpdateResult
-
-    data class UpToDate(override val artifact: RemoteArtifact, val revision: String) : UpdateResult
-
-    data class Failed(override val artifact: RemoteArtifact, val reason: String) : UpdateResult
-}
-
 /**
  * Pulls feature jars from a remote Maven repository into `modules/`, and stops there.
  *
@@ -72,7 +56,9 @@ class RemoteModules(
         }
     }
 
-    /** The revision currently on disk for an artifact, or null if this server has never fetched it. */
+    /**
+     * The revision currently on disk for an artifact, or null if this server has never fetched it.
+     */
     fun installedRevision(artifact: RemoteArtifact): String? = state.getProperty(artifact.id)
 
     /**
@@ -207,7 +193,9 @@ class RemoteModules(
     private fun org.w3c.dom.Document.first(tag: String): String? =
         getElementsByTagName(tag).item(0)?.textContent?.takeIf { it.isNotBlank() }
 
-    /** Null on 404, which is a real answer here. Anything else is an error worth the caller's attention. */
+    /**
+     * Null on 404, which is a real answer here. Anything else is an error worth the caller's attention.
+     */
     private suspend fun get(repository: MavenRepository, path: String): ByteArray? =
         withContext(CryonIO.dispatcher) {
             val request = repository.request(path).timeout(Duration.ofSeconds(60)).GET().build()
@@ -239,7 +227,7 @@ class RemoteModules(
 
         const val TMP_DIR = ".remote-tmp"
 
-        /** Metadata arrives from a remote repository, so the parser is told to trust none of it. */
+        // Metadata arrives from a remote repository, so the parser is told to trust none of it
         val DOCUMENTS: DocumentBuilderFactory = DocumentBuilderFactory.newInstance().apply {
             setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
             setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "")
@@ -249,3 +237,4 @@ class RemoteModules(
         }
     }
 }
+

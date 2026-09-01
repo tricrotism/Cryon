@@ -48,9 +48,8 @@ class HandoffListener(
         val request = scope.future {
             try {
                 messenger.request(HandoffCoordinator.channel(from), player.toString(), timeout)
-            } catch (_: Exception) {
-                // Never strand the player: log the miss and let them move regardless.
-                logger.warn("No handoff flush from {} for {}; moving anyway", from, player)
+            } catch (e: Exception) {
+                logger.warn("No handoff flush from {} for {}; moving anyway", from, player, e)
                 null
             }
         }

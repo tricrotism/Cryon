@@ -29,25 +29,25 @@ abstract class VelocityModule : Module {
     protected val services: ServiceRegistry get() = moduleContext.services
     protected val logger: Logger get() = moduleContext.logger
 
-    /**
-     * Bedrock-client identity. Always present, with no Floodgate every player reports as Java, so a
-     * feature can ask without branching on whether Geyser is installed.
-     */
+    // Bedrock-client identity. Always present, with no Floodgate every player reports as Java, so a
+    // feature can ask without branching on whether Geyser is installed
     protected val bedrock: BedrockService get() = services.get<BedrockService>()
 
-    /**
-     * This module's own directory, `plugins/cryon/data/<id>/`, created on first use. The proxy twin
-     * of `PaperModule.dataFolder`, and there for the same reason: the loader's own directory is not
-     * a namespace, and two modules writing into it share whatever names they both picked.
-     */
+    // This module's own directory, `plugins/cryon/data/<id>/`, created on first use. The proxy twin
+    // of `PaperModule.dataFolder`, and there for the same reason: the loader's own directory is not
+    // a namespace, and two modules writing into it share whatever names they both picked
     protected val dataFolder: File by lazy {
         moduleContext.dataDirectory.resolve("data").resolve(id).toFile().apply { mkdirs() }
     }
 
-    /** Resolve a required peer service: sugar for `services.get<T>()`. */
+    /**
+     * Resolve a required peer service: sugar for `services.get<T>()`.
+     */
     protected inline fun <reified T : Any> service(): T = services.get()
 
-    /** Resolve an optional peer service, or null: sugar for `services.find<T>()`. */
+    /**
+     * Resolve an optional peer service, or null: sugar for `services.find<T>()`.
+     */
     protected inline fun <reified T : Any> serviceOrNull(): T? = services.find()
 
     override fun onLoad(context: ModuleContext) {
@@ -67,7 +67,9 @@ abstract class VelocityModule : Module {
         commands += AnnotationCommands.names(handler)
     }
 
-    /** Register a Velocity event listener that is automatically unregistered when this module disables. */
+    /**
+     * Register a Velocity event listener that is automatically unregistered when this module disables.
+     */
     protected fun listen(listener: Any) {
         proxy.eventManager.register(moduleContext.plugin, listener)
         listeners.add(listener)
@@ -95,7 +97,9 @@ abstract class VelocityModule : Module {
      */
     protected fun <T : AutoCloseable> track(closeable: T): T = closeable.also { closeables += it }
 
-    /** Whether this module is currently in the `ENABLED` state, per the [ModuleManager]. */
+    /**
+     * @return whether this module is currently in the `ENABLED` state, per the [ModuleManager].
+     */
     protected fun isEnabled(): Boolean =
         services.find<ModuleManager>()?.state(id) == ModuleState.ENABLED
 

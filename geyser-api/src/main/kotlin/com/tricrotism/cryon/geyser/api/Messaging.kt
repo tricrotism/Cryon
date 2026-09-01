@@ -10,18 +10,18 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer
 import org.geysermc.geyser.api.command.CommandSource
 import java.util.*
 
-/**
- * The one seam between Cryon's Adventure messaging and Geyser's `CommandSource`, whose only send
- * takes a plain `String`. Everything above this line stays `Component`: build with `Mini`,
- * `CommonMessages` and `MessageService` exactly as on Paper and Velocity, and let this render.
- *
- * Rendering is legacy section-sign, which is what a Bedrock client's chat understands. That is a
- * lossy step (hex colours collapse to the nearest legacy colour, hover and click events are dropped),
- * so it belongs here at the boundary rather than anywhere a feature can reach it.
- */
+// The one seam between Cryon's Adventure messaging and Geyser's `CommandSource`, whose only send
+// takes a plain `String`. Everything above this line stays `Component`: build with `Mini`,
+// `CommonMessages` and `MessageService` exactly as on Paper and Velocity, and let this render.
+//
+// Rendering is legacy section-sign, which is what a Bedrock client's chat understands. That is a
+// lossy step (hex colours collapse to the nearest legacy colour, hover and click events are dropped),
+// so it belongs here at the boundary rather than anywhere a feature can reach it
 private val legacy: LegacyComponentSerializer = LegacyComponentSerializer.legacySection()
 
-/** Render [this] to the legacy section-sign string Geyser's `sendMessage` accepts. */
+/**
+ * Render [this] to the legacy section-sign string Geyser's `sendMessage` accepts.
+ */
 fun Component.toGeyserString(): String = legacy.serialize(this)
 
 /**
@@ -37,20 +37,30 @@ fun CommandSource.resolvedLocale(): Locale {
     return reported?.takeIf { it.language.isNotEmpty() } ?: Messages.service()?.defaultLocale ?: Locale.US
 }
 
-/** Send an Adventure [message], rendered for this source. */
+/**
+ * Send an Adventure [message], rendered for this source.
+ */
 fun CommandSource.sendMessage(message: Component) = sendMessage(message.toGeyserString())
 
-/** Send [key] rendered in this source's locale, wrapped in the shared [CommonMessages] base prefix. */
+/**
+ * Send [key] rendered in this source's locale, wrapped in the shared [CommonMessages] base prefix.
+ */
 fun CommandSource.sendLocalized(key: String, vararg resolvers: TagResolver) =
     sendMessage(CommonMessages.message(Messages.get(resolvedLocale(), key, *resolvers)))
 
-/** The localized "you may not do that" ack. */
+/**
+ * The localized "you may not do that" ack.
+ */
 fun CommandSource.sendNoPermission() = sendMessage(CommonMessages.noPermission(resolvedLocale()))
 
-/** Render [key] in [source]'s resolved locale (override ?: reported; with fallback chain). */
+/**
+ * Render [key] in [source]'s resolved locale (override ?: reported; with fallback chain).
+ */
 fun MessageService.render(source: CommandSource, key: String, vararg resolvers: TagResolver): Component =
     render(source.resolvedLocale(), key, *resolvers)
 
-/** Render [key] in [source]'s locale and send it wrapped in the shared base prefix. */
+/**
+ * Render [key] in [source]'s locale and send it wrapped in the shared base prefix.
+ */
 fun MessageService.send(source: CommandSource, key: String, vararg resolvers: TagResolver) =
     source.sendMessage(CommonMessages.message(render(source, key, *resolvers)))

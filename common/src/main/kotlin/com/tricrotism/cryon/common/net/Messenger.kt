@@ -2,8 +2,6 @@ package com.tricrotism.cryon.common.net
 
 import java.time.Duration
 
-/** Connection settings for the cross-server transport. [uri] e.g. `redis://:password@host:6379/0`. */
-data class RedisConfig(val uri: String)
 
 /**
  * Messaging between processes: fire-and-forget [publish]/[subscribe] plus request/response
@@ -16,7 +14,9 @@ data class RedisConfig(val uri: String)
  */
 interface Messenger {
 
-    /** Broadcast [message] on [channel] to every subscriber, this process included. */
+    /**
+     * Broadcast [message] on [channel] to every subscriber, this process included.
+     */
     suspend fun publish(channel: String, message: String)
 
     /**
@@ -53,7 +53,4 @@ interface Messenger {
     fun close()
 }
 
-/** Handle to cancel a [Messenger.subscribe]/[Messenger.handle] registration. */
-fun interface MessengerSubscription {
-    fun unsubscribe()
-}
+

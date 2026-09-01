@@ -7,7 +7,9 @@ import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver
 import org.bukkit.entity.Player
 
-/** Parse a MiniMessage string with the Cryon palette tags (cached when no resolvers are passed). */
+/**
+ * Parse a MiniMessage string with the Cryon palette tags (cached when no resolvers are passed).
+ */
 fun String.mm(vararg resolvers: TagResolver): Component =
     if (resolvers.isEmpty()) Mini.format(this) else Mini.format(this, *resolvers)
 

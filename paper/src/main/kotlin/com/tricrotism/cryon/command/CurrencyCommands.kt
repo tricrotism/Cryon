@@ -61,7 +61,9 @@ internal fun reply(sender: CommandSender, block: () -> Unit) {
 
 internal object CurrencyCommandSupport {
 
-    /** Close [player]'s open menu because their balance just moved under it. */
+    /**
+     * Close [player]'s open menu because their balance just moved under it.
+     */
     fun closeMenu(player: Player) {
         Schedulers.entity(player) { player.closeInventory() }
     }
@@ -70,10 +72,14 @@ internal object CurrencyCommandSupport {
         Bukkit.getPlayer(player)?.let(::closeMenu)
     }
 
-    /** Parse an amount the way players write one (`1k`, `2.5m`), rejecting anything not positive. */
+    /**
+     * Parse an amount the way players write one (`1k`, `2.5m`), rejecting anything not positive.
+     */
     fun amountOf(input: String): PackedDecimal? = parse(input)?.takeIf { it.signum() > 0 }
 
-    /** As [amountOf], but zero is allowed, for `/currency set`. */
+    /**
+     * As [amountOf], but zero is allowed, for `/currency set`.
+     */
     fun nonNegativeAmountOf(input: String): PackedDecimal? = parse(input)?.takeIf { it.signum() >= 0 }
 
     private fun parse(input: String): PackedDecimal? =
@@ -93,12 +99,10 @@ class BalanceCommand(
     private val scope: CoroutineScope,
 ) {
 
-    /**
-     * Per-player throttle. Reading balances is one query per scope with no cache in front of it, so
-     * a held-down macro turns into a steady stream of queries against the pool that real money
-     * operations share. The failure is not a wrong balance, it is a withdrawal waiting behind a
-     * hundred `/bal`s for a connection. Self-evicting, so it cannot grow into a per-player leak.
-     */
+    // Per-player throttle. Reading balances is one query per scope with no cache in front of it, so
+    // a held-down macro turns into a steady stream of queries against the pool that real money
+    // operations share. The failure is not a wrong balance, it is a withdrawal waiting behind a
+    // hundred `/bal`s for a connection. Self-evicting, so it cannot grow into a per-player leak
     private val recent = Caffeine.newBuilder()
         .expireAfterWrite(COOLDOWN_SECONDS, TimeUnit.SECONDS)
         .build<UUID, Boolean>()
@@ -287,7 +291,9 @@ class PayCommand(
     @Suppress("unused")
     fun currencies(): Collection<String> = currencies.all().map { it.id }
 
-    /** Paying yourself is the one "unknown player" that is really a typo for somebody else. */
+    /**
+     * Paying yourself is the one "unknown player" that is really a typo for somebody else.
+     */
     private fun onlineNamesExcept(player: Player): List<String> =
         Bukkit.getOnlinePlayers().filter { it.uniqueId != player.uniqueId }.map { it.name }
 }
@@ -396,7 +402,9 @@ class CurrencyAdminCommands(
         true
     }
 
-    /** Shared shape: resolve, close the target's menu, apply, then report what actually happened. */
+    /**
+     * Shared shape: resolve, close the target's menu, apply, then report what actually happened.
+     */
     private fun mutate(
         sender: CommandSender,
         verb: String,

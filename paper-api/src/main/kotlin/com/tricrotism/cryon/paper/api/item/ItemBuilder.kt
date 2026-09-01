@@ -71,7 +71,9 @@ class ItemBuilder(item: ItemStack) {
     fun customModelData(vararg values: Float): ItemBuilder =
         meta { setCustomModelDataComponent(customModelDataComponent.apply { floats = values.toList() }) }
 
-    /** 1.21.5 folded the single integer into the component's float list; kept for existing callers. */
+    /**
+     * 1.21.5 folded the single integer into the component's float list; kept for existing callers.
+     */
     fun customModelData(data: Int): ItemBuilder = customModelData(data.toFloat())
 
     fun attribute(attribute: Attribute, modifier: AttributeModifier): ItemBuilder =
@@ -80,17 +82,23 @@ class ItemBuilder(item: ItemStack) {
     fun <P, C : Any> tag(key: NamespacedKey, type: PersistentDataType<P, C>, value: C): ItemBuilder =
         meta { persistentDataContainer.set(key, type, value) }
 
-    /** [tag] with the [PersistentDataType] inferred from [value], for primitive-backed tags. */
+    /**
+     * [tag] with the [PersistentDataType] inferred from [value], for primitive-backed tags.
+     */
     inline fun <reified C : Any> tag(key: NamespacedKey, value: C): ItemBuilder =
         tag(key, pdcType(C::class), value)
 
-    /** Escape hatch for anything not covered above. */
+    /**
+     * Escape hatch for anything not covered above.
+     */
     fun meta(block: ItemMeta.() -> Unit): ItemBuilder = apply { workingMeta?.block() }
 
     fun build(): ItemStack = item.clone().also { clone -> workingMeta?.let { clone.itemMeta = it } }
 }
 
-/** Disable lore/name italics unless the component already set the decoration explicitly. */
+/**
+ * Disable lore/name italics unless the component already set the decoration explicitly.
+ */
 private fun Component.noItalic(): Component =
     if (decoration(TextDecoration.ITALIC) == TextDecoration.State.NOT_SET)
         decoration(TextDecoration.ITALIC, false)

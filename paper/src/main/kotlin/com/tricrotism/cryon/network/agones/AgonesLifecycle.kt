@@ -43,7 +43,9 @@ class AgonesLifecycle(
         health = Schedulers.asyncTimer(period, period, TimeUnit.SECONDS) { tick() }
     }
 
-    /** Ask Agones to remove this GameServer (match ended, or admin drain). Idempotent. */
+    /**
+     * Ask Agones to remove this GameServer (match ended, or admin drain). Idempotent.
+     */
     fun requestShutdown() {
         if (shuttingDown) return
         shuttingDown = true

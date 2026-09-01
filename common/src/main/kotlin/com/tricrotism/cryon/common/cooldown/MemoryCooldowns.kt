@@ -28,11 +28,9 @@ import kotlin.time.Duration.Companion.milliseconds
  */
 class MemoryCooldowns : CooldownService {
 
-    /**
-     * key -> deadline, as a `nanoTime` reading.
-     *
-     * `Long` rather than a boxed duration so the common path is one lookup and one comparison.
-     */
+    // key -> deadline, as a `nanoTime` reading.
+    //
+    // `Long` rather than a boxed duration so the common path is one lookup and one comparison
     private val deadlines = Caffeine.newBuilder()
         .maximumSize(MAX_TRACKED)
         .expireAfter(DeadlineExpiry)
@@ -109,7 +107,7 @@ class MemoryCooldowns : CooldownService {
 
         private val NANOS_PER_MILLI = TimeUnit.MILLISECONDS.toNanos(1)
 
-        /** Bounds a join flood. Far above the number of players plausibly mid-cooldown at once. */
+        // Bounds a join flood. Far above the number of players plausibly mid-cooldown at once
         private const val MAX_TRACKED = 50_000L
     }
 }

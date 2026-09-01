@@ -1,6 +1,11 @@
 package com.tricrotism.cryon.command
 
+import com.tricrotism.cryon.common.data.SpillStore
+import com.tricrotism.cryon.common.data.SpillSummary
+import com.tricrotism.cryon.common.deploy.DeployResult
+import com.tricrotism.cryon.common.deploy.GitDeploy
 import com.tricrotism.cryon.common.diagnostic.Retention
+import com.tricrotism.cryon.common.extension.formatDuration
 import com.tricrotism.cryon.common.flag.FeatureFlags
 import com.tricrotism.cryon.common.locale.MessageService
 import com.tricrotism.cryon.common.module.ModuleManager
@@ -15,9 +20,11 @@ import com.tricrotism.cryon.module.ModuleLoader
 import com.tricrotism.cryon.network.NetworkStatus
 import com.tricrotism.cryon.paper.api.command.*
 import com.tricrotism.cryon.paper.api.placeholder.PlaceholderService
+import com.tricrotism.cryon.paper.api.scheduler.CryonDispatchers
 import com.tricrotism.cryon.paper.api.scheduler.Schedulers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.event.ClickEvent
 import net.kyori.adventure.text.event.HoverEvent
@@ -28,6 +35,8 @@ import org.bukkit.command.ConsoleCommandSender
 import org.bukkit.command.RemoteConsoleCommandSender
 import org.bukkit.entity.Player
 import java.io.File
+import java.time.Duration
+import java.time.Instant
 import java.util.*
 
 /**
@@ -65,8 +74,167 @@ class ModuleCommands(
     private val menuFirst: Boolean,
     private val retention: Retention,
     private val remote: RemoteModules?,
+    private val deploy: GitDeploy?,
+    private val log: org.slf4j.Logger,
     private val scope: CoroutineScope,
 ) {
+
+    /**
+     * Rows a checkpoint could not write, still waiting on disk.
+     *
+     * Worth a command of its own rather than a line in `network`, because the state it reports is
+     * the one nobody is watching: a spill whose module has since been removed has nothing left to
+     * flush it, so it would sit there indefinitely with no other symptom.
+     */
+    @Subcommand("spill")
+    fun spill(sender: CommandSender) {
+        scope.launch {
+            val pending = withContext(CryonDispatchers.Async) { SpillStore.pending(log) }
+            Schedulers.global { renderSpill(sender, pending) }
+        }
+    }
+
+    private fun renderSpill(sender: CommandSender, pending: List<SpillSummary>) {
+        if (pending.isEmpty()) {
+            sender.sendMessage(
+                CommonMessages.success(Mini.format("<off_white>Nothing is waiting to be written."))
+            )
+            return
+        }
+        sender.sendMessage(
+            CommonMessages.warn(
+                Mini.format(
+                    "<off_white><count></off_white> table(s) have rows the database has not taken:",
+                    Placeholder.unparsed("count", pending.size.toString()),
+                )
+            )
+        )
+        for (entry in pending) {
+            sender.sendMessage(
+                Mini.format(
+                    "<off_white> <highlight><table></highlight> <gray>(<rows>, <age> ago)</gray>",
+                    Placeholder.unparsed("table", entry.table),
+                    Placeholder.parsed(
+                        "rows",
+                        if (entry.rows < 0) "<scarlet>unreadable" else "${entry.rows} row(s)",
+                    ),
+                    Placeholder.unparsed(
+                        "age",
+                        Duration.between(entry.modified, Instant.now()).seconds
+                            .coerceAtLeast(0).formatDuration(),
+                    ),
+                )
+            )
+        }
+        sender.sendMessage(
+            Mini.format("<slate_gray>They are written by the next checkpoint that reaches the database.")
+        )
+    }
+
+    /**
+     * What the deploy repository has delivered here, read from the recorded state.
+     *
+     * Instant and offline, the same split `remote` draws against `remote check`: this says what
+     * landed, `deploy check` goes and looks.
+     */
+    @Subcommand("deploy")
+    fun deploy(sender: CommandSender) {
+        val poller = deploy ?: run {
+            sender.sendMessage(
+                CommonMessages.info(
+                    Mini.format("<off_white>Git deploy is off. Set <highlight>deploy.enabled</highlight> in config.yml.")
+                )
+            )
+            return
+        }
+        val commit = poller.applied()
+        sender.sendMessage(
+            CommonMessages.info(
+                Mini.format(
+                    "<off_white>Deployed commit: <state>",
+                    Placeholder.parsed(
+                        "state",
+                        if (commit == null) "<scarlet>nothing yet" else "<highlight>${commit.take(8)}",
+                    ),
+                )
+            )
+        )
+        val following = poller.following()
+        if (following != null) {
+            sender.sendMessage(
+                Mini.format(
+                    "<off_white> Following <highlight><ref></highlight>",
+                    Placeholder.unparsed("ref", following),
+                )
+            )
+        }
+        sender.sendMessage(
+            Mini.format(
+                "<off_white> Folder <highlight><folder></highlight>",
+                Placeholder.unparsed("folder", poller.folder().ifEmpty { "(repository root)" }),
+            )
+        )
+    }
+
+    /**
+     * Pull the deploy repository now instead of waiting for the timer.
+     *
+     * Launched rather than awaited because it is network I/O and the caller is on a region thread.
+     * Whether a delivered jar then *runs* is still `modules.auto-reload`'s decision, which is why
+     * the reply names the files rather than claiming anything was applied.
+     */
+    @Subcommand("deploy", "check")
+    fun deployCheck(sender: CommandSender) {
+        val poller = deploy ?: run {
+            sender.sendMessage(CommonMessages.error(Mini.format("<off_white>Git deploy is off.")))
+            return
+        }
+        sender.sendMessage(CommonMessages.info(Mini.format("<off_white>Pulling the deploy repository...")))
+        scope.launch {
+            val result = withContext(CryonDispatchers.Async) { poller.poll() }
+            Schedulers.global {
+                when (result) {
+                    is DeployResult.UpToDate -> sender.sendMessage(
+                        CommonMessages.info(
+                            Mini.format(
+                                "<off_white>Already at <highlight><commit></highlight>.",
+                                Placeholder.unparsed("commit", result.commit.take(8)),
+                            )
+                        )
+                    )
+
+                    is DeployResult.Applied -> {
+                        sender.sendMessage(
+                            CommonMessages.success(
+                                Mini.format(
+                                    "<off_white>Deployed <highlight><commit></highlight>, <highlight><count></highlight> file(s):",
+                                    Placeholder.unparsed("commit", result.commit.take(8)),
+                                    Placeholder.unparsed("count", result.changed.size.toString()),
+                                )
+                            )
+                        )
+                        for (path in result.changed) {
+                            sender.sendMessage(
+                                Mini.format(
+                                    "<off_white> <gray><path></gray>",
+                                    Placeholder.unparsed("path", path),
+                                )
+                            )
+                        }
+                    }
+
+                    is DeployResult.Failed -> sender.sendMessage(
+                        CommonMessages.error(
+                            Mini.format(
+                                "<off_white><reason>",
+                                Placeholder.unparsed("reason", result.reason),
+                            )
+                        )
+                    )
+                }
+            }
+        }
+    }
 
     /**
      * What the remote poller is tracking and what it has already fetched.
@@ -221,7 +389,9 @@ class ModuleCommands(
         return Component.textOfChildren(*parts.toTypedArray())
     }
 
-    /** What this server was told to be, what it actually is, and any way the two disagree. */
+    /**
+     * What this server was told to be, what it actually is, and any way the two disagree.
+     */
     @Subcommand("network")
     fun network(sender: CommandSender) {
         val identity = network.identity
@@ -355,7 +525,9 @@ class ModuleCommands(
         }
     }
 
-    /** List the module's registered commands: name, aliases, description, and per-subcommand usages. */
+    /**
+     * List the module's registered commands: name, aliases, description, and per-subcommand usages.
+     */
     private fun printCommands(sender: CommandSender, id: String) {
         val descriptors = commands.describe(id)
         if (descriptors.isEmpty()) {
@@ -384,7 +556,9 @@ class ModuleCommands(
         }
     }
 
-    /** `• /f (alias: faction) [cryon.admin]`: the command name, its aliases, and permission gate. */
+    /**
+     * `• /f (alias: faction) [cryon.admin]`: the command name, its aliases, and permission gate.
+     */
     private fun commandHeader(descriptor: CommandDescriptor): Component {
         val parts = mutableListOf(
             Mini.format(
@@ -683,22 +857,30 @@ class ModuleCommands(
         }
     }
 
-    /** Re-read every message source from disk. The admin `lang/` override and every module's bundle. */
+    /**
+     * Re-read every message source from disk. The admin `lang/` override and every module's bundle.
+     */
     @Subcommand("lang", "reload")
     fun langReload(sender: CommandSender) {
         messages.reload()
         sender.sendMessage(CommonMessages.success(Mini.format("<off_white>Reloaded language files from disk.")))
     }
 
-    /** Suggester referenced by `@Arg(suggests = "moduleIds")`. */
+    /**
+     * Suggester referenced by `@Arg(suggests = "moduleIds")`.
+     */
     @Suppress("unused")
     fun moduleIds(): Collection<String> = modules.ids()
 
-    /** Suggester for flag features, every registered/overridden flag ID. */
+    /**
+     * Suggester for flag features, every registered/overridden flag ID.
+     */
     @Suppress("unused")
     fun flagIds(): Collection<String> = flags.features()
 
-    /** Suggester for flag scopes: global, this server, and `player:<name>` for everyone online. */
+    /**
+     * Suggester for flag scopes: global, this server, and `player:<name>` for everyone online.
+     */
     @Suppress("unused")
     fun flagScopes(): Collection<String> = buildList {
         add(FeatureFlags.GLOBAL_SCOPE)
@@ -707,11 +889,15 @@ class ModuleCommands(
         Bukkit.getOnlinePlayers().forEach { add(it.name) }
     }
 
-    /** Suggester for player arguments. */
+    /**
+     * Suggester for player arguments.
+     */
     @Suppress("unused")
     fun onlinePlayerNames(): Collection<String> = Bukkit.getOnlinePlayers().map { it.name }
 
-    /** Suggester for `/cryon load`. Jars sitting in modules/ that aren't loaded yet. */
+    /**
+     * Suggester for `/cryon load`. Jars sitting in modules/ that aren't loaded yet.
+     */
     @Suppress("unused")
     fun loadableJars(): Collection<String> = loader.loadableJarNames()
 
@@ -775,7 +961,9 @@ class ModuleCommands(
         }
     }
 
-    /** The clickable action row shown after a module, a state-aware toggle plus reload and info. */
+    /**
+     * The clickable action row shown after a module, a state-aware toggle plus reload and info.
+     */
     private fun actionButtons(id: String, state: ModuleState): Component {
         val toggle = if (state == ModuleState.ENABLED) {
             CommandUi.button("■", "scarlet", "/cryon disable $id", actionHover("scarlet", "■ Disable", "disable", id))
@@ -791,7 +979,9 @@ class ModuleCommands(
         )
     }
 
-    /** Turn a flag on/off in a scope, ack with what happened where. */
+    /**
+     * Turn a flag on/off in a scope, ack with what happened where.
+     */
     private fun setFlag(sender: CommandSender, feature: String, rawScope: String, enabled: Boolean) {
         val scope = resolveScope(sender, rawScope) ?: return
         flags.set(scope, feature, enabled)
@@ -830,7 +1020,9 @@ class ModuleCommands(
         )
     }
 
-    /** The layered status breakdown: effective result, then each layer's entry (or its silence). */
+    /**
+     * The layered status breakdown: effective result, then each layer's entry (or its silence).
+     */
     private fun printStatus(sender: CommandSender, feature: String, player: UUID?, playerName: String?) {
         sender.sendMessage(
             CommonMessages.info(
@@ -861,7 +1053,9 @@ class ModuleCommands(
         ),
     )
 
-    /** One flag row with scope-targeted toggle/clear buttons. */
+    /**
+     * One flag row with scope-targeted toggle/clear buttons.
+     */
     private fun flagLine(scope: String, feature: String, enabled: Boolean): Component {
         val base = Mini.format(
             "    <slate_gray>•</slate_gray> <off_white><feature></off_white> <state> ",
@@ -920,20 +1114,26 @@ class ModuleCommands(
         return trimmed
     }
 
-    /** An online or previously-seen player's UUID, or ack the sender that they're unknown. */
+    /**
+     * An online or previously-seen player's UUID, or ack the sender that they're unknown.
+     */
     private fun resolvePlayerId(sender: CommandSender, name: String): UUID? {
         val uuid = Bukkit.getPlayerExact(name)?.uniqueId ?: Bukkit.getOfflinePlayerIfCached(name)?.uniqueId
         if (uuid == null) sender.sendMessage(CommonMessages.errorPlayer(name))
         return uuid
     }
 
-    /** The scope argument that reaches [scope] from a command, or null for an unresolvable player scope. */
+    /**
+     * The scope argument that reaches [scope] from a command, or null for an unresolvable player scope.
+     */
     private fun commandScope(scope: String): String? {
         if (!scope.startsWith(FeatureFlags.PLAYER_SCOPE_PREFIX)) return scope
         return playerName(scope.substring(FeatureFlags.PLAYER_SCOPE_PREFIX.length))
     }
 
-    /** `player:<uuid>` scopes display as `player <name>`; other scopes as themselves. */
+    /**
+     * `player:<uuid>` scopes display as `player <name>`; other scopes as themselves.
+     */
     private fun scopeLabel(scope: String): String {
         if (!scope.startsWith(FeatureFlags.PLAYER_SCOPE_PREFIX)) return scope
         val raw = scope.substring(FeatureFlags.PLAYER_SCOPE_PREFIX.length)
@@ -1004,14 +1204,8 @@ class ModuleCommands(
 
         const val HELP_PAGE_SIZE = 8
 
-        /** Addresses this server's own pool without typing its name. */
         const val SERVER_SCOPE_KEYWORD = "server"
 
-        /**
-         * The help, grouped by what an operator is trying to do rather than by the order the methods
-         * happen to be declared in. Brigadier already tab-completes every one of these; what it cannot
-         * say is which of them belong together, or what any of them is for.
-         */
         val HELP = listOf(
             HelpEntry("Modules", "cryon list", "Every module and its state"),
             HelpEntry("Modules", "cryon info <id>", "Commands, placeholders and state for one module"),
@@ -1024,6 +1218,9 @@ class ModuleCommands(
             HelpEntry("Jars", "cryon reload-api", "Reload the api/ layer and every module with it"),
             HelpEntry("Jars", "cryon remote", "Feature jars tracked in a remote Maven repository"),
             HelpEntry("Jars", "cryon remote check", "Poll the repository for new builds now"),
+            HelpEntry("Jars", "cryon deploy", "The commit last delivered by the git deploy"),
+            HelpEntry("Jars", "cryon deploy check", "Pull the deploy repository now"),
+            HelpEntry("Server", "cryon spill", "Rows a checkpoint could not write yet"),
             HelpEntry("Flags", "cryon flags [scope]", "Feature flags, all scopes or one"),
             HelpEntry("Flags", "cryon flag enable <feature> [scope]", "Turn a feature on"),
             HelpEntry("Flags", "cryon flag disable <feature> [scope]", "Turn a feature off"),

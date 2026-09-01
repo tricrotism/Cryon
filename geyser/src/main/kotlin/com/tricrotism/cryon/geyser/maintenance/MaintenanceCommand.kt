@@ -71,9 +71,13 @@ class MaintenanceCommand(
         }
     }
 
-    /** Choices for `add`. The Java-side names of the connected Bedrock players. */
+    /**
+     * Choices for `add`. The Java-side names of the connected Bedrock players.
+     */
     fun onlinePlayers(): Collection<String> = geyser.onlineConnections().map { it.javaUsername() }
 
-    /** Choices for `remove`. The current allowlist. */
+    /**
+     * Choices for `remove`. The current allowlist.
+     */
     fun allowlisted(): Collection<String> = maintenance.allowlist().sorted()
 }

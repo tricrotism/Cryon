@@ -13,10 +13,14 @@ import java.time.Duration
  */
 interface KeyValueStore {
 
-    /** Set [key] to [value], expiring after [ttl]. */
+    /**
+     * Set [key] to [value], expiring after [ttl].
+     */
     suspend fun set(key: String, value: String, ttl: Duration)
 
-    /** The value at [key], or null if it is absent/expired. */
+    /**
+     * The value at [key], or null if it is absent/expired.
+     */
     suspend fun get(key: String): String?
 
     /**
@@ -28,7 +32,6 @@ interface KeyValueStore {
      * the key gone can ignore it.
      */
     suspend fun delete(key: String): Boolean
-
 
     /**
      * Set [key] to [value] expiring after [ttl], **only if it is not already set**. True if this
@@ -60,6 +63,25 @@ interface KeyValueStore {
     suspend fun refreshIfEqual(key: String, value: String, ttl: Duration): Boolean
 
     /**
+     * Store [next] only if the current value is exactly [expected], where null means it must be
+     * absent.
+     *
+     * The general compare-and-set the claim primitives around it are each a special case of, for the
+     * case they do not cover: a value read, computed on, and written back, where a concurrent writer
+     * between the read and the write must lose rather than be overwritten. Same shape and same reason
+     * as `CurrencyStore.compareAndSet`, one layer down.
+     *
+     * A zero [ttl] stores the key with no expiry, which is what anything whose loss would be a loss
+     * of data rather than of a cache entry wants, and why this does not reuse [set]'s signature.
+     */
+    suspend fun compareAndSet(
+        key: String,
+        expected: String?,
+        next: String,
+        ttl: Duration = Duration.ZERO,
+    ): Boolean
+
+    /**
      * Every key matching [pattern] (glob, e.g. `prefix*`), gathered without ever blocking the store.
      *
      * Cursor-based, so it never stalls Redis, but it still walks the **whole** keyspace, and the
@@ -69,7 +91,9 @@ interface KeyValueStore {
      */
     suspend fun keys(pattern: String): List<String>
 
-    /** The values for [keys], in order; a missing key maps to null. */
+    /**
+     * The values for [keys], in order; a missing key maps to null.
+     */
     suspend fun mget(keys: Collection<String>): List<String?>
 
     /**
@@ -98,7 +122,9 @@ interface KeyValueStore {
      */
     suspend fun hsetIfAbsent(key: String, field: String, value: String, ttl: Duration): Boolean
 
-    /** Every live field of the hash at [key]; empty when it is absent or expired. */
+    /**
+     * Every live field of the hash at [key]; empty when it is absent or expired.
+     */
     suspend fun hgetAll(key: String): Map<String, String>
 
     /**

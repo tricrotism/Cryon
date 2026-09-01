@@ -15,7 +15,9 @@ interface PlaceholderService {
      */
     fun register(owner: String, provider: PlaceholderProvider): AutoCloseable
 
-    /** The `%…%` namespaces [owner] currently provides. */
+    /**
+     * The `%…%` namespaces [owner] currently provides.
+     */
     fun identifiers(owner: String): Collection<String>
 
     /**

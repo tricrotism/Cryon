@@ -15,25 +15,39 @@ import java.util.*
  */
 interface ServerRegistry {
 
-    /** Publish this process's node and start it in the network. */
+    /**
+     * Publish this process's node and start it in the network.
+     */
     suspend fun register(instance: Node)
 
-    /** Refresh an owned instance's player count + state, resetting its liveness TTL. */
+    /**
+     * Refresh an owned instance's player count + state, resetting its liveness TTL.
+     */
     suspend fun heartbeat(nodeId: String, playerCount: Int, state: NodeState)
 
-    /** Remove an owned instance immediately (graceful shutdown), rather than waiting for TTL expiry. */
+    /**
+     * Remove an owned instance immediately (graceful shutdown), rather than waiting for TTL expiry.
+     */
     suspend fun deregister(nodeId: String)
 
-    /** The replica entry for [nodeId], or null. */
+    /**
+     * The replica entry for [nodeId], or null.
+     */
     fun node(nodeId: String): Node?
 
-    /** Every known live node across the network. */
+    /**
+     * Every known live node across the network.
+     */
     fun nodes(): Collection<Node>
 
-    /** Every known live node in [serverId]. */
+    /**
+     * Every known live node in [serverId].
+     */
     fun nodesOf(serverId: String): List<Node>
 
-    /** The least-loaded READY, non-full instance of [serverId], or null if none can take a player. */
+    /**
+     * The least-loaded READY, non-full instance of [serverId], or null if none can take a player.
+     */
     fun bestNode(serverId: String): Node?
 
     /**
@@ -44,15 +58,11 @@ interface ServerRegistry {
      */
     suspend fun tryReserve(nodeId: String, player: UUID): Boolean
 
-    /** Observe topology changes (proxies register/unregister backends off these). Close to stop. */
+    /**
+     * Observe topology changes (proxies register/unregister backends off these). Close to stop.
+     */
     fun onChange(listener: (ServerRegistryEvent) -> Unit): AutoCloseable
 
     fun close()
 }
 
-/** A change to the live topology, delivered to [ServerRegistry.onChange] listeners. */
-sealed interface ServerRegistryEvent {
-    data class Added(val instance: Node) : ServerRegistryEvent
-    data class Updated(val instance: Node) : ServerRegistryEvent
-    data class Removed(val nodeId: String, val serverId: String) : ServerRegistryEvent
-}

@@ -106,7 +106,9 @@ class LanguageCommands(
     @Subcommand("reset")
     fun reset(sender: CommandSender) = clear(sender)
 
-    /** Suggester referenced by `@Arg(suggests = "locales")`. */
+    /**
+     * Suggester referenced by `@Arg(suggests = "locales")`.
+     */
     @Suppress("unused")
     fun locales(): Collection<String> = COMMON_LOCALES
 

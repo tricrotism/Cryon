@@ -48,10 +48,10 @@ class Retention {
 
     private val queue = ReferenceQueue<Any>()
 
-    /** key -> the references registered under it that have not yet been enqueued. */
+    // key -> the references registered under it that have not yet been enqueued
     private val outstanding = ConcurrentHashMap<String, MutableSet<Tracked>>()
 
-    /** key -> how many have been registered and how many the collector has since reclaimed. */
+    // key -> how many have been registered and how many the collector has since reclaimed
     private val totals = ConcurrentHashMap<String, Counters>()
 
     private class Counters {
@@ -92,7 +92,9 @@ class Retention {
 
     fun report(key: String): Retained? = report()[key]
 
-    /** Forget [key] entirely. The outstanding references are dropped, not resolved. */
+    /**
+     * Forget [key] entirely. The outstanding references are dropped, not resolved.
+     */
     fun forget(key: String) {
         outstanding.remove(key)
         totals.remove(key)

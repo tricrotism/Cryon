@@ -20,20 +20,18 @@ class LocalSignals(private val logger: Logger) : Signals {
     private class Entry(
         val type: Class<*>,
         val priority: Int,
-        /** Ties within a priority resolve by registration order, and this is what records it. */
+        // Ties within a priority resolve by registration order, and this is what records it
         val sequence: Long,
         val handler: suspend (Nothing) -> Unit,
     )
 
     private val byType = ConcurrentHashMap<Class<*>, CopyOnWriteArrayList<Entry>>()
 
-    /**
-     * Concrete signal type -> every handler that applies to it, already ordered.
-     *
-     * Invalidated wholesale on any subscribe or close rather than surgically: subscriptions happen
-     * at module enable and dispatches happen at gameplay frequency, so the cheap thing to get right
-     * is the read path. A wholesale clear costs one rebuild per signal type actually in use.
-     */
+    // Concrete signal type -> every handler that applies to it, already ordered.
+    //
+    // Invalidated wholesale on any subscribe or close rather than surgically: subscriptions happen
+    // at module enable and dispatches happen at gameplay frequency, so the cheap thing to get right
+    // is the read path. A wholesale clear costs one rebuild per signal type actually in use
     private val resolved = ConcurrentHashMap<Class<*>, List<Entry>>()
 
     private val sequence = AtomicLong()

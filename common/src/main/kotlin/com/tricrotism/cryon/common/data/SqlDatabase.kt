@@ -154,7 +154,7 @@ class SqlDatabase(config: DatabaseConfig) : Database {
 
     companion object {
 
-        /** How long [close] waits for in-flight statements before forcing the query threads down. */
+        // How long [close] waits for in-flight statements before forcing the query threads down
         private const val DRAIN_TIMEOUT_SECONDS = 5L
 
         /**
@@ -209,7 +209,9 @@ class SqlDatabase(config: DatabaseConfig) : Database {
             }
         }
 
-        /** This throwable and every cause behind it, stopping on a self-referencing chain. */
+        /**
+         * This throwable and every cause behind it, stopping on a self-referencing chain.
+         */
         private fun Throwable.causes(): Sequence<Throwable> = generateSequence(this) { current ->
             current.cause?.takeIf { it !== current }
         }

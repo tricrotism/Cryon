@@ -13,29 +13,43 @@ import java.util.concurrent.ThreadLocalRandom
  */
 interface RandomSelector<E> {
 
-    /** Pick one element using [random]. */
+    /**
+     * Pick one element using [random].
+     */
     fun pick(random: Random): E
 
-    /** Pick one element using this thread's [ThreadLocalRandom]. */
+    /**
+     * Pick one element using this thread's [ThreadLocalRandom].
+     */
     fun pick(): E = pick(ThreadLocalRandom.current())
 
-    /** An effectively infinite lazy sequence of picks drawn from [random]. */
+    /**
+     * An effectively infinite lazy sequence of picks drawn from [random].
+     */
     fun stream(random: Random): Sequence<E>
 
-    /** An effectively infinite lazy sequence of picks drawn from [ThreadLocalRandom]. */
+    /**
+     * An effectively infinite lazy sequence of picks drawn from [ThreadLocalRandom].
+     */
     fun stream(): Sequence<E> = stream(ThreadLocalRandom.current())
 
     companion object {
 
-        /** A selector that picks uniformly at random from [elements]. */
+        /**
+         * A selector that picks uniformly at random from [elements].
+         */
         fun <E> uniform(elements: Collection<E>): RandomSelector<E> =
             RandomSelectorImpl.uniform(elements)
 
-        /** A selector that picks from [elements] in proportion to each one's [Weighted.weight]. */
+        /**
+         * A selector that picks from [elements] in proportion to each one's [Weighted.weight].
+         */
         fun <E : Weighted> weighted(elements: Collection<E>): RandomSelector<E> =
             weighted(elements) { it.weight }
 
-        /** A selector that picks from [elements] in proportion to the weight [weigher] assigns each. */
+        /**
+         * A selector that picks from [elements] in proportion to the weight [weigher] assigns each.
+         */
         fun <E> weighted(elements: Collection<E>, weigher: Weigher<E>): RandomSelector<E> =
             RandomSelectorImpl.weighted(elements, weigher)
     }

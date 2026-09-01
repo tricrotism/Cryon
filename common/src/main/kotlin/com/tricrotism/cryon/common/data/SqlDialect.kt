@@ -3,15 +3,6 @@ package com.tricrotism.cryon.common.data
 import java.sql.SQLException
 
 /**
- * A secondary index on [columns] of a table, named [name].
- *
- * A type rather than a string because the two backends that take indexes separately and the one that
- * takes them inline need the same three facts spelled two different ways. See
- * [SqlDialect.inlineIndexes] and [SqlDialect.indexStatements].
- */
-data class SqlIndex(val name: String, val columns: List<String>, val unique: Boolean = false)
-
-/**
  * A supported SQL backend. Everything above [SqlDatabase] is plain JDBC and dialect-agnostic; the
  * only things that differ are the driver class and how the JDBC URL is built, and the server backends
  * take a `//host:port/database`, while embedded [H2] takes a file path. Only backends whose driver
@@ -37,7 +28,9 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
         override fun insertIfAbsent(table: String, keys: List<String>, columns: List<String>): String =
             insert(table, columns) + " ON CONFLICT (${list(keys)}) DO NOTHING"
 
-        /** A `WHERE` on `DO UPDATE` guards the whole row at once, so assignment order carries no meaning. */
+        /**
+         * A `WHERE` on `DO UPDATE` guards the whole row at once, so assignment order carries no meaning.
+         */
         override fun upsertIfGreater(
             table: String,
             keys: List<String>,
@@ -54,19 +47,27 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
         override val tinyInt: String get() = "SMALLINT"
         override val doublePrecision: String get() = "DOUBLE PRECISION"
 
-        /** Postgres has one variable-length binary type and it takes no length. */
+        /**
+         * Postgres has one variable-length binary type and it takes no length.
+         */
         override fun binary(bytes: Int): String = "BYTEA"
         override val largeBinary: String get() = "BYTEA"
 
-        /** Every Postgres cluster has a `postgres` database; you cannot create one from inside itself. */
+        /**
+         * Every Postgres cluster has a `postgres` database; you cannot create one from inside itself.
+         */
         override fun maintenanceUrl(config: DatabaseConfig): String =
             "jdbc:postgresql://${config.host}:${config.port}/postgres"
 
-        /** Postgres has no `IF NOT EXISTS` here, which is fine: this only runs after one was missing. */
+        /**
+         * Postgres has no `IF NOT EXISTS` here, which is fine: this only runs after one was missing.
+         */
         override fun createDatabaseSql(config: DatabaseConfig): String =
             "CREATE DATABASE \"${identifier(config.database)}\""
 
-        /** `3D000` is `invalid_catalog_name`. The database in the URL does not exist. */
+        /**
+         * `3D000` is `invalid_catalog_name`. The database in the URL does not exist.
+         */
         override fun isMissingDatabase(error: SQLException): Boolean = error.sqlState == "3D000"
     },
 
@@ -100,7 +101,9 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
                     updates.joinToString(", ") { "$it = VALUES($it)" }
         }
 
-        /** Assigning a key column to itself is the standard no-op body; MySQL has no `DO NOTHING`. */
+        /**
+         * Assigning a key column to itself is the standard no-op body; MySQL has no `DO NOTHING`.
+         */
         override fun insertIfAbsent(table: String, keys: List<String>, columns: List<String>): String =
             insert(table, columns) + " ON DUPLICATE KEY UPDATE ${keys.first()} = ${keys.first()}"
 
@@ -140,14 +143,18 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
 
         override fun indexStatements(table: String, indexes: List<SqlIndex>): List<String> = emptyList()
 
-        /** Connector/J accepts an empty database in the URL, so there is no maintenance schema to pick. */
+        /**
+         * Connector/J accepts an empty database in the URL, so there is no maintenance schema to pick.
+         */
         override fun maintenanceUrl(config: DatabaseConfig): String =
             "jdbc:mysql://${config.host}:${config.port}/"
 
         override fun createDatabaseSql(config: DatabaseConfig): String =
             "CREATE DATABASE IF NOT EXISTS `${identifier(config.database)}`"
 
-        /** 1049 is `ER_BAD_DB_ERROR`. Matched on the vendor code: SQLSTATE 42000 is far broader. */
+        /**
+         * 1049 is `ER_BAD_DB_ERROR`. Matched on the vendor code: SQLSTATE 42000 is far broader.
+         */
         override fun isMissingDatabase(error: SQLException): Boolean = error.errorCode == 1049
     },
 
@@ -162,29 +169,25 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
 
         override val longText: String get() = "VARCHAR"
 
-        /**
-         * `SMALLINT`, for the same reason [POSTGRESQL] spells it that way: `MODE=PostgreSQL` rejects
-         * `TINYINT` with "Unknown data type", and the base default here is the MySQL spelling.
-         *
-         * Inheriting that default made every table with a tiny column fail at `CREATE TABLE` on the
-         * one backend that needs no setup at all, which is every schema-version table in the module
-         * family. Found by running a module's schema against H2 rather than by reading it.
-         */
+        // `SMALLINT`, for the same reason [POSTGRESQL] spells it that way: `MODE=PostgreSQL` rejects
+        // `TINYINT` with "Unknown data type", and the base default here is the MySQL spelling.
+        //
+        // Inheriting that default made every table with a tiny column fail at `CREATE TABLE` on the
+        // one backend that needs no setup at all, which is every schema-version table in the module
+        // family. Found by running a module's schema against H2 rather than by reading it
         override val tinyInt: String get() = "SMALLINT"
 
-        /**
-         * Unqualified `VARBINARY`, which H2 treats as its maximum width — the same trick [longText]
-         * uses, and the unqualified half of the [binary] this dialect already spells `VARBINARY(n)`.
-         *
-         * `MODE=PostgreSQL` rejects the inherited `BLOB` with "Unknown data type", so every table
-         * holding a blob failed at `CREATE TABLE`: the island world store and the carried-quest set.
-         * `BYTEA` and `BINARY LARGE OBJECT` are both accepted too; this one is chosen because it
-         * keeps the bounded and unbounded binary types the same word.
-         *
-         * Verified by round-tripping 256 KB through all three rather than by reading the manual: a
-         * type that parsed and then silently truncated would corrupt an island instead of refusing
-         * one, which is the worse failure by far.
-         */
+        // Unqualified `VARBINARY`, which H2 treats as its maximum width, the same trick [longText]
+        // uses, and the unqualified half of the [binary] this dialect already spells `VARBINARY(n)`.
+        //
+        // `MODE=PostgreSQL` rejects the inherited `BLOB` with "Unknown data type", so every table
+        // holding a blob failed at `CREATE TABLE`: the island world store and the carried-quest set.
+        // `BYTEA` and `BINARY LARGE OBJECT` are both accepted too; this one is chosen because it
+        // keeps the bounded and unbounded binary types the same word.
+        //
+        // Verified by round-tripping 256 KB through all three rather than by reading the manual: a
+        // type that parsed and then silently truncated would corrupt an island instead of refusing
+        // one, which is the worse failure by far
         override val largeBinary: String get() = "VARBINARY"
 
         // No creation members: H2 makes the file on first connect, so a missing database is not a
@@ -227,7 +230,9 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
                     "WHEN NOT MATCHED THEN INSERT (${list(columns)}) " +
                     "VALUES (${columns.joinToString(", ") { "s.$it" }})"
 
-        /** Standard `MERGE`'s `WHEN MATCHED AND` takes the guard directly, so both branches are one statement. */
+        /**
+         * Standard `MERGE`'s `WHEN MATCHED AND` takes the guard directly, so both branches are one statement.
+         */
         override fun upsertIfGreater(
             table: String,
             keys: List<String>,
@@ -245,7 +250,9 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
         }
     };
 
-    /** Build the JDBC URL for this backend from [config]. */
+    /**
+     * Build the JDBC URL for this backend from [config].
+     */
     abstract fun jdbcUrl(config: DatabaseConfig): String
 
     /**
@@ -259,7 +266,9 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
      */
     abstract fun upsert(table: String, keys: List<String>, columns: List<String>): String
 
-    /** As [upsert], but a row whose [keys] already match is left exactly as it is. */
+    /**
+     * As [upsert], but a row whose [keys] already match is left exactly as it is.
+     */
     abstract fun insertIfAbsent(table: String, keys: List<String>, columns: List<String>): String
 
     /**
@@ -282,28 +291,28 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
         guard: String,
     ): String
 
-    /** A one-byte integer. Postgres has no single-byte type and widens to the smallest it does have. */
+    // A one-byte integer. Postgres has no single-byte type and widens to the smallest it does have
     open val tinyInt: String get() = "TINYINT"
 
-    /** Double-precision float. */
+    // Double-precision float
     open val doublePrecision: String get() = "DOUBLE"
 
-    /** Variable-length binary of at most [bytes]. */
+    /**
+     * Variable-length binary of at most [bytes].
+     */
     open fun binary(bytes: Int): String = "VARBINARY($bytes)"
 
-    /** Binary with no practical length bound. */
+    // Binary with no practical length bound
     open val largeBinary: String get() = "BLOB"
 
-    /**
-     * Text with no practical length bound, for a value whose width is a property of the data rather
-     * than a choice: an exact decimal ledger entry, a serialized blob of user content.
-     *
-     * A guessed `VARCHAR(n)` on one of those is a silent cap that only shows up as a write failure
-     * once someone reaches it, which for money is the worst possible moment. MySQL's `TEXT` holds
-     * 65535 bytes, comfortably past [com.tricrotism.cryon.common.number.PackedDecimal]'s widest
-     * plain string; Postgres' is unbounded; H2 wants an unqualified `VARCHAR`, which it treats as
-     * its maximum rather than as a one-character column.
-     */
+    // Text with no practical length bound, for a value whose width is a property of the data rather
+    // than a choice: an exact decimal ledger entry, a serialized blob of user content.
+    //
+    // A guessed `VARCHAR(n)` on one of those is a silent cap that only shows up as a write failure
+    // once someone reaches it, which for money is the worst possible moment. MySQL's `TEXT` holds
+    // 65535 bytes, comfortably past [com.tricrotism.cryon.common.number.PackedDecimal]'s widest
+    // plain string; Postgres' is unbounded; H2 wants an unqualified `VARCHAR`, which it treats as
+    // its maximum rather than as a one-character column
     open val longText: String get() = "TEXT"
 
     /**
@@ -316,7 +325,9 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
      */
     open fun inlineIndexes(indexes: List<SqlIndex>): String = ""
 
-    /** Statements to run after `CREATE TABLE`, for the backends that take indexes separately. */
+    /**
+     * Statements to run after `CREATE TABLE`, for the backends that take indexes separately.
+     */
     open fun indexStatements(table: String, indexes: List<SqlIndex>): List<String> =
         indexes.map {
             "CREATE ${if (it.unique) "UNIQUE " else ""}INDEX IF NOT EXISTS ${it.name} ON $table (${list(it.columns)})"
@@ -348,7 +359,9 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
 
     companion object {
 
-        /** `INSERT INTO table (a, b) VALUES (?, ?)`, the head every upsert form here starts from. */
+        /**
+         * `INSERT INTO table (a, b) VALUES (?, ?)`, the head every upsert form here starts from.
+         */
         private fun insert(table: String, columns: List<String>): String =
             "INSERT INTO $table (${list(columns)}) VALUES (${placeholders(columns.size)})"
 
@@ -356,7 +369,9 @@ enum class SqlDialect(val id: String, val driverClass: String, val defaultPort: 
 
         private fun placeholders(count: Int): String = (1..count).joinToString(", ") { "?" }
 
-        /** Resolve by [id], case-insensitively; throws on an unknown id. */
+        /**
+         * Resolve by [id], case-insensitively; throws on an unknown id.
+         */
         fun of(id: String): SqlDialect =
             entries.firstOrNull { it.id.equals(id, ignoreCase = true) }
                 ?: error("Unknown database type '$id' (expected one of: ${entries.joinToString { it.id }})")

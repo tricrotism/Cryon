@@ -3,45 +3,6 @@ package com.tricrotism.cryon.common.data
 import java.sql.ResultSet
 
 /**
- * One transaction's connection, handed to [Database.transaction]'s body.
- *
- * Deliberately smaller than [Database]: no `close`, no nested transaction, and nothing async. The
- * session is valid only for the duration of the call it was passed to, and holding one past that
- * point uses a connection that has already gone back to the pool.
- */
-interface SqlSession {
-
-    fun <T> query(sql: String, vararg params: Any?, mapper: (ResultSet) -> T): List<T>
-
-    fun update(sql: String, vararg params: Any?): Int
-
-    /**
-     * Run one statement once per row in [rows], as a single JDBC batch. Returns rows affected.
-     *
-     * The difference from a loop of [update] is round trips: a batch ships every parameter set in one
-     * exchange with the backend instead of one each, which is the whole reason a write-behind flush
-     * can afford to write two thousand dirty entries at a checkpoint. Each element of [rows] binds in
-     * the statement's parameter order, exactly as [update]'s varargs do.
-     *
-     * An empty [rows] issues nothing and answers 0. Drivers may report `SUCCESS_NO_INFO` for a row
-     * they applied without counting, so the total is a lower bound: compare it against zero, never
-     * against `rows.size`.
-     */
-    fun batch(sql: String, rows: List<Array<out Any?>>): Int
-}
-
-/** Connection settings for the SQL backend. [dialect] selects which backend and driver to use. */
-data class DatabaseConfig(
-    val host: String,
-    val port: Int,
-    val database: String,
-    val username: String,
-    val password: String,
-    val maxPoolSize: Int = 10,
-    val dialect: SqlDialect = SqlDialect.MYSQL,
-)
-
-/**
  * Async SQL access: every call is a `suspend` function that runs its statement on the query
  * executor, so callers never block a server thread. A thin primitive over a pooled connection (no
  * ORM); features run their own SQL. Shared via the module `ServiceRegistry` when `database.enabled`
@@ -53,7 +14,7 @@ data class DatabaseConfig(
  */
 interface Database {
 
-    /** Which backend this is. Needed only where a statement cannot be written portably. See [upsert]. */
+    // Which backend this is. Needed only where a statement cannot be written portably. See [upsert]
     val dialect: SqlDialect
 
     /**
@@ -82,10 +43,14 @@ interface Database {
      */
     suspend fun <T> transaction(body: (SqlSession) -> T): T
 
-    /** Run a query and map each row, off-thread. Trailing-lambda friendly: `query(sql, a, b) { rs -> … }`. */
+    /**
+     * Run a query and map each row, off-thread. Trailing-lambda friendly: `query(sql, a, b) { rs -> … }`.
+     */
     suspend fun <T> query(sql: String, vararg params: Any?, mapper: (ResultSet) -> T): List<T>
 
-    /** Run an INSERT/UPDATE/DELETE/DDL and return the affected row count, off-thread. */
+    /**
+     * Run an INSERT/UPDATE/DELETE/DDL and return the affected row count, off-thread.
+     */
     suspend fun update(sql: String, vararg params: Any?): Int
 
     /**
@@ -160,3 +125,4 @@ interface Database {
 
     fun close()
 }
+

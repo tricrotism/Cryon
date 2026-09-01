@@ -6,16 +6,17 @@ import com.tricrotism.cryon.command.*
 import com.tricrotism.cryon.common.colony.Colony
 import com.tricrotism.cryon.common.colony.SharedColony
 import com.tricrotism.cryon.common.concurrent.CryonIO
-import com.tricrotism.cryon.common.config.ConfigDefaults
-import com.tricrotism.cryon.common.config.ConfigMigrator
+import com.tricrotism.cryon.common.config.*
 import com.tricrotism.cryon.common.cooldown.CooldownService
 import com.tricrotism.cryon.common.cooldown.MemoryCooldowns
 import com.tricrotism.cryon.common.currency.Currencies
+import com.tricrotism.cryon.common.currency.CurrencyJournal
 import com.tricrotism.cryon.common.currency.CurrencyService
-import com.tricrotism.cryon.common.data.Database
-import com.tricrotism.cryon.common.data.DatabaseConfig
-import com.tricrotism.cryon.common.data.SqlDatabase
-import com.tricrotism.cryon.common.data.SqlDialect
+import com.tricrotism.cryon.common.currency.PendingLedger
+import com.tricrotism.cryon.common.data.*
+import com.tricrotism.cryon.common.deploy.DeployKeys
+import com.tricrotism.cryon.common.deploy.DeployResult
+import com.tricrotism.cryon.common.deploy.GitDeploy
 import com.tricrotism.cryon.common.diagnostic.Retention
 import com.tricrotism.cryon.common.flag.FeatureFlags
 import com.tricrotism.cryon.common.locale.*
@@ -32,6 +33,7 @@ import com.tricrotism.cryon.common.server.*
 import com.tricrotism.cryon.common.signal.LocalSignals
 import com.tricrotism.cryon.common.signal.Signals
 import com.tricrotism.cryon.common.text.Mini
+import com.tricrotism.cryon.config.PaperKeys
 import com.tricrotism.cryon.inventory.DefaultInventorySearch
 import com.tricrotism.cryon.menu.AdminMenu
 import com.tricrotism.cryon.module.CommandRegistry
@@ -92,6 +94,9 @@ class Cryon : JavaPlugin() {
     private val watchers = ArrayList<JarWatcher>()
     private var remoteModules: RemoteModules? = null
     private var remoteTask: ScheduledTask? = null
+    private var gitDeploy: GitDeploy? = null
+    private var deployTask: ScheduledTask? = null
+    private lateinit var cryonConfig: Config
 
     private lateinit var messageService: MessageService
     private lateinit var services: ServiceRegistry
@@ -102,6 +107,7 @@ class Cryon : JavaPlugin() {
     private lateinit var featureFlags: FeatureFlags
     private var currencies: Currencies? = null
     private var leaderboardTask: ScheduledTask? = null
+    private var journalTask: ScheduledTask? = null
     private var presenceTask: ScheduledTask? = null
     private var database: Database? = null
     private var localeStore: LocaleStore? = null
@@ -131,7 +137,7 @@ class Cryon : JavaPlugin() {
     private lateinit var store: KeyValueStore
     private lateinit var identity: NodeIdentity
 
-    /** Whether the transport reaches other processes. Cross-process-only services hang off this. */
+    // Whether the transport reaches other processes. Cross-process-only services hang off this
     private var sharedTransport = false
 
     /**
@@ -147,6 +153,7 @@ class Cryon : JavaPlugin() {
     override fun onLoad() {
         CryonPaper.init(this) // so Schedulers/Events can reach the plugin
         migrateConfig()
+        cryonConfig = Config(YamlConfigSource.load(File(dataFolder, "config.yml").toPath()))
         initPackets()
 
         messageService = MessageService()
@@ -164,6 +171,8 @@ class Cryon : JavaPlugin() {
 
         apiDir = File(dataFolder, "api").apply { mkdirs() }
         modulesDir = File(dataFolder, "modules").apply { mkdirs() }
+
+        SpillStore.install(File(dataFolder, ".spill").toPath())
         loader = ModuleLoader(
             manager,
             messageService,
@@ -213,6 +222,7 @@ class Cryon : JavaPlugin() {
         seedAdminLang(messageService)
 
         startRemoteModules(modulesDir)
+        startGitDeploy(modulesDir)
         bootstrapCommands(
             messageService,
             status,
@@ -234,8 +244,8 @@ class Cryon : JavaPlugin() {
      * Best-effort: a watcher failure degrades to manual hot-swap, never blocks boot.
      */
     private fun startWatchers(modulesDir: File, apiDir: File) {
-        val production = config.getBoolean("production", ConfigDefaults.PRODUCTION)
-        val autoReload = config.getBoolean("modules.auto-reload", !production)
+        val production = cryonConfig[CoreKeys.PRODUCTION]
+        val autoReload = (cryonConfig.find(CoreKeys.MODULES_AUTO_RELOAD) ?: !production)
         if (!autoReload) {
             log.info(
                 "Hot-reload watchers off (production={}); use /cryon load|unload|scan|reload-api to hot-swap",
@@ -285,11 +295,68 @@ class Cryon : JavaPlugin() {
      * ones this server was last known to run.
      */
     private fun startRemoteModules(modulesDir: File) {
-        val remote = RemoteModuleConfig.build(config, modulesDir, dataFolder, log) ?: return
+        val remote = RemoteModuleConfig.build(cryonConfig, modulesDir, dataFolder, log) ?: return
         remoteModules = remote
-        val seconds = config.getLong("remote.poll-seconds", 300).coerceAtLeast(30)
+        val seconds = cryonConfig[PaperKeys.REMOTE_POLL_SECONDS]
         remoteTask = Schedulers.asyncTimer(REMOTE_FIRST_POLL_SECONDS, seconds, TimeUnit.SECONDS) {
             scope.launch { reportRemote(remote.pollAll()) }
+        }
+    }
+
+    /**
+     * Start polling the deploy repository, when `deploy.enabled` is on.
+     *
+     * The same division of labour [startRemoteModules] follows: this writes files where the loaders
+     * already look and does not decide whether a jar runs, because `modules.auto-reload` already
+     * does. `config.yml` is the exception and gets an explicit hook, because nothing was watching it
+     * before, and the lang directory gets one because re-reading it is a single call.
+     *
+     * Off the server threads, on the same delayed first poll as the Maven poller and for the same
+     * reason: an unreachable repository must not be an unbootable server.
+     */
+    private fun startGitDeploy(modulesDir: File) {
+        val configFile = File(dataFolder, "config.yml").toPath()
+        val deploy = GitDeploy.from(
+            config = cryonConfig,
+            serverId = identity.serverId,
+            dataFolder = dataFolder.toPath(),
+            configFile = configFile,
+            langDirectory = File(dataFolder, "lang").toPath(),
+            modulesDirectory = modulesDir.toPath(),
+            onConfigChanged = {
+                cryonConfig.reload(YamlConfigSource.load(configFile))
+                    .forEach { log.error("A config reload listener failed", it) }
+                log.info("config.yml reloaded from the deploy repository")
+            },
+            onLangChanged = {
+                messageService.reload()
+                log.info("Language files reloaded from the deploy repository")
+            },
+            logger = log,
+        ) ?: return
+
+        gitDeploy = deploy
+        val seconds = cryonConfig[DeployKeys.POLL_SECONDS]
+        deployTask = Schedulers.asyncTimer(REMOTE_FIRST_POLL_SECONDS, seconds, TimeUnit.SECONDS) {
+            reportDeploy(deploy.poll())
+        }
+        log.info("Deploying branch {} every {}s", cryonConfig[DeployKeys.BRANCH], seconds)
+    }
+
+    /**
+     * Say what a deploy poll did, and stay quiet when it did nothing.
+     */
+    private fun reportDeploy(result: DeployResult) {
+        when (result) {
+            is DeployResult.UpToDate -> Unit
+            is DeployResult.Applied -> log.info(
+                "Deployed {} ({} file(s)): {}",
+                result.commit.take(8),
+                result.changed.size,
+                result.changed.joinToString(", "),
+            )
+
+            is DeployResult.Failed -> log.warn("Deploy poll failed: {}", result.reason)
         }
     }
 
@@ -300,7 +367,7 @@ class Cryon : JavaPlugin() {
      */
     private fun reportRemote(results: List<UpdateResult>) {
         val applies =
-            config.getBoolean("modules.auto-reload", !config.getBoolean("production", ConfigDefaults.PRODUCTION))
+            (cryonConfig.find(CoreKeys.MODULES_AUTO_RELOAD) ?: !cryonConfig[CoreKeys.PRODUCTION])
         for (result in results) when (result) {
             is UpdateResult.Installed -> if (applies) {
                 log.info("Remote module {} updated to {}", result.artifact, result.to)
@@ -367,13 +434,17 @@ class Cryon : JavaPlugin() {
         }
     }
 
-    /** Register a disk `plugins/Cryon/lang/` folder so admins can override/add translations. */
+    /**
+     * Register a disk `plugins/Cryon/lang/` folder so admins can override/add translations.
+     */
     private fun registerAdminLang(messageService: MessageService) {
         val langDir = File(dataFolder, "lang").apply { mkdirs() }
         messageService.addSource(DirectoryMessageSource(langDir))
     }
 
-    /** Auto-scan the core's own jar for bundled `lang/<locale>.properties`. */
+    /**
+     * Auto-scan the core's own jar for bundled `lang/<locale>.properties`.
+     */
     private fun registerOwnLang(messageService: MessageService) {
         val jar = runCatching { File(javaClass.protectionDomain.codeSource.location.toURI()) }.getOrNull() ?: return
         LangScanner.fromJar(jar)?.let(messageService::addSource)
@@ -412,11 +483,11 @@ class Cryon : JavaPlugin() {
         placeholders: PlaceholderService,
         menu: AdminMenu,
     ) {
-        val menuFirst = config.getBoolean("commands.menu", true)
+        val menuFirst = cryonConfig[PaperKeys.COMMANDS_MENU]
         val handlers = mutableListOf(
             ModuleCommands(
                 manager, loader, featureFlags, commandRegistry, status, messageService, placeholders, menu,
-                menuFirst, retention, remoteModules, scope,
+                menuFirst, retention, remoteModules, gitDeploy, log, scope,
             ),
             LanguageCommands(messageService, scope),
         )
@@ -435,21 +506,23 @@ class Cryon : JavaPlugin() {
         }
     }
 
-    /** Wire SQL and the transport, then flags and the player locale store. Failures degrade gracefully. */
+    /**
+     * Wire SQL and the transport, then flags and the player locale store. Failures degrade gracefully.
+     */
     private fun setupInfrastructure(services: ServiceRegistry) {
-        val cfg = config
+        val cfg = cryonConfig
 
-        if (cfg.getBoolean("database.enabled", ConfigDefaults.DATABASE_ENABLED)) {
+        if (cfg[CoreKeys.DATABASE_ENABLED]) {
             try {
-                val dialect = SqlDialect.of(cfg.string("database.type", ConfigDefaults.DATABASE_TYPE))
+                val dialect = SqlDialect.of(cfg[CoreKeys.DATABASE_TYPE])
                 val db = SqlDatabase.connect(
                     DatabaseConfig(
-                        host = cfg.string("database.host", ConfigDefaults.DATABASE_HOST),
-                        port = cfg.getInt("database.port", dialect.defaultPort),
-                        database = cfg.string("database.database", ConfigDefaults.DATABASE_NAME),
-                        username = cfg.string("database.username", ConfigDefaults.DATABASE_USERNAME),
-                        password = cfg.string("database.password", ConfigDefaults.DATABASE_PASSWORD),
-                        maxPoolSize = cfg.getInt("database.max-pool-size", ConfigDefaults.DATABASE_MAX_POOL_SIZE),
+                        host = cfg[CoreKeys.DATABASE_HOST],
+                        port = cfg.find(CoreKeys.DATABASE_PORT) ?: dialect.defaultPort,
+                        database = cfg[CoreKeys.DATABASE_NAME],
+                        username = cfg[CoreKeys.DATABASE_USERNAME],
+                        password = cfg[CoreKeys.DATABASE_PASSWORD],
+                        maxPoolSize = cfg[CoreKeys.DATABASE_MAX_POOL_SIZE],
                         dialect = dialect,
                     ),
                     log,
@@ -466,7 +539,7 @@ class Cryon : JavaPlugin() {
 
         identity = resolveIdentity(cfg)
         services.register<NodeIdentity>(identity)
-        heartbeatSeconds = cfg.getLong("network.heartbeat-seconds", ConfigDefaults.HEARTBEAT_SECONDS).coerceAtLeast(1)
+        heartbeatSeconds = cfg[CoreKeys.HEARTBEAT_SECONDS]
 
         featureFlags = FeatureFlags(identity.serverId, database, messenger, log)
         featureFlags.init()
@@ -516,18 +589,44 @@ class Cryon : JavaPlugin() {
      * Nothing is destroyed either way: the table keeps its rows and they are exactly where they were
      * when it is switched on again.
      */
-    private fun setupCurrency(services: ServiceRegistry, cfg: FileConfiguration) {
-        if (!cfg.getBoolean("currency.enabled", false)) {
+    private fun setupCurrency(services: ServiceRegistry, cfg: Config) {
+        if (!cfg[PaperKeys.CURRENCY_ENABLED]) {
             log.info("Currencies are off; set currency.enabled=true in config.yml to register the service")
             return
         }
-        val service = Currencies(identity.serverId, database, messenger, log)
+
+        val journal = database?.let {
+            CurrencyJournal(File(dataFolder, "currency-journal.bin").toPath(), log)
+        }
+
+        val pendingLedger = when {
+            !cfg[PaperKeys.CURRENCY_OFFLINE_SPENDING] -> null
+            !sharedTransport -> {
+                log.warn(
+                    "currency.offline-spending needs Redis: without it the pending ledger is not " +
+                            "shared, and spending offline would be decided on stale balances"
+                )
+                null
+            }
+
+            else -> PendingLedger(store, log)
+        }
+        val service = Currencies(identity.serverId, database, messenger, log, journal, pendingLedger)
         scope.launch { service.init() }
         currencies = service
         services.register<CurrencyService>(service)
-        val rankSeconds = cfg.getLong("currency.leaderboard-refresh-seconds", 300).coerceAtLeast(30)
+        val rankSeconds = cfg[PaperKeys.CURRENCY_LEADERBOARD_REFRESH_SECONDS]
         leaderboardTask = Schedulers.asyncTimer(rankSeconds, rankSeconds, TimeUnit.SECONDS) {
             scope.launch { service.refreshLeaderboards() }
+        }
+        if (journal != null) {
+            val drainSeconds = cfg[PaperKeys.CURRENCY_DRAIN_SECONDS]
+            journalTask = Schedulers.asyncTimer(drainSeconds, drainSeconds, TimeUnit.SECONDS) {
+                scope.launch {
+                    runCatching { service.drainJournal() }
+                        .onFailure { log.error("The queued-deposit drain failed", it) }
+                }
+            }
         }
     }
 
@@ -537,10 +636,10 @@ class Cryon : JavaPlugin() {
      * downstream has to cope with their absence. A Redis that fails to connect falls back rather than
      * half-installing: a live messenger beside a dead store is the one state no caller expects.
      */
-    private fun setupTransport(services: ServiceRegistry, cfg: FileConfiguration) {
-        if (cfg.getBoolean("redis.enabled", ConfigDefaults.REDIS_ENABLED)) {
+    private fun setupTransport(services: ServiceRegistry, cfg: Config) {
+        if (cfg[CoreKeys.REDIS_ENABLED]) {
             try {
-                val redisConfig = RedisConfig(cfg.string("redis.uri", ConfigDefaults.REDIS_URI))
+                val redisConfig = RedisConfig(cfg[CoreKeys.REDIS_URI])
                 messenger = RedisMessenger(redisConfig, log)
                 store = RedisKeyValueStore(redisConfig)
                 sharedTransport = true
@@ -559,7 +658,9 @@ class Cryon : JavaPlugin() {
         services.register<KeyValueStore>(store)
     }
 
-    /** Drop whatever a half-finished Redis setup managed to open. */
+    /**
+     * Drop whatever a half-finished Redis setup managed to open.
+     */
     private fun closeQuietly() {
         if (::messenger.isInitialized) runCatching { messenger.close() }
         if (::store.isInitialized) runCatching { store.close() }
@@ -573,15 +674,16 @@ class Cryon : JavaPlugin() {
      * were renamed to match what operators call them, and are still read so an existing config keeps
      * working. Deprecated: they are announced once at boot and go away next release.
      */
-    private fun resolveIdentity(cfg: FileConfiguration): NodeIdentity = NodeIdentity.resolve(
-        configServerId = cfg.legacy("network.server", "network.family") ?: cfg.getString("server-name"),
-        configNodeId = cfg.legacy("network.node", "network.instance-id"),
-        configAddress = cfg.getString("network.address"),
-        configPort = cfg.getInt("network.port", 0),
+    private fun resolveIdentity(cfg: Config): NodeIdentity = NodeIdentity.resolve(
+        configServerId = cfg.legacy(PaperKeys.NETWORK_SERVER, PaperKeys.LEGACY_NETWORK_FAMILY)
+            ?: cfg.find(PaperKeys.LEGACY_SERVER_NAME),
+        configNodeId = cfg.legacy(PaperKeys.NETWORK_NODE, PaperKeys.LEGACY_NETWORK_INSTANCE_ID),
+        configAddress = cfg.find(PaperKeys.NETWORK_ADDRESS),
+        configPort = cfg[PaperKeys.NETWORK_PORT],
         fallbackPort = server.port,
-        configMaxPlayers = cfg.getInt("network.max-players", 0),
+        configMaxPlayers = cfg[PaperKeys.NETWORK_MAX_PLAYERS],
         fallbackMaxPlayers = server.maxPlayers,
-        configExpectation = cfg.legacy("network.expect", "network.mode"),
+        configExpectation = cfg.legacy(PaperKeys.NETWORK_EXPECT, PaperKeys.LEGACY_NETWORK_MODE),
         onUnknownExpectation = { log.error("Unknown network.expect '{}'. Falling back to one-node", it) },
     )
 
@@ -604,7 +706,9 @@ class Cryon : JavaPlugin() {
         reloadConfig()
     }
 
-    /** [FileConfiguration.getString] that honours its own default, so call sites need no `!!`. */
+    /**
+     * [FileConfiguration.getString] that honours its own default, so call sites need no `!!`.
+     */
     private fun FileConfiguration.string(path: String, default: String): String = getString(path, default) ?: default
 
     /**
@@ -613,16 +717,16 @@ class Cryon : JavaPlugin() {
      * Warns rather than failing: an operator who has not read the changelog should get a running
      * server and a line telling them what to rename, not a boot failure over a word.
      */
-    private fun FileConfiguration.legacy(key: String, former: String): String? {
-        if (isSet(key)) return getString(key)?.takeIf { it.isNotBlank() }
-        if (isSet(former)) {
-            val old = getString(former)?.takeIf { it.isNotBlank() }
-            if (old != null) {
-                log.warn("config.yml: '{}' has been renamed to '{}'. Still honoured, but rename it", former, key)
-                return old
-            }
+    private fun Config.legacy(key: ConfigKey<String>, former: ConfigKey<String>): String? {
+        find(key)?.takeIf { it.isNotBlank() }?.let { return it }
+        find(former)?.takeIf { it.isNotBlank() }?.let { old ->
+            log.warn(
+                "config.yml: '{}' has been renamed to '{}'. Still honoured, but rename it",
+                former.path, key.path,
+            )
+            return old
         }
-        return getString(key)?.takeIf { it.isNotBlank() }
+        return null
     }
 
     /**
@@ -638,7 +742,7 @@ class Cryon : JavaPlugin() {
     private fun setupNetwork(services: ServiceRegistry) {
         setupHandoff(services)
         setupColony(services)
-        if (!config.getBoolean("network.registry-enabled", ConfigDefaults.REGISTRY_ENABLED)) {
+        if (!cryonConfig[CoreKeys.REGISTRY_ENABLED]) {
             log.info("Server registry disabled by config (network.registry-enabled=false)")
             return
         }
@@ -686,7 +790,9 @@ class Cryon : JavaPlugin() {
             }
     }
 
-    /** Advertise this server as READY, now that the modules serving its players are enabled. */
+    /**
+     * Advertise this server as READY, now that the modules serving its players are enabled.
+     */
     private fun announceReady(services: ServiceRegistry) {
         val rep = reporter ?: return
         val reg = registry ?: return
@@ -694,7 +800,9 @@ class Cryon : JavaPlugin() {
         setupAgones(services, identity.serverId, rep, reg)
     }
 
-    /** Say what this server is, and make any disagreement with `network.expect` impossible to miss. */
+    /**
+     * Say what this server is, and make any disagreement with `network.expect` impossible to miss.
+     */
     private fun reportNetwork(services: ServiceRegistry): NetworkStatus {
         val status = NetworkStatus(identity, sharedTransport, database != null) { registry }
         services.register<NetworkStatus>(status)
@@ -719,7 +827,9 @@ class Cryon : JavaPlugin() {
         }
     }
 
-    /** Attach the Agones lifecycle when running under a sidecar; a no-op anywhere else. */
+    /**
+     * Attach the Agones lifecycle when running under a sidecar; a no-op anywhere else.
+     */
     private fun setupAgones(
         services: ServiceRegistry,
         serverId: String,
@@ -730,12 +840,12 @@ class Cryon : JavaPlugin() {
         // shutdown-when-empty differs per serverId (persistent shards reclaim; ephemeral self-shutdown on
         // match end), so it's env-first, one shared config file, per-Fleet env override.
         val shutdownWhenEmpty = System.getenv("CRYON_AGONES_SHUTDOWN_WHEN_EMPTY")?.toBooleanStrictOrNull()
-            ?: config.getBoolean("network.agones.shutdown-when-empty", false)
+            ?: cryonConfig[PaperKeys.AGONES_SHUTDOWN_WHEN_EMPTY]
         val options = AgonesLifecycle.Options(
-            healthSeconds = config.getLong("network.agones.health-seconds", 5).coerceAtLeast(1),
+            healthSeconds = cryonConfig[PaperKeys.AGONES_HEALTH_SECONDS],
             shutdownWhenEmpty = shutdownWhenEmpty,
-            emptyGraceSeconds = config.getLong("network.agones.empty-grace-seconds", 60),
-            minInstances = config.getInt("network.agones.min-instances", 1),
+            emptyGraceSeconds = cryonConfig[PaperKeys.AGONES_EMPTY_GRACE_SECONDS],
+            minInstances = cryonConfig[PaperKeys.AGONES_MIN_INSTANCES],
         )
         val life = AgonesLifecycle(agones, reporter::currentPlayers, { registry.nodesOf(serverId).size }, options, log)
         agonesLifecycle = life
@@ -747,6 +857,9 @@ class Cryon : JavaPlugin() {
         remoteTask?.let { runCatching { it.cancel() } }
         remoteTask = null
         remoteModules = null
+        deployTask?.let { runCatching { it.cancel() } }
+        deployTask = null
+        gitDeploy = null
         watchers.forEach { runCatching { it.close() } }
         watchers.clear()
         subscriptions.forEach { runCatching { it.unregister() } }
@@ -776,6 +889,8 @@ class Cryon : JavaPlugin() {
         colony = null
         leaderboardTask?.let { runCatching { it.cancel() } }
         leaderboardTask = null
+        journalTask?.let { runCatching { it.cancel() } }
+        journalTask = null
         presenceTask?.let { runCatching { it.cancel() } }
         presenceTask = null
         currencies?.close()
@@ -789,6 +904,7 @@ class Cryon : JavaPlugin() {
         if (::services.isInitialized) services.clear()
         runCatching { PacketEvents.getAPI()?.terminate() }
         Locales.install(null)
+        SpillStore.install(null)
         CryonIO.shutdown()
     }
 
@@ -809,6 +925,9 @@ class Cryon : JavaPlugin() {
                     online.map { async { coordinator.flush(it) } }.awaitAll()
                 }
             }
+        }.onSuccess { results ->
+            val failed = results.count { !it }
+            if (failed > 0) log.warn("{} of {} player flushes failed on shutdown", failed, online.size)
         }.onFailure { log.error("Timed out flushing players on shutdown, some state may be lost", it) }
     }
 
@@ -820,33 +939,31 @@ class Cryon : JavaPlugin() {
     ) : PaperModuleContext
 
     private companion object {
-        /** Owner key the core's own commands register under in the [CommandRegistry]. */
+        // Owner key the core's own commands register under in the [CommandRegistry]
         const val CORE_COMMAND_OWNER = "cryon"
 
-        /** Whether InvUI is already bound in this classloader. See [initMenus]. */
+        // Whether InvUI is already bound in this classloader. See [initMenus]
         @Volatile
         var menusBound = false
 
-        /** How long shutdown waits for player flushes before giving up and saying so. */
+        // How long shutdown waits for player flushes before giving up and saying so
         const val FLUSH_TIMEOUT_SECONDS = 10L
 
-        /** How long shutdown waits for the colony to resign before letting the heartbeat expire it. */
+        // How long shutdown waits for the colony to resign before letting the heartbeat expire it
         const val COLONY_RESIGN_TIMEOUT_MILLIS = 2_000L
 
-        /** Long enough that a boot finishes before the first repository fetch competes with it. */
+        // Long enough that a boot finishes before the first repository fetch competes with it
         const val REMOTE_FIRST_POLL_SECONDS = 15L
 
-        /**
-         * Keys that have been renamed, new name to former, so [ConfigMigrator] carries the value
-         * across instead of writing the new name's default over a declared intent. `network.expect`
-         * is the one that bites: without this an operator still on `network.mode: instanced` gains
-         * `expect: one-node` from the template, [legacy] finds it set and stops consulting `mode`,
-         * and a many-nodes deployment quietly declares itself alone. The old values are still
-         * understood, so the value moves across as written and needs no translation.
-         *
-         * Retire this in the same release that drops [legacy] and the `single`/`instanced` values:
-         * once the old names are gone there is nothing left to inherit from.
-         */
+        // Keys that have been renamed, new name to former, so [ConfigMigrator] carries the value
+        // across instead of writing the new name's default over a declared intent. `network.expect`
+        // is the one that bites: without this an operator still on `network.mode: instanced` gains
+        // `expect: one-node` from the template, [legacy] finds it set and stops consulting `mode`,
+        // and a many-nodes deployment quietly declares itself alone. The old values are still
+        // understood, so the value moves across as written and needs no translation.
+        //
+        // Retire this in the same release that drops [legacy] and the `single`/`instanced` values:
+        // once the old names are gone there is nothing left to inherit from
         val RENAMED_KEYS = mapOf(
             "network.expect" to "network.mode",
             "network.server" to "network.family",

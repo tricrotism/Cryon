@@ -18,42 +18,38 @@ package com.tricrotism.cryon.common.module
  */
 interface Module {
 
-    /** Stable identifier used in logs and diagnostics. */
+    // Stable identifier used in logs and diagnostics
     val id: String
 
-    /**
-     * Prerequisites this module declares, checked and ordered by [ModuleManager] before its lifecycle
-     * runs. A missing **hard** dependency marks the module `FAILED` without calling `onLoad`; a soft
-     * one only pulls this module later in the enable order.
-     *
-     * ```
-     * override val dependencies = listOf(
-     *     Dependency.plugin("WorldGuard"),
-     *     Dependency.service("com.tricrotism.shop.ShopService", hard = false),
-     * )
-     * ```
-     *
-     * Read once, at registration. Keep it a plain literal: it is evaluated before anything of this
-     * module has run, so it can reference nothing the module builds later.
-     */
+    // Prerequisites this module declares, checked and ordered by [ModuleManager] before its lifecycle
+    // runs. A missing **hard** dependency marks the module `FAILED` without calling `onLoad`; a soft
+    // one only pulls this module later in the enable order.
+    //
+    // ```
+    // override val dependencies = listOf(
+    //     Dependency.plugin("WorldGuard"),
+    //     Dependency.service("com.tricrotism.shop.ShopService", hard = false),
+    // )
+    // ```
+    //
+    // Read once, at registration. Keep it a plain literal: it is evaluated before anything of this
+    // module has run, so it can reference nothing the module builds later
     val dependencies: List<Dependency> get() = emptyList()
 
-    /**
-     * Sub-modules this one owns. Each is a full [Module] in its own right: its own id, its own
-     * lifecycle, its own [ModuleState], its own row in `/cryon modules`, and its own listeners and
-     * tasks torn down when it disables.
-     *
-     * That last part is the difference from a feature flag, which is the other way to switch a slice
-     * of a feature off. A flag is a guard inside a live handler; a child module is *not wired at all*
-     * while it is disabled. Reach for a flag to gate behaviour, and for a child to hand an admin an
-     * independently loadable half of a feature.
-     *
-     * Give a child the id `<parent>/<name>` so the tree reads in listings and admin output. The
-     * parent always loads and enables first, disables last, and a child cannot enable while its parent
-     * is not enabled.
-     *
-     * Read once, at registration; a child added afterwards is never seen.
-     */
+    // Sub-modules this one owns. Each is a full [Module] in its own right: its own id, its own
+    // lifecycle, its own [ModuleState], its own row in `/cryon modules`, and its own listeners and
+    // tasks torn down when it disables.
+    //
+    // That last part is the difference from a feature flag, which is the other way to switch a slice
+    // of a feature off. A flag is a guard inside a live handler; a child module is *not wired at all*
+    // while it is disabled. Reach for a flag to gate behaviour, and for a child to hand an admin an
+    // independently loadable half of a feature.
+    //
+    // Give a child the id `<parent>/<name>` so the tree reads in listings and admin output. The
+    // parent always loads and enables first, disables last, and a child cannot enable while its parent
+    // is not enabled.
+    //
+    // Read once, at registration; a child added afterwards is never seen
     val children: List<Module> get() = emptyList()
 
     /**
@@ -69,10 +65,14 @@ interface Module {
      */
     fun preLoad(context: ModuleContext) {}
 
-    /** Register services and read config. Called for all modules before any is enabled. */
+    /**
+     * Register services and read config. Called for all modules before any is enabled.
+     */
     fun onLoad(context: ModuleContext) {}
 
-    /** Wire listeners/tasks and consume peer services. Called after every module has loaded. */
+    /**
+     * Wire listeners/tasks and consume peer services. Called after every module has loaded.
+     */
     fun onEnable() {}
 
     /**
@@ -90,6 +90,8 @@ interface Module {
      */
     fun postLoad() {}
 
-    /** Called in reverse enable order on shutdown. Undo everything [onEnable] set up. */
+    /**
+     * Called in reverse enable order on shutdown. Undo everything [onEnable] set up.
+     */
     fun onDisable() {}
 }

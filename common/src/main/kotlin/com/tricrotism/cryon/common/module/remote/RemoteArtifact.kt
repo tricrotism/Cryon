@@ -35,20 +35,22 @@ data class RemoteArtifact(
 
     val metadataPath: String = "$directory/maven-metadata.xml"
 
-    /**
-     * The name on disk, and deliberately **stable across versions**.
-     *
-     * A versioned filename would leave the previous build sitting beside the new one in `modules/`,
-     * and the loader would then discover the same module twice. Writing to one name means a new
-     * build is a *replacement*, which is exactly the file event the hot-reload watcher already
-     * knows how to turn into a swap.
-     */
+    // The name on disk, and deliberately **stable across versions**.
+    //
+    // A versioned filename would leave the previous build sitting beside the new one in `modules/`,
+    // and the loader would then discover the same module twice. Writing to one name means a new
+    // build is a *replacement*, which is exactly the file event the hot-reload watcher already
+    // knows how to turn into a swap
     val fileName: String = "$artifact.jar"
 
-    /** The jar for one resolved build, where `build` is the version Maven actually published under. */
+    /**
+     * The jar for one resolved build, where `build` is the version Maven actually published under.
+     */
     fun jarPath(build: String): String = "$directory/$artifact-$build.jar"
 
-    /** What a pinned (non-snapshot) artifact publishes: one jar named after the version itself. */
+    /**
+     * What a pinned (non-snapshot) artifact publishes: one jar named after the version itself.
+     */
     fun pinnedJarPath(): String = jarPath(resolvedVersion)
 
     override fun toString(): String = "$id:$resolvedVersion"

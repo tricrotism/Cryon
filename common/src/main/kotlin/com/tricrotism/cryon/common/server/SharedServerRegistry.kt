@@ -46,12 +46,10 @@ class SharedServerRegistry(
     private val listeners = CopyOnWriteArrayList<(ServerRegistryEvent) -> Unit>()
     private var subscription: MessengerSubscription? = null
 
-    /**
-     * Owns the registry's own background work: the warm-up read, the catalog migration and the
-     * per-node catalog upsert. Each is launched rather than awaited because the callers are
-     * lifecycle hooks rather than coroutines, and cancelling this on [close] stops a slow warm-up
-     * writing into a replica the process is already tearing down.
-     */
+    // Owns the registry's own background work: the warm-up read, the catalog migration and the
+    // per-node catalog upsert. Each is launched rather than awaited because the callers are
+    // lifecycle hooks rather than coroutines, and cancelling this on [close] stops a slow warm-up
+    // writing into a replica the process is already tearing down
     private val scope = CoroutineScope(
         SupervisorJob() + CryonIO.dispatcher + CoroutineExceptionHandler { _, error ->
             logger.error("Unhandled failure in a coroutine of the server registry", error)
@@ -140,7 +138,9 @@ class SharedServerRegistry(
         messenger.publish(EVENTS_CHANNEL, "$type$ENVELOPE$line")
     }
 
-    /** Apply a broadcast from any node (including our own echo, idempotent). */
+    /**
+     * Apply a broadcast from any node (including our own echo, idempotent).
+     */
     private fun onEvent(message: String) {
         val split = message.indexOf(ENVELOPE)
         if (split < 0) return
@@ -161,7 +161,9 @@ class SharedServerRegistry(
         }
     }
 
-    /** Drop replica entries we have not heard from within [ttl]. How every node detects a crash. */
+    /**
+     * Drop replica entries we have not heard from within [ttl]. How every node detects a crash.
+     */
     private fun reap() {
         val cutoff = System.currentTimeMillis() - ttl.toMillis()
         val iterator = replica.entries.iterator()

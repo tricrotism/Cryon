@@ -1,25 +1,5 @@
 package com.tricrotism.cryon.common.data
 
-import java.sql.ResultSet
-
-/**
- * How one value maps onto its row. The feature still owns its schema and its columns; this only says
- * how to get a value in and out of them.
- *
- * [columns] excludes `id` and `version`, which every repository table carries and [Repository] owns.
- * [write] must emit values in exactly [columns] order, and [read] must consume them in that order
- * starting at index 1, the repository builds its `SELECT` from [columns], so the two line up as
- * long as neither is reordered independently.
- */
-interface RowCodec<T : Any> {
-
-    val columns: List<String>
-
-    fun write(value: T): Array<out Any?>
-
-    fun read(row: ResultSet): T
-}
-
 /**
  * A write-behind keyed store over one SQL table: reads served from memory, writes accumulated and
  * flushed in batches.
@@ -54,10 +34,14 @@ interface Repository<T : Any> {
      */
     fun cached(id: String): T?
 
-    /** The stored value, reading through to SQL on a miss and populating the cache. */
+    /**
+     * The stored value, reading through to SQL on a miss and populating the cache.
+     */
     suspend fun get(id: String): T?
 
-    /** Load [id] into the cache. Call on join. Returns what was loaded, if anything. */
+    /**
+     * Load [id] into the cache. Call on join. Returns what was loaded, if anything.
+     */
     suspend fun load(id: String): T?
 
     /**
@@ -69,13 +53,19 @@ interface Repository<T : Any> {
      */
     fun stage(id: String, value: T)
 
-    /** Write [id] through to SQL now, and cache it. For the rare value that cannot wait. */
+    /**
+     * Write [id] through to SQL now, and cache it. For the rare value that cannot wait.
+     */
     suspend fun put(id: String, value: T)
 
-    /** Remove [id] from memory and from SQL. */
+    /**
+     * Remove [id] from memory and from SQL.
+     */
     suspend fun delete(id: String): Boolean
 
-    /** Drop [id] from the cache without touching SQL. Call on quit, **after** the last flush. */
+    /**
+     * Drop [id] from the cache without touching SQL. Call on quit, **after** the last flush.
+     */
     fun evict(id: String)
 
     /**
@@ -88,14 +78,13 @@ interface Repository<T : Any> {
     suspend fun flush(): Int
 
     companion object {
-        /**
-         * The two columns every repository table carries, for pasting into a `CREATE TABLE`.
-         *
-         * ```
-         * Migration(1, "create homes") { it.update("CREATE TABLE IF NOT EXISTS x (${Repository.BASE_COLUMNS_DDL}, …)") }
-         * ```
-         */
+        // The two columns every repository table carries, for pasting into a `CREATE TABLE`.
+        //
+        // ```
+        // Migration(1, "create homes") { it.update("CREATE TABLE IF NOT EXISTS x (${Repository.BASE_COLUMNS_DDL}, …)") }
+        // ```
         const val BASE_COLUMNS_DDL =
             "id VARCHAR(64) NOT NULL PRIMARY KEY, version BIGINT NOT NULL DEFAULT 0"
     }
 }
+

@@ -56,12 +56,18 @@ interface CooldownService {
      */
     fun remaining(subject: UUID, id: String): Duration
 
-    /** Whether [id] is currently running for [subject]. Same caveat as [remaining]. */
+    /**
+     * @return whether [id] is currently running for [subject]. Same caveat as [remaining].
+     */
     fun isActive(subject: UUID, id: String): Boolean = remaining(subject, id) > Duration.ZERO
 
-    /** End [id] early for [subject], so the next [trigger] grants. */
+    /**
+     * End [id] early for [subject], so the next [trigger] grants.
+     */
     fun clear(subject: UUID, id: String)
 
-    /** End every cooldown for [subject]. */
+    /**
+     * End every cooldown for [subject].
+     */
     fun clearAll(subject: UUID)
 }

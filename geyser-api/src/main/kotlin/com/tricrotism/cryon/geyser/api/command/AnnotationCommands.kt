@@ -49,7 +49,9 @@ object AnnotationCommands {
         "<off_white>Invalid value for <highlight><arg></highlight>: <highlight><value></highlight>"
     private const val CHOICES_FALLBACK = "<off_white>Expected one of: <highlight><choices></highlight>"
 
-    /** Build [handlers] and register each with the Geyser command lifecycle event. */
+    /**
+     * Build [handlers] and register each with the Geyser command lifecycle event.
+     */
     fun register(event: GeyserDefineCommandsEvent, extension: Extension, vararg handlers: Any) =
         handlers.forEach { event.register(build(extension, it)) }
 

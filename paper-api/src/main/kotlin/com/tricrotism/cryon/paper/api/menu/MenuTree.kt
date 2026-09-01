@@ -25,13 +25,17 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 sealed interface MenuNode {
 
-    /** Stable within a parent. Used for lookups and breadcrumbs, never shown to players. */
+    // Stable within a parent. Used for lookups and breadcrumbs, never shown to players
     val id: String
 
-    /** What [viewer] sees in the slot. Called on their own thread, each time the page is drawn. */
+    /**
+     * What [viewer] sees in the slot. Called on their own thread, each time the page is drawn.
+     */
     fun icon(viewer: Player): ItemStack
 
-    /** Whether [viewer] sees this at all. Hidden nodes never occupy a slot. */
+    /**
+     * @return whether [viewer] sees this at all. Hidden nodes never occupy a slot.
+     */
     fun visibleTo(viewer: Player): Boolean
 }
 
@@ -81,7 +85,9 @@ fun interface MenuContent {
     }
 }
 
-/** A page. Its entries may themselves be branches, which is what makes the nesting unbounded. */
+/**
+ * A page. Its entries may themselves be branches, which is what makes the nesting unbounded.
+ */
 class MenuBranch(
     override val id: String,
     val title: Component,
@@ -90,7 +96,9 @@ class MenuBranch(
     private val visible: (Player) -> Boolean = { true },
 ) : MenuNode {
 
-    /** A branch over a fixed list of children, the shape the `branch { }` DSL builds. */
+    /**
+     * A branch over a fixed list of children, the shape the `branch { }` DSL builds.
+     */
     constructor(
         id: String,
         title: Component,
@@ -103,7 +111,9 @@ class MenuBranch(
     override fun visibleTo(viewer: Player): Boolean = visible(viewer)
 }
 
-/** A leaf. [onClick] runs on the clicking player's own thread and may open another menu. */
+/**
+ * A leaf. [onClick] runs on the clicking player's own thread and may open another menu.
+ */
 class MenuLeaf(
     override val id: String,
     private val iconProvider: (Player) -> ItemStack,
@@ -138,7 +148,9 @@ fun branch(
     visible,
 )
 
-/** Collects the children of a [branch]. Order is the order they were declared in. */
+/**
+ * Collects the children of a [branch]. Order is the order they were declared in.
+ */
 class MenuChildren internal constructor() {
 
     private val nodes = ArrayList<MenuNode>()
@@ -167,7 +179,9 @@ class MenuChildren internal constructor() {
         onClick: (Player) -> Unit,
     ) = add(MenuLeaf(id, { icon.toItem().name(name).lore(lore).build() }, visible, onClick))
 
-    /** For a leaf whose icon depends on the viewer or on live state. */
+    /**
+     * For a leaf whose icon depends on the viewer or on live state.
+     */
     fun leaf(
         id: String,
         icon: (Player) -> ItemStack,
@@ -211,11 +225,9 @@ class MenuChildren internal constructor() {
  */
 object MenuTree {
 
-    /**
-     * Row layout. `#` filler, `x` content, `<`/`>` paging, `b` back.
-     *
-     * Parsed once by InvUI per page build; the array itself is shared and never mutated.
-     */
+    // Row layout. `#` filler, `x` content, `<`/`>` paging, `b` back.
+    //
+    // Parsed once by InvUI per page build; the array itself is shared and never mutated
     private val STRUCTURE = arrayOf(
         "# # # # # # # # #",
         "# x x x x x x x #",
@@ -225,13 +237,11 @@ object MenuTree {
         "# < # # b # # > #",
     )
 
-    /**
-     * The `x` slots, as inventory indices.
-     *
-     * Content is placed by index after the page is built rather than bound to the `x` character:
-     * binding an ingredient maps *every* occurrence of that character to the same item, so a loop
-     * over the children would leave twenty-eight copies of whichever one bound last.
-     */
+    // The `x` slots, as inventory indices.
+    //
+    // Content is placed by index after the page is built rather than bound to the `x` character:
+    // binding an ingredient maps *every* occurrence of that character to the same item, so a loop
+    // over the children would leave twenty-eight copies of whichever one bound last
     private val CONTENT_SLOTS: IntArray =
         (1..4).flatMap { row -> (1..7).map { column -> row * 9 + column } }.toIntArray()
 
@@ -266,7 +276,7 @@ object MenuTree {
         @Volatile
         private var window: Window? = null
 
-        /** Set while a navigation is replacing the window, so the close handler ignores that close. */
+        // Set while a navigation is replacing the window, so the close handler ignores that close
         private val navigating = AtomicBoolean(false)
 
         private val closed = AtomicBoolean(false)
@@ -369,7 +379,9 @@ object MenuTree {
                 .build()
         }
 
-        /** Placeholder for an unused content slot; overwritten by [show] wherever a node lands. */
+        /**
+         * Placeholder for an unused content slot; overwritten by [show] wherever a node lands.
+         */
         private fun empty(): Item = Item.builder()
             .setItemProvider(ItemStack(Material.AIR))
             .build()
@@ -378,7 +390,9 @@ object MenuTree {
             .setItemProvider(Material.BLACK_STAINED_GLASS_PANE.toItem().name(Component.empty()).build())
             .build()
 
-        /** Take the menu down. Safe from any thread, before it opens, and more than once. */
+        /**
+         * Take the menu down. Safe from any thread, before it opens, and more than once.
+         */
         override fun close() {
             if (!closed.compareAndSet(false, true)) return
             val opened = window ?: return

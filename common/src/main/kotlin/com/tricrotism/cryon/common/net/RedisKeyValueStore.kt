@@ -30,7 +30,6 @@ class RedisKeyValueStore(config: RedisConfig) : KeyValueStore {
     override suspend fun delete(key: String): Boolean =
         commands.del(key).toCompletableFuture().await() > 0
 
-
     override suspend fun setIfAbsent(key: String, value: String, ttl: Duration): Boolean =
         commands.set(key, value, SetArgs.Builder.nx().px(ttl.toMillis())).toCompletableFuture().await() == "OK"
 
@@ -41,6 +40,21 @@ class RedisKeyValueStore(config: RedisConfig) : KeyValueStore {
             arrayOf(key),
             value,
         ).toCompletableFuture().await() == 1L
+
+    override suspend fun compareAndSet(
+        key: String,
+        expected: String?,
+        next: String,
+        ttl: Duration,
+    ): Boolean = commands.eval<Long>(
+        COMPARE_AND_SET,
+        ScriptOutputType.INTEGER,
+        arrayOf(key),
+        expected.orEmpty(),
+        next,
+        if (expected == null) "1" else "0",
+        ttl.toMillis().toString(),
+    ).toCompletableFuture().await() == 1L
 
     override suspend fun refreshIfEqual(key: String, value: String, ttl: Duration): Boolean =
         commands.eval<Long>(
@@ -155,12 +169,31 @@ class RedisKeyValueStore(config: RedisConfig) : KeyValueStore {
             return 0
         """.trimIndent()
 
+        // KEYS[1]=key, ARGV[1]=expected, ARGV[2]=next, ARGV[3]="1" when expecting absent,
+        // ARGV[4]=ttl in millis, zero for no expiry.
+        //
+        // The read and the write are one script, which is the whole point: a `GET` followed by a
+        // `SET` from the client would let another node's write land in between and be discarded
+        private val COMPARE_AND_SET = """
+            local current = redis.call('GET', KEYS[1])
+            if ARGV[3] == '1' then
+                if current then return 0 end
+            elseif current ~= ARGV[1] then
+                return 0
+            end
+            if tonumber(ARGV[4]) > 0 then
+                redis.call('PSETEX', KEYS[1], ARGV[4], ARGV[2])
+            else
+                redis.call('SET', KEYS[1], ARGV[2])
+            end
+            return 1
+        """.trimIndent()
+
         // KEYS[1]=key, ARGV[1]=expected value, ARGV[2]=new ttl in millis.
         private val REFRESH_IF_EQUAL = """
             if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], ARGV[2]) end
             return 0
         """.trimIndent()
-
 
         // Atomic capacity hold over a sorted set of {member -> expiry}. Prunes expired holds, rejects if
         // the baseline plus live holds would meet the limit, else records the hold (score = expiry) and

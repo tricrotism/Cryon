@@ -75,9 +75,13 @@ class MaintenanceCommand(
         }
     }
 
-    /** Tab-completion for `add`. Online player names. */
+    /**
+     * Tab-completion for `add`. Online player names.
+     */
     fun onlinePlayers(): Collection<String> = proxy.allPlayers.map { it.username }
 
-    /** Tab-completion for `remove`. The current allowlist. */
+    /**
+     * Tab-completion for `remove`. The current allowlist.
+     */
     fun allowlisted(): Collection<String> = maintenance.allowlist().sorted()
 }

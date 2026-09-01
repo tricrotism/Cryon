@@ -153,7 +153,9 @@ class CommandRegistry(private val server: Server, private val log: Logger) : Com
         return node
     }
 
-    /** Splice one handler's branches into a shared root in the live dispatcher, creating it if absent. */
+    /**
+     * Splice one handler's branches into a shared root in the live dispatcher, creating it if absent.
+     */
     private fun liveRegisterBranch(owner: String, handler: Any, available: () -> Boolean): Boolean {
         val built = try {
             AnnotationCommands.build(handler, available)
@@ -190,17 +192,23 @@ class CommandRegistry(private val server: Server, private val log: Logger) : Com
         return true
     }
 
-    /** The `@Command` name a branch handler hangs under, or null if the class isn't a command. */
+    /**
+     * The `@Command` name a branch handler hangs under, or null if the class isn't a command.
+     */
     private fun rootNameOf(handler: Any): String? = AnnotationCommands.describe(handler)?.name
 
-    /** Record the (root, branch) pairs a boot-registered branch handler owns, so [unregister] can drop them. */
+    /**
+     * Record the (root, branch) pairs a boot-registered branch handler owns, so [unregister] can drop them.
+     */
     private fun trackBranches(owner: String, rootName: String, handler: Any) {
         val built = runCatching { AnnotationCommands.build(handler) }.getOrNull() ?: return
         val owned = liveBranches.getOrPut(owner) { linkedSetOf() }
         built.node.children.forEach { owned.add(rootName to it.name) }
     }
 
-    /** Splice one handler's tree into the live dispatcher. Returns true if a node was added. */
+    /**
+     * Splice one handler's tree into the live dispatcher. Returns true if a node was added.
+     */
     private fun liveRegister(owner: String, handler: Any, available: () -> Boolean): Boolean {
         val built = try {
             AnnotationCommands.build(handler, available)
@@ -229,7 +237,9 @@ class CommandRegistry(private val server: Server, private val log: Logger) : Com
         return removeChildFrom(root, name)
     }
 
-    /** Drop the child literal [name] from [node]. Brigadier exposes no public child removal. */
+    /**
+     * Drop the child literal [name] from [node]. Brigadier exposes no public child removal.
+     */
     private fun removeChildFrom(node: CommandNode<*>, name: String): Boolean {
         var removed = false
         for (field in childMapFields) {
@@ -248,7 +258,7 @@ class CommandRegistry(private val server: Server, private val log: Logger) : Com
         null
     }
 
-    /** Brigadier's private child maps (`children`, `literals`, `arguments`). No public removal API. */
+    // Brigadier's private child maps (`children`, `literals`, `arguments`). No public removal API
     private val childMapFields: List<Field> by lazy {
         listOf("children", "literals", "arguments").map {
             CommandNode::class.java.getDeclaredField(it).apply { isAccessible = true }

@@ -11,7 +11,7 @@ fun Long.toPackedDecimal(): PackedDecimal = PackedDecimal.of(this)
 fun Double.toPackedDecimal(): PackedDecimal = PackedDecimal.of(this)
 fun BigDecimal.toPackedDecimal(): PackedDecimal = PackedDecimal.of(this)
 
-/** Terse alias for [toPackedDecimal], as in `5.pd + price`. */
+// Terse alias for [toPackedDecimal], as in `5.pd + price`
 val Int.pd: PackedDecimal get() = toPackedDecimal()
 val Long.pd: PackedDecimal get() = toPackedDecimal()
 val Double.pd: PackedDecimal get() = toPackedDecimal()

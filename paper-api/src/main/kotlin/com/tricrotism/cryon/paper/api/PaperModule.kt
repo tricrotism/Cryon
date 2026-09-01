@@ -52,23 +52,19 @@ abstract class PaperModule : Module {
     protected val services: ServiceRegistry get() = moduleContext.services
     protected val logger: Logger get() = moduleContext.logger
 
-    /**
-     * Bedrock-client support. Always present, with no Floodgate it reports every player as Java and
-     * sends nothing, so menus can ask without branching on whether Geyser is installed.
-     */
+    // Bedrock-client support. Always present, with no Floodgate it reports every player as Java and
+    // sends nothing, so menus can ask without branching on whether Geyser is installed
     protected val bedrock: BedrockService get() = services.get<BedrockService>()
 
-    /**
-     * This module's own directory, `plugins/Cryon/data/<id>/`, created on first use.
-     *
-     * Not `plugin.dataFolder`: that is the **core's** folder, and every module writing into it shares
-     * one flat namespace with no owner recorded anywhere. Two modules that both want a `config.yml`
-     * silently get one file, and the second one to load reads the first one's settings.
-     *
-     * Deliberately a sibling of `modules/` rather than a directory inside it. `modules/` is an input
-     * the admin drops jars into and the hot-reload watcher owns; keeping written state out of it means
-     * "clear modules/ and re-copy the jars" cannot take a module's data with it.
-     */
+    // This module's own directory, `plugins/Cryon/data/<id>/`, created on first use.
+    //
+    // Not `plugin.dataFolder`: that is the **core's** folder, and every module writing into it shares
+    // one flat namespace with no owner recorded anywhere. Two modules that both want a `config.yml`
+    // silently get one file, and the second one to load reads the first one's settings.
+    //
+    // Deliberately a sibling of `modules/` rather than a directory inside it. `modules/` is an input
+    // the admin drops jars into and the hot-reload watcher owns; keeping written state out of it means
+    // "clear modules/ and re-copy the jars" cannot take a module's data with it
     protected val dataFolder: File by lazy {
         File(File(plugin.dataFolder, "data"), id).apply { mkdirs() }
     }
@@ -92,7 +88,9 @@ abstract class PaperModule : Module {
         return YamlConfiguration.loadConfiguration(file)
     }
 
-    /** Copy this jar's bundled [name] to [file]. Absent is fine: the module then starts from empty. */
+    /**
+     * Copy this jar's bundled [name] to [file]. Absent is fine: the module then starts from empty.
+     */
     private fun extractDefault(name: String, file: File) {
         val bundled = bundledResource(name) ?: return
         try {
@@ -122,28 +120,26 @@ abstract class PaperModule : Module {
         }.getOrNull()
     }
 
-    /**
-     * This module's coroutine scope, canceled when the module disables.
-     *
-     * **Launch every coroutine here, never in `GlobalScope` or an ad-hoc `CoroutineScope`.** A
-     * coroutine is a live reference to the code that started it, so one still suspended after
-     * `/cryon unload`, parked on a database call, waiting out a `delay`, sitting in a `Mutex` queue,
-     * holds this module's classloader open and eventually resumes into classes that are gone. That
-     * is the same leak [track] exists for, and the scope is how the suspending half of the module
-     * gets it: cancelling the parent cancels every child, transitively, in one move.
-     *
-     * Dispatches on [CryonDispatchers.Global] by default, so a `launch { }` body may touch the
-     * Bukkit API for server-wide state; `withContext(CryonDispatchers.Async)` for I/O, and
-     * `withContext(CryonDispatchers.entity(player))` for one player's own state. A [SupervisorJob]
-     * parents it, so one failed coroutine does not take its siblings down with it, and an uncaught
-     * failure is logged against this module rather than reaching a default handler that cannot say
-     * which module it came from.
-     *
-     * **Cancellation is cooperative.** It unblocks anything suspended at a suspension point, but a
-     * thread already inside a blocking JDBC or Redis call runs to completion. Teardown that must
-     * *finish* rather than merely stop belongs in [onDisable] before the super call, not in a
-     * coroutine racing it.
-     */
+    // This module's coroutine scope, canceled when the module disables.
+    //
+    // **Launch every coroutine here, never in `GlobalScope` or an ad-hoc `CoroutineScope`.** A
+    // coroutine is a live reference to the code that started it, so one still suspended after
+    // `/cryon unload`, parked on a database call, waiting out a `delay`, sitting in a `Mutex` queue,
+    // holds this module's classloader open and eventually resumes into classes that are gone. That
+    // is the same leak [track] exists for, and the scope is how the suspending half of the module
+    // gets it: cancelling the parent cancels every child, transitively, in one move.
+    //
+    // Dispatches on [CryonDispatchers.Global] by default, so a `launch { }` body may touch the
+    // Bukkit API for server-wide state; `withContext(CryonDispatchers.Async)` for I/O, and
+    // `withContext(CryonDispatchers.entity(player))` for one player's own state. A [SupervisorJob]
+    // parents it, so one failed coroutine does not take its siblings down with it, and an uncaught
+    // failure is logged against this module rather than reaching a default handler that cannot say
+    // which module it came from.
+    //
+    // **Cancellation is cooperative.** It unblocks anything suspended at a suspension point, but a
+    // thread already inside a blocking JDBC or Redis call runs to completion. Teardown that must
+    // *finish* rather than merely stop belongs in [onDisable] before the super call, not in a
+    // coroutine racing it
     protected val scope: CoroutineScope by lazy {
         scopeStarted = true
         CoroutineScope(
@@ -157,17 +153,23 @@ abstract class PaperModule : Module {
         )
     }
 
-    /** Resolve a required peer service: sugar for `services.get<T>()`. */
+    /**
+     * Resolve a required peer service: sugar for `services.get<T>()`.
+     */
     protected inline fun <reified T : Any> service(): T = services.get()
 
-    /** Resolve an optional peer service, or null: sugar for `services.find<T>()`. */
+    /**
+     * Resolve an optional peer service, or null: sugar for `services.find<T>()`.
+     */
     protected inline fun <reified T : Any> serviceOrNull(): T? = services.find()
 
     override fun onLoad(context: ModuleContext) {
         moduleContext = context as PaperModuleContext
     }
 
-    /** Register a Bukkit listener that is automatically unregistered when this module disables. */
+    /**
+     * Register a Bukkit listener that is automatically unregistered when this module disables.
+     */
     protected fun listen(listener: Listener) {
         server.pluginManager.registerEvents(listener, plugin)
         listeners.add(listener)
@@ -185,7 +187,9 @@ abstract class PaperModule : Module {
     protected fun globalTimer(delayTicks: Long, periodTicks: Long, task: (ScheduledTask) -> Unit): ScheduledTask =
         Schedulers.globalTimer(delayTicks, periodTicks, task).also { tasks += it }
 
-    /** Repeating async task, canceled on disable. See [globalTimer]. */
+    /**
+     * Repeating async task, canceled on disable. See [globalTimer].
+     */
     protected fun asyncTimer(
         initialDelay: Long,
         period: Long,
@@ -193,7 +197,9 @@ abstract class PaperModule : Module {
         task: (ScheduledTask) -> Unit,
     ): ScheduledTask = Schedulers.asyncTimer(initialDelay, period, unit, task).also { tasks += it }
 
-    /** Repeating task on [location]'s region, canceled on disable. See [globalTimer]. */
+    /**
+     * Repeating task on [location]'s region, canceled on disable. See [globalTimer].
+     */
     protected fun regionTimer(
         location: Location,
         delayTicks: Long,
@@ -237,7 +243,9 @@ abstract class PaperModule : Module {
      */
     protected fun <T : AutoCloseable> track(closeable: T): T = closeable.also { closeables += it }
 
-    /** Whether this module is currently in the `ENABLED` state, per the [ModuleManager]. */
+    /**
+     * @return whether this module is currently in the `ENABLED` state, per the [ModuleManager].
+     */
     protected fun isEnabled(): Boolean =
         services.find<ModuleManager>()?.state(id) == ModuleState.ENABLED
 

@@ -13,10 +13,14 @@ interface MaintenanceService {
 
     fun isEnabled(): Boolean
 
-    /** The message shown on the server list and in the kick screen. */
+    /**
+     * The message shown on the server list and in the kick screen.
+     */
     fun message(): String
 
-    /** Toggle maintenance and, optionally, update the message. Persists and broadcasts to every proxy. */
+    /**
+     * Toggle maintenance and, optionally, update the message. Persists and broadcasts to every proxy.
+     */
     suspend fun set(enabled: Boolean, message: String? = null)
 
     /**
@@ -25,16 +29,24 @@ interface MaintenanceService {
      */
     fun allowlist(): Set<String>
 
-    /** Whether [name] may bypass maintenance via the allowlist (case-insensitive). */
+    /**
+     * @return whether [name] may bypass maintenance via the allowlist (case-insensitive).
+     */
     fun isAllowed(name: String): Boolean
 
-    /** Add [name] to the allowlist. Returns true if it was newly added. Persists and broadcasts. */
+    /**
+     * Add [name] to the allowlist. Returns true if it was newly added. Persists and broadcasts.
+     */
     fun allow(name: String): Boolean
 
-    /** Remove [name] from the allowlist. Returns true if it was present. Persists and broadcasts. */
+    /**
+     * Remove [name] from the allowlist. Returns true if it was present. Persists and broadcasts.
+     */
     fun disallow(name: String): Boolean
 
-    /** Observe changes (a proxy re-reads its state to refresh the ping). Close to stop. */
+    /**
+     * Observe changes (a proxy re-reads its state to refresh the ping). Close to stop.
+     */
     fun onChange(listener: () -> Unit): AutoCloseable
 
     fun close()

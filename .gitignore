@@ -60,3 +60,10 @@ test-network/velocity/plugins/cryon/*
 !test-network/velocity/plugins/cryon/config.yml
 
 .kotlin/
+
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json

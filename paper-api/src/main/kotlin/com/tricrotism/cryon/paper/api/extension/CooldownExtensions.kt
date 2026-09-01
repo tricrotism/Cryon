@@ -16,7 +16,9 @@ import kotlin.time.Duration
 fun CooldownService.trigger(player: Player, id: String, duration: Duration): Boolean =
     trigger(player.uniqueId, id, duration)
 
-/** How long [player] must still wait for [id]. */
+/**
+ * How long [player] must still wait for [id].
+ */
 fun CooldownService.remaining(player: Player, id: String): Duration = remaining(player.uniqueId, id)
 
 /**

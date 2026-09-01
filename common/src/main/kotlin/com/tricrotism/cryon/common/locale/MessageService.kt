@@ -44,7 +44,9 @@ class MessageService(defaultLocale: Locale = Locale.US) {
     fun removeSource(source: MessageSource) = sources.remove(source)
     fun reload() = sources.forEach(MessageSource::reload)
 
-    /** First matching raw template across the [localeChain] and all sources, or `null`. */
+    /**
+     * First matching raw template across the [localeChain] and all sources, or `null`.
+     */
     fun template(locale: Locale, key: String): String? {
         for (candidate in localeChain(locale)) {
             for (source in sources) {
@@ -54,7 +56,9 @@ class MessageService(defaultLocale: Locale = Locale.US) {
         return null
     }
 
-    /** Every key any source can enumerate for [locale] (exact locale, no fallback), sorted for stable output. */
+    /**
+     * Every key any source can enumerate for [locale] (exact locale, no fallback), sorted for stable output.
+     */
     fun keys(locale: Locale): Set<String> = sources.flatMapTo(sortedSetOf()) { it.keys(locale) }
 
     /**
@@ -82,13 +86,17 @@ class MessageService(defaultLocale: Locale = Locale.US) {
         return missing.size
     }
 
-    /** Render [key] for [locale]; missing keys render as `⟨key⟩` so gaps are visible, not silent. */
+    /**
+     * Render [key] for [locale]; missing keys render as `⟨key⟩` so gaps are visible, not silent.
+     */
     fun render(locale: Locale, key: String, vararg resolvers: TagResolver): Component {
         val template = template(locale, key) ?: return missing(key)
         return format(template, resolvers)
     }
 
-    /** Pluralized render: tries `key.one` (count == 1) or `key.other`, then bare `key`. */
+    /**
+     * Pluralized render: tries `key.one` (count == 1) or `key.other`, then bare `key`.
+     */
     fun renderPlural(locale: Locale, key: String, count: Long, vararg resolvers: TagResolver): Component {
         val variant = if (count == 1L) "$key.one" else "$key.other"
         val template = template(locale, variant) ?: template(locale, key) ?: return missing(key)

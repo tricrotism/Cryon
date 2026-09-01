@@ -32,10 +32,14 @@ object Mini {
         .maximumSize(500_000)
         .build()
 
-    /** Deserialize [text] with the palette (cached ~15s, for static, resolver-free strings). */
+    /**
+     * Deserialize [text] with the palette (cached ~15s, for static, resolver-free strings).
+     */
     fun format(text: String): Component = cache.get(text) { mm.deserialize(it) }
 
-    /** Deserialize [text] with extra [resolvers] (not cached, resolvers vary per call). */
+    /**
+     * Deserialize [text] with extra [resolvers] (not cached, resolvers vary per call).
+     */
     fun format(text: String, vararg resolvers: TagResolver): Component =
         mm.deserialize(text, TagResolver.resolver(*resolvers))
 

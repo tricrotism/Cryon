@@ -33,10 +33,10 @@ fun interface Requirement<in S> {
 
     companion object {
 
-        /** Satisfied by everything. The identity for [and]; the neutral default for an optional gate. */
+        // Satisfied by everything. The identity for [and]; the neutral default for an optional gate
         val ALWAYS: Requirement<Any?> = Requirement { true }
 
-        /** Satisfied by nothing. The identity for [or]. */
+        // Satisfied by nothing. The identity for [or]
         val NEVER: Requirement<Any?> = Requirement { false }
 
         /**
@@ -52,7 +52,9 @@ fun interface Requirement<in S> {
             else -> requirements.reduce { left, right -> left and right }
         }
 
-        /** Satisfied when any of [requirements] is. Empty is [NEVER], since "no way in" admits nothing. */
+        /**
+         * Satisfied when any of [requirements] is. Empty is [NEVER], since "no way in" admits nothing.
+         */
         fun <S> any(requirements: List<Requirement<S>>): Requirement<S> = when (requirements.size) {
             0 -> NEVER
             1 -> requirements[0]
@@ -61,14 +63,20 @@ fun interface Requirement<in S> {
     }
 }
 
-/** Both, short-circuiting: [other] is not evaluated when the receiver already fails. */
+/**
+ * Both, short-circuiting: [other] is not evaluated when the receiver already fails.
+ */
 infix fun <S> Requirement<S>.and(other: Requirement<S>): Requirement<S> =
     Requirement { subject -> test(subject) && other.test(subject) }
 
-/** Either, short-circuiting: [other] is not evaluated when the receiver already passes. */
+/**
+ * Either, short-circuiting: [other] is not evaluated when the receiver already passes.
+ */
 infix fun <S> Requirement<S>.or(other: Requirement<S>): Requirement<S> =
     Requirement { subject -> test(subject) || other.test(subject) }
 
-/** The inverse. */
+/**
+ * The inverse.
+ */
 operator fun <S> Requirement<S>.not(): Requirement<S> =
     Requirement { subject -> !test(subject) }

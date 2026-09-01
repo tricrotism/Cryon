@@ -163,14 +163,20 @@ object Dialogs {
         }
     }
 
-    /** One option in a [choose], and the value it stands for. */
+    /**
+     * One option in a [choose], and the value it stands for.
+     */
     data class Choice<T>(val label: Component, val value: T, val tooltip: Component? = null)
 
-    /** A single-line text field. Read back with `getText(key)`. */
+    /**
+     * A single-line text field. Read back with `getText(key)`.
+     */
     fun textInput(key: String, label: Component, initial: String = "", maxLength: Int = 64): DialogInput =
         DialogInput.text(key, label).initial(initial).maxLength(maxLength).build()
 
-    /** A checkbox. Read back with `getBoolean(key)`. */
+    /**
+     * A checkbox. Read back with `getBoolean(key)`.
+     */
     fun boolInput(key: String, label: Component, initial: Boolean = false): DialogInput =
         DialogInput.bool(key, label).initial(initial).build()
 
@@ -211,7 +217,9 @@ object Dialogs {
         ).build()
     }
 
-    /** One entry of an [optionInput] dropdown. */
+    /**
+     * One entry of an [optionInput] dropdown.
+     */
     data class Option(val id: String, val display: Component, val selected: Boolean = false)
 
     /**
@@ -323,16 +331,14 @@ object Dialogs {
     private val CANCEL: Component = Component.text("Cancel")
     private val OK: Component = Component.text("OK")
 
-    /** The key [text] reads its single field back under. Private: nothing outside needs to name it. */
+    // The key [text] reads its single field back under. Private: nothing outside needs to name it
     private const val SINGLE = "value"
 
-    /**
-     * One use, and a lifetime that outlives any reasonable deliberation.
-     *
-     * `uses(1)` makes the client-side callback single-shot, belt to the latch's braces. The latch
-     * already collapses duplicates; there is simply no reason to keep a live callback registered on
-     * the server once it has fired. The lifetime reclaims one for a dialog nobody ever answered.
-     */
+    // One use, and a lifetime that outlives any reasonable deliberation.
+    //
+    // `uses(1)` makes the client-side callback single-shot, belt to the latch's braces. The latch
+    // already collapses duplicates; there is simply no reason to keep a live callback registered on
+    // the server once it has fired. The lifetime reclaims one for a dialog nobody ever answered
     private val ONE_SHOT: ClickCallback.Options = ClickCallback.Options.builder()
         .uses(1)
         .lifetime(Duration.ofMinutes(10))

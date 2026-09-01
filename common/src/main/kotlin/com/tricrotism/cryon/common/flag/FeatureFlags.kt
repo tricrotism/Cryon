@@ -47,20 +47,18 @@ class FeatureFlags(
     @Volatile
     private var hasPlayerOverrides = false
 
-    /** What the last [load] put in [flags], so the next one can tell a deletion from a fresh register. */
+    // What the last [load] put in [flags], so the next one can tell a deletion from a fresh register
     @Volatile
     private var loaded: Set<Pair<String, String>> = emptySet()
 
-    /**
-     * Owns the persistence behind every mutation.
-     *
-     * The in-memory update stays **synchronous** and the SQL write and broadcast are launched
-     * behind it, which is what the futures did before. That split is the contract, not an
-     * implementation detail: [isEnabled] is a map read on an event-handler path and [register] is
-     * called from a module's `onEnable`, neither of which is a coroutine. Making them suspend would
-     * push the colour through every caller to buy nothing, since the durable write was never what a
-     * flag check waited on.
-     */
+    // Owns the persistence behind every mutation.
+    //
+    // The in-memory update stays **synchronous** and the SQL write and broadcast are launched
+    // behind it, which is what the futures did before. That split is the contract, not an
+    // implementation detail: [isEnabled] is a map read on an event-handler path and [register] is
+    // called from a module's `onEnable`, neither of which is a coroutine. Making them suspend would
+    // push the colour through every caller to buy nothing, since the durable write was never what a
+    // flag check waited on
     private val scope = CoroutineScope(
         SupervisorJob() + CryonIO.dispatcher + CoroutineExceptionHandler { _, error ->
             logger.error("Unhandled failure in a coroutine of the feature flag service", error)

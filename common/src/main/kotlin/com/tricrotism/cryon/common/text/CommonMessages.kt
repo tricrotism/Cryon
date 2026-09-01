@@ -18,7 +18,7 @@ object CommonMessages {
 
     var defaultLocale: Locale = Locale.US
 
-    /** Soft separator for [basic]/[alert]. */
+    // Soft separator for [basic]/[alert]
     val ARROWS: Component = Component.text("»").color(CryonPalette.SLATE_GRAY)
 
     const val KEY_PREFIX = "cryon.common.prefix"
@@ -73,7 +73,9 @@ object CommonMessages {
         feature.lowercase().split('_').filter { it.isNotEmpty() }
             .joinToString(" ") { word -> word.replaceFirstChar { it.uppercase() } }
 
-    /** "<name> has never joined the server before!" */
+    /**
+     * "<name> has never joined the server before!"
+     */
     fun errorPlayer(name: String, locale: Locale = defaultLocale): Component =
         error(
             Messages.getOr(
@@ -83,7 +85,9 @@ object CommonMessages {
             )
         )
 
-    /** "<name> is not online!" */
+    /**
+     * "<name> is not online!"
+     */
     fun notOnline(name: String, locale: Locale = defaultLocale): Component =
         error(
             Messages.getOr(
@@ -93,7 +97,9 @@ object CommonMessages {
             )
         )
 
-    /** "<amount> is not a valid amount!" */
+    /**
+     * "<amount> is not a valid amount!"
+     */
     fun errorAmount(amount: String, locale: Locale = defaultLocale): Component =
         error(
             Messages.getOr(
@@ -115,7 +121,9 @@ object CommonMessages {
     fun notEnoughCurrency(currency: String, locale: Locale = defaultLocale): Component =
         notEnoughCurrency(Mini.format("<off_white>$currency"), locale)
 
-    /** Generic prefixed message with a custom prefix component and the `»` separator. */
+    /**
+     * Generic prefixed message with a custom prefix component and the `»` separator.
+     */
     fun basic(prefix: Component, content: Component): Component =
         Component.text()
             .append(prefix)

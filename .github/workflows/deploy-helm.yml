@@ -1,0 +1,95 @@
+name: Deploy Helm chart
+
+# The fourth thing that travels through git, and the only one that is not the plugin's job: config,
+# lang bundles and module jars are pulled by each process through `GitDeploy`, but the cluster itself
+# has to be pushed to, because nothing inside it is watching this repository.
+#
+# Runs only on commits that actually touch the chart, so an unrelated push does not re-roll the
+# fleet.
+
+on:
+    push:
+        branches: [ master, main ]
+        paths:
+            - "deploy/helm/**"
+            - ".github/workflows/deploy-helm.yml"
+    workflow_dispatch:
+        inputs:
+            environment:
+                description: Which environment to deploy
+                required: true
+                default: production
+                type: choice
+                options: [ production, staging ]
+
+concurrency:
+    # One rollout at a time. Two overlapping `helm upgrade` runs on the same release leave whichever
+    # finished last in charge, which is not necessarily the newer commit.
+    group: helm-${{ github.ref }}
+    cancel-in-progress: false
+
+jobs:
+    deploy:
+        runs-on: ubuntu-latest
+        environment: ${{ inputs.environment || 'production' }}
+        steps:
+            -   uses: actions/checkout@v4
+
+            # Everything below needs cluster access, so the job says plainly that it is not configured
+            # rather than failing later with a connection error that reads like an outage.
+            -   name: Check for cluster credentials
+                id: creds
+                env:
+                    KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+                run: |
+                    if [ -z "$KUBE_CONFIG" ]; then
+                      echo "KUBE_CONFIG is not set for this environment; skipping the rollout." >> "$GITHUB_STEP_SUMMARY"
+                      echo "configured=false" >> "$GITHUB_OUTPUT"
+                    else
+                      echo "configured=true" >> "$GITHUB_OUTPUT"
+                    fi
+
+            -   name: Set up kubeconfig
+                if: steps.creds.outputs.configured == 'true'
+                env:
+                    KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+                run: |
+                    install -d -m 700 "$HOME/.kube"
+                    printf '%s' "$KUBE_CONFIG" | base64 -d > "$HOME/.kube/config"
+                    chmod 600 "$HOME/.kube/config"
+
+            -   name: Set up Helm
+                if: steps.creds.outputs.configured == 'true'
+                uses: azure/setup-helm@v4
+
+            -   name: Lint
+                if: steps.creds.outputs.configured == 'true'
+                run: helm lint deploy/helm/cryon
+
+            # A dry run against the live cluster catches a chart that renders but will not apply (an
+            # immutable field, a missing CRD), which `helm lint` cannot see on its own.
+            -   name: Render against the cluster
+                if: steps.creds.outputs.configured == 'true'
+                run: |
+                    helm upgrade --install cryon deploy/helm/cryon \
+                      --namespace "${{ vars.CRYON_NAMESPACE || 'cryon' }}" \
+                      --create-namespace \
+                      --dry-run
+
+            -   name: Roll out
+                if: steps.creds.outputs.configured == 'true'
+                run: |
+                    helm upgrade --install cryon deploy/helm/cryon \
+                      --namespace "${{ vars.CRYON_NAMESPACE || 'cryon' }}" \
+                      --create-namespace \
+                      --atomic \
+                      --timeout 10m \
+                      --set image.tag="${GITHUB_SHA::8}"
+
+            -   name: Summarise
+                if: steps.creds.outputs.configured == 'true'
+                run: |
+                    {
+                      echo "### Rolled out \`${GITHUB_SHA::8}\`"
+                      helm status cryon --namespace "${{ vars.CRYON_NAMESPACE || 'cryon' }}" | head -20
+                    } >> "$GITHUB_STEP_SUMMARY"

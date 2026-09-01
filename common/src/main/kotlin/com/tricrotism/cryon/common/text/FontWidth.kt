@@ -1,7 +1,5 @@
 package com.tricrotism.cryon.common.text
 
-import com.tricrotism.cryon.common.text.FontWidth.WIDTHS
-
 
 /**
  * Pixel metrics of the Minecraft default font. Used to align MOTD segments (padding with spaces,
@@ -21,24 +19,16 @@ import com.tricrotism.cryon.common.text.FontWidth.WIDTHS
  */
 object FontWidth {
 
-    /**
-     * Advance of a space, and the granularity space-padding alignment can reach.
-     */
+    // Advance of a space, and the granularity space-padding alignment can reach
     const val SPACE = 4
 
-    /**
-     * Advance of any glyph not in [WIDTHS]: most letters, digits, and accented Latin forms.
-     */
+    // Advance of any glyph not in [WIDTHS]: most letters, digits, and accented Latin forms
     const val DEFAULT = 6
 
-    /**
-     * Extra advance per rendered glyph when bold (the 1px shadow shift; the empty space is exempt).
-     */
+    // Extra advance per rendered glyph when bold (the 1px shadow shift; the empty space is exempt)
     const val BOLD_EXTRA = 1
 
-    /**
-     * The legacy formatting introducer; `§` followed by a code is zero-width.
-     */
+    // The legacy formatting introducer; `§` followed by a code is zero-width
     const val LEGACY_CHAR = '§'
 
     private val WIDTHS: Map<Char, Int> = buildMap {

@@ -33,20 +33,18 @@ class ModuleLoader(
     private val messageService: MessageService,
     private val context: ModuleContext,
     private val log: Logger,
-    /** `plugins/Cryon/modules/`. The originals admins add, replace, and delete. */
+    // `plugins/Cryon/modules/`. The originals admins add, replace, and delete
     val modulesDir: File,
-    /** Private copies we actually class-load, so the originals never lock. */
+    // Private copies we actually class-load, so the originals never lock
     private val cacheDir: File,
     private val coreLoader: ClassLoader,
-    /**
-     * Watches whether an unloaded jar's classloader is actually reclaimed.
-     *
-     * The one measurement that says whether a hot-swap really worked. Everything else, services
-     * dropped, commands unregistered, windows closed, tasks cancelled, is this loader *trying* to
-     * remove the last references to a jar; only the collector can confirm it succeeded. A live count
-     * that climbs across reloads of the same jar is the module leaking, and nothing else in the
-     * server can see it (see [Retention]).
-     */
+    // Watches whether an unloaded jar's classloader is actually reclaimed.
+    //
+    // The one measurement that says whether a hot-swap really worked. Everything else, services
+    // dropped, commands unregistered, windows closed, tasks cancelled, is this loader *trying* to
+    // remove the last references to a jar; only the collector can confirm it succeeded. A live count
+    // that climbs across reloads of the same jar is the module leaking, and nothing else in the
+    // server can see it (see [Retention])
     private val retention: Retention,
 ) {
 
@@ -66,7 +64,9 @@ class ModuleLoader(
         fun loadedClass(name: String): Class<*>? = findLoadedClass(name)
     }
 
-    /** A module jar as the profiler should present it: display [name] (its module ids) + [version]. */
+    /**
+     * A module jar as the profiler should present it: display [name] (its module ids) + [version].
+     */
     data class ModuleSource(val name: String, val version: String)
 
     @Volatile
@@ -130,7 +130,9 @@ class ModuleLoader(
         return enabled
     }
 
-    /** Wipe any copies left behind by a previous (possibly crashed) run, then ensure the dir exists. */
+    /**
+     * Wipe any copies left behind by a previous (possibly crashed) run, then ensure the dir exists.
+     */
     fun prepareCache() {
         cacheDir.listFiles()?.forEach { it.delete() }
         cacheDir.mkdirs()
@@ -166,18 +168,26 @@ class ModuleLoader(
         return loaded.filter { manager.state(it) == ModuleState.ENABLED }
     }
 
-    /** Hot-load every jar present in `modules/` that isn't loaded yet. Returns newly enabled ids. */
+    /**
+     * Hot-load every jar present in `modules/` that isn't loaded yet. Returns newly enabled ids.
+     */
     fun loadNew(): List<String> = jarFiles().filterNot(::isLoaded).flatMap(::loadJar)
 
-    /** Hot-remove the jar that declares [id] (disables + unregisters all its modules). */
+    /**
+     * Hot-remove the jar that declares [id] (disables + unregisters all its modules).
+     */
     fun unloadModule(id: String): List<String>? = moduleToJar[id]?.let(::unloadByKey)
 
-    /** Hot-remove a jar by file (used by the watcher on delete; the file may already be gone). */
+    /**
+     * Hot-remove a jar by file (used by the watcher on delete; the file may already be gone).
+     */
     fun unloadJar(source: File): List<String>? = unloadByKey(key(source))
 
     fun isLoaded(source: File): Boolean = jars.containsKey(key(source))
 
-    /** Jar files sitting in `modules/` that aren't loaded yet, for the `/cryon load` suggester. */
+    /**
+     * Jar files sitting in `modules/` that aren't loaded yet, for the `/cryon load` suggester.
+     */
     fun loadableJarNames(): List<String> = jarFiles().filterNot(::isLoaded).map(File::getName)
 
     /**
@@ -203,10 +213,14 @@ class ModuleLoader(
         return null
     }
 
-    /** Snapshot of every loaded jar's source info. Spark's "known sources" metadata. */
+    /**
+     * Snapshot of every loaded jar's source info. Spark's "known sources" metadata.
+     */
     fun sources(): Collection<ModuleSource> = loaderSources.values.toList()
 
-    /** Close every loader (modules before the shared parent) and clear the cache. For plugin disable. */
+    /**
+     * Close every loader (modules before the shared parent) and clear the cache. For plugin disable.
+     */
     fun close() {
         jars.values.forEach { jar ->
             runCatching { context.services.unregisterByClassLoader(jar.loader) }
@@ -333,7 +347,9 @@ class ModuleLoader(
 
     private fun key(file: File): String = file.toPath().toAbsolutePath().normalize().toString()
 
-    /** `cryon-economy-1.0.0.jar` -> `1.0.0`; falls back to the whole base name for unversioned jars. */
+    /**
+     * `cryon-economy-1.0.0.jar` -> `1.0.0`; falls back to the whole base name for unversioned jars.
+     */
     private fun jarVersion(fileName: String): String {
         val base = fileName.removeSuffix(".jar")
         return Regex("-(\\d[\\w.+-]*)$").find(base)?.groupValues?.get(1) ?: base

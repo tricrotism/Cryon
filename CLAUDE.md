@@ -588,6 +588,66 @@ one 401s honestly instead of falling back to somebody else's account. The first 
 blocking startup on a network fetch would make an unreachable repository an unbootable server. Surfaced as
 `/cryon remote` (what is tracked, what has been fetched) and `/cryon remote check` (poll now).
 
+**GitOps delivery (`…common.deploy`).** A git repository is polled and its contents laid down where the loaders already
+look: `config.yml`, the `lang/` overrides, and `modules/*.jar`. Off by default (`deploy.enabled`), and wired identically
+on all three platforms through `buildGitDeploy(...)`, so the loaders differ only in their directories and their two
+reload hooks.
+
+**No git client and no JGit.** The two things needed are a ref lookup and a download, so it is two `HttpClient`
+requests, exactly as `RemoteModules` talks to Maven. The ref comes from git's own smart-HTTP advertisement
+(`/info/refs?service=git-upload-pack`), which every forge serves and which is a few kilobytes, so polling is nearly
+free; the tree comes from the forge's **zip** archive, because the JDK reads zip and has no tar reader. Credentials are
+env-first with no default (`CRYON_DEPLOY_USERNAME`/`CRYON_DEPLOY_PASSWORD`), so a public repository sends no
+`Authorization` header and a private one 401s honestly. Archive entries are checked to resolve inside the extraction
+root before anything is written, since a deploy repository is exactly the kind of thing that takes a pull request from
+somebody who is not an operator.
+
+**One repository, a folder per server (`deploy.folder`).** The repository carries `geyser/`, `velocity/`,
+`lifesteal8/` side by side and every `deploy.paths.*` entry resolves *inside* the selected folder, so a file only ever
+reaches the server whose folder it sits in. `{server}` is the default and resolves to this node's pool name, which is
+what a pool of interchangeable nodes wants; name it explicitly when the folder is not called after the pool. A folder
+the repository does not have is logged with the list of folders it *does* have, because a typo there is otherwise
+indistinguishable from a commit that changed nothing, and `/cryon deploy` prints the folder in use for the same reason.
+
+**`deploy.paths.data` mirrors `plugins/Cryon/data/<module-id>/`**, so a server folder holds only the module configs it
+actually changes. **A module the folder does not carry is not overridden at all**: it extracts the default bundled in
+its own jar on first run, exactly as it does with no deploy configured. That falls out of two rules already in place
+rather than being a new mechanism, and is why it needs no merge step: the delivery never deletes, and
+`PaperModule.config()` extracts the bundled default whenever the file is absent. It also needs no reload hook, since
+`config()` is a fresh read each call.
+
+**A branch is selected by name, and a branch that is not there falls back rather than failing.**
+`deploy.branch` is a bare name (`main`, `feature/shop-rework`), mirroring `remote.artifacts[].branch`, because that is
+what an operator has in their head and types in a pull request; anything already starting with `refs/` is taken
+verbatim, which is how a server pins to a tag without a second key to say which kind of thing it is. When the repository
+does not advertise that branch the chain is **its own default branch, then `main`, then `master`**. The default comes
+from
+`symref=HEAD:refs/heads/<name>` in the first ref's capability list, which is the only place a repository actually states
+it, so a trunk that is not called `main` is followed correctly rather than guessed at; the two literals come last
+because a server that omits `symref` leaves no other way to find it. The point is that deleting a merged feature branch
+returns the servers following it to the trunk instead of freezing them on its last commit forever. The fallback is
+logged once, when the followed ref *changes*, since a warning repeated every poll is one operators learn to filter out,
+and
+`/cryon deploy` names the ref actually being followed.
+
+**It delivers and stops, and that split is the whole design.** A jar written into `modules/` hot-swaps when
+`modules.auto-reload` is on and waits for a restart when it is not, exactly as if an admin had dropped it in; lang files
+are re-read by `MessageService.reload`. **A second switch letting a commit apply where a local change could not is the
+surprise this refuses**, the same rule `remote.enabled` follows. `config.yml` is the one exception and is re-read
+immediately, because nothing was watching it before.
+
+**Nothing is ever deleted.** A file dropped from the repository stays on disk, so a bad merge cannot empty a server. A
+target is written only where the bytes differ, so an unrelated commit does not fire the config reload hook. The commit
+is recorded in `deploy-state.properties` **after** the writes land and **before** the hooks run: a process killed
+mid-apply re-applies the same commit rather than skipping it, and a hook that throws does not make every later poll
+rewrite everything and throw again. `{server}` in a repository path resolves to this node's `serverId` (`proxy` and
+`geyser` on those two, which belong to no pool), so one repository holds per-pool config.
+
+The fourth thing that travels through git, the `deploy/` Helm chart, is **not** the plugin's job: nothing inside the
+cluster is watching the repository, so it is pushed by `.github/workflows/deploy-helm.yml` on commits touching the
+chart. Exercised by `common/src/test/kotlin/…/GitDeployTest.kt`, which fakes the repository, because the semantics worth
+proving (never delete, rewrite only what changed, record after writing) are not about HTTP.
+
 **`api/` reload (cascade).** The `api/` contract layer parents every module loader, so it can't be
 swapped alone (running modules stay linked to the old contract classes). `/cryon reload-api` does the
 only coherent thing: unload **all** modules → close + reload the `api/` loader → reload every module
@@ -1118,6 +1178,23 @@ Four rules, and the first is the one that matters:
 - **A write broadcasts.** Every mutation publishes the touched account so other nodes drop their cached copy, and fires
   a `CurrencyChange` (`before`/`after`/exact `delta`/reason) to `onChange` listeners, which is the hook for audit logs,
   quests and achievements.
+- **An outage queues credits and refuses debits, and the asymmetry is the whole design** (`CurrencyJournal`). A deposit
+  is `balance += n`: it reads nothing to decide, it commutes, and two nodes applying one concurrently is fine, so a
+  deposit the ledger will not take is written to `plugins/Cryon/currency-journal.bin` and applied when it comes back. A
+  withdraw is `balance -= n if balance >= n`, and that condition needs an authoritative read; deferring it would mean
+  handing goods over against a balance nobody can verify, which is how an outage becomes a dupe. So debits answer **
+  `WithdrawResult.UNAVAILABLE`** and take nothing. **Use `tryWithdraw` for anything that tells the player why.**
+  `withdraw`'s `Boolean` is correct for deciding whether to hand the goods over and wrong for the message after it:
+  collapsing "they were short" into "the ledger is unreachable" makes a shop call a player broke during an outage. Same
+  distinction `transfer` already has to make. **Exactly-once is what makes the replay safe, and it is not free.** A
+  `compareAndSet` that throws may still have committed (connection-refused did not, a dropped connection or timeout
+  might), so `applyCredit` claims the credit's op id and moves the balance in **one transaction** against
+  `cryon_currency_ops`, pruned on a week's retention. A queued credit carries its currency's starting balance rather
+  than looking it up, because the drain runs at boot, *before* modules register their currencies, and a lookup made that
+  drain a silent no-op. Drained on `init` and on the
+  `currency.drain-seconds` timer, because an outage ends while the server is still up. Exercised by
+  `common/src/test/kotlin/…/CurrencyOutageTest.kt`, the case a running server cannot reach: a database that takes the
+  schema, then refuses, then returns.
 
 Core commands: `/balance [player]` (`cryon.currency.balance.others`), `/pay <player> <currency> <amount>`
 (`cryon.currency.pay`), `/currency list|top|give|take|set` (`cryon.currency.admin`). Leaderboards are a cached snapshot
@@ -1158,6 +1235,22 @@ refreshed by an async timer (`currency.leaderboard-refresh-seconds`, default 300
   logged as a handoff bug), not to merge one. The feature still owns its table: create it in your own `migrate` with
   `Repository.BASE_COLUMNS_DDL`, and describe the columns with a `RowCodec<T>`. It is not an ORM and should not grow
   into one.
+- **`SpillStore`. What a checkpoint does when the database is gone.** A failed `flush()` already kept its dirty marks
+  and retried, which costs nothing *while the process keeps running*. What it did not survive is the process ending
+  while the database is still down, and that is the ordinary shape of the incident rather than a rare one, since
+  restarting servers is a normal response to an outage. So a failed checkpoint also writes its rows to
+  `plugins/Cryon/.spill/<table>.bin` and a later checkpoint that succeeds writes them through and clears the file. A
+  `SqlRepository` reads its spill in its constructor, so recovery is simply "the dirty set survived the restart" and no
+  feature calls anything new. The file is rewritten whole (rows are keyed by id, so the newest value is the only one
+  worth keeping and a rewrite is bounded by the dirty set for free) through a temp file and an atomic move, so a kill
+  mid-write leaves either the old spill or the new one. Installed by each loader via `SpillStore.install(dir)` before
+  any module loads, the shape `Locales.install` uses, so a feature cannot forget to opt in. **Only the write-behind path
+  spills, and `CurrencyService` must never.** Its writes are compare-and-set, so replaying one after an outage applies a
+  debit against a balance that has since moved: an outage would become a dupe. That is the same split `Repository`
+  already draws between single-owner state, where last-write-wins makes a replay idempotent, and state several nodes
+  write at once, where it does not. **A withdraw refused because SQL is unreachable stays refused.** Exercised by
+  `common/src/test/kotlin/…/SpillDurabilityTest.kt`, the one case a running server cannot reach (a database that takes
+  the schema and then refuses the checkpoint).
 - `Messenger`. `publish`/`subscribe` + `request`/`handle`. String payloads. **Always registered**
   (`get<Messenger>()`): `RedisMessenger` when `redis.enabled`, else `LocalMessenger`.
 - `KeyValueStore`. Suspending KV with TTL (`set`/`get`/`delete`/`keys`/`mget`/`tryHold`), for state that must expire on
@@ -1171,13 +1264,34 @@ refreshed by an async timer (`currency.leaderboard-refresh-seconds`, default 300
   `currency.*` (`enabled: false`), `commands.menu` (default `true`), `production` (default `true`) and
   `modules.auto-reload` (defaults to `!production`).
 
-**Config defaults and migration (`…common.config`).** Two rules, and both exist because the same keys are read by three
-platforms.
+**Config (`…common.config`). One typed reader, three platforms, and the default declared once.**
 
-**`ConfigDefaults` owns the default for every key more than one platform reads.** Paper, Velocity and Geyser each used
-to carry their own copy of `postgresql`/`localhost`/`cryon`/`5`, agreeing by hand, which is the arrangement that holds
-until somebody tunes one of them. A default belonging to exactly one platform (`commands.menu`, `motd.width`,
-`network.agones.*`) stays at its read site, since sharing a value nothing else reads only hides where it lives. The
+**`Config` + `ConfigKey` replaced reading config by dotted string.** Paper read `FileConfiguration` and the two proxies
+had each grown a near-identical hand-rolled SnakeYAML dotted-path reader, so the same question was asked three ways and
+every read site carried its own copy of the default. A key that was read from two places could disagree with itself with
+nothing to say so, and a typo in a path silently produced the default rather than failing.
+
+A key is now declared once with its path, type, default and constraint (`ConfigKeys.int("database.max-pool-size", 10,
+1..256)`) and read as `config[CoreKeys.DATABASE_MAX_POOL_SIZE]`. There is nowhere for a second opinion to live, a typo
+is a compile error, and a value the key refuses stops the boot naming the key instead of quietly falling back. **
+`CoreKeys`** holds every key more than one platform reads; **`PaperKeys`**/ **`VelocityKeys`** hold that platform's own,
+because sharing a value nothing else reads only hides where it lives. `ConfigSource` is the seam (`YamlConfigSource` is
+the only implementation) and SnakeYAML is used on all three platforms because all three already have it: Paper declares
+it in `plugin.yml` `libraries:` for `ConfigMigrator`, and the proxies shade it.
+
+**Resolution is environment, then file, then the key's default**, with the variable name derived from the path
+(`database.max-pool-size` → `CRYON_DATABASE_MAX_POOL_SIZE`) so the two cannot drift. That generalizes the env-first
+handling `NodeIdentity` and the remote-module credentials already did by hand. **A key declared with no default is
+required**, and reading one that is unset throws naming both the key and its variable, which is the shape credentials
+want. Two keys are deliberately defaultless because their fallback is not a constant: `database.port` follows the
+dialect and `modules.auto-reload` follows `production`, so both are read with `find(...) ?: …`.
+
+**Reloading swaps the source and tells its listeners** (`config.onReload { }`, returning a handle a module must close on
+disable). Nothing is re-read behind a consumer's back: a value a running process cannot act on, a pool that is already
+built, is simply not re-read by anyone, which is honest where quietly updating the field would leave the config claiming
+something the process is not doing.
+
+**The migration rules are unchanged, and both exist because the same keys are read by three platforms.** The
 shipped `config.yml` templates still spell the values out, and that duplication is the one direction that cannot drift
 silently: the template is documentation an operator reads and edits, and the migration copies their edit over the
 default rather than the other way round.
@@ -1457,6 +1571,8 @@ of populated shards on node upgrades. Add infrastructure **and document it here 
 | `VelocityModule.registerCommands(...)`                            | `AnnotationCommands.register(proxy.commandManager, …)` direct   |
 | `services.find<CurrencyService>()` (optional, like SQL)           | `get<CurrencyService>()` assuming an economy is configured      |
 | Branch the reward on `withdraw`'s returned `Boolean`              | Reading a balance to decide, then taking it separately          |
+| `tryWithdraw` wherever the player is told why it failed           | Calling a player broke when the ledger is simply unreachable    |
+| Let a failed deposit queue and replay under its op id             | Queuing a debit (it needs a read nobody can make offline)       |
 | `cachedBalance` for HUDs/placeholders only                        | Deciding a purchase from `cachedBalance`                        |
 | Branch all three `TransferResult` values                          | Collapsing `INSUFFICIENT` and `FAILED` into "not completed"     |
 | `@Command`/`@Subcommand` + `AnnotationCommands.register`          | `plugin.yml commands:` / `CommandMap` / Cloud (broken on 26.2)  |
@@ -1477,6 +1593,8 @@ of populated shards on node upgrades. Add infrastructure **and document it here 
 | `/cryon retention` trend across reloads                           | Reading one live count as proof of a leak                       |
 | `remote.enabled` + let `modules.auto-reload` gate applying        | A second switch letting remote builds swap when local can't     |
 | A stable jar filename per remote artifact                         | A versioned filename (the loader then sees the module twice)    |
+| A folder per server, paths resolved inside it                     | One shared tree every server reads the same files out of        |
+| Ship only the module configs a server actually changes            | Copying every module's default in so it can never be updated    |
 | `Provisioner` + a `NodeSelector`                                  | Hand-rolling a scan-then-scale loop over the registry           |
 | Branching `Pending` apart from `Unavailable`                      | Telling a player "broken" while a node is still booting         |
 | `colony.isQueen(service)` to gate pool-wide repeating work        | Running a market tick on every node of a pool                   |
@@ -1492,6 +1610,10 @@ of populated shards on node upgrades. Add infrastructure **and document it here 
 | `track(BossBars.create(...))`                                     | A bar left open through a hot-unload (renders with no owner)    |
 | `ActionBars.send(..., priority, key)`                             | Raw `sendActionBar` for anything persistent or contended        |
 | `Repository.stage(...)` + a flush timer for player state          | A hand-rolled map + dirty flag + full-file rewrite              |
+| `config[CoreKeys.X]` through a declared key                       | `getString("path", default)` with the default at the read site  |
+| A defaultless key for anything that must be set                   | An env-fallback default that silently connects as somebody else |
+| Let git delivery write files and stop                             | A second switch letting a commit apply where a local one cannot |
+| Let a failed checkpoint spill to disk and retry                   | Journaling currency writes (a replayed CAS is a dupe)           |
 | `session.batch(sql, rows)` for a checkpoint                       | A loop of `update()` per row                                    |
 | `hsetIfAbsent` / `setIfAbsent` to claim                           | `hgetAll` then `hset` (check-then-act)                          |
 | A `MenuContent` for anything longer than a page                   | Materializing every node to show the first twenty-eight         |

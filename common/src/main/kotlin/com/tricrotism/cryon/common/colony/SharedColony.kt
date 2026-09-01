@@ -36,7 +36,7 @@ class SharedColony(
     @Volatile
     private var leaving = false
 
-    /** Scoped to the pool: two different servers may both run a service named `market`. */
+    // Scoped to the pool: two different servers may both run a service named `market`
     private val key = "cryon:colony:$serverId"
 
     override fun register(service: ClusterService, listener: ColonyListener?) {
@@ -64,7 +64,9 @@ class SharedColony(
         return null
     }
 
-    /** Null while contested, because picking a side is how two nodes act on the same answer. */
+    /**
+     * Null while contested, because picking a side is how two nodes act on the same answer.
+     */
     private fun resolveQueen(service: ClusterService): String? =
         (elector.status(service.id) as? QueenStatus.Elected)?.nodeId
 
@@ -110,7 +112,9 @@ class SharedColony(
         store.hset(key, nodeId, advertisement.encode(), hashTtl)
     }
 
-    /** Every live advertisement in the pool; stale ones are dropped rather than trusted. */
+    /**
+     * Every live advertisement in the pool; stale ones are dropped rather than trusted.
+     */
     private suspend fun read(): List<ColonyAdvertisement> {
         val cutoff = System.currentTimeMillis() - heartbeatTimeout.toMillis()
         return store.hgetAll(key).values
@@ -149,23 +153,21 @@ class SharedColony(
         }
     }
 
-    /** Comfortably longer than the timeout, so the hash outlives the entries it is holding. */
+    // Comfortably longer than the timeout, so the hash outlives the entries it is holding
     private val hashTtl: Duration = heartbeatTimeout.multipliedBy(HASH_TTL_MULTIPLIER)
 
     private companion object {
 
-        /**
-         * How long an advertisement is trusted after its last heartbeat.
-         *
-         * Sized against the tick interval the platform drives, not against a wall-clock intuition:
-         * it has to cover a missed tick plus the jitter of a busy server, or a healthy node gets
-         * declared dead and its crown handed to somebody else for one cycle.
-         */
+        // How long an advertisement is trusted after its last heartbeat.
+        //
+        // Sized against the tick interval the platform drives, not against a wall-clock intuition:
+        // it has to cover a missed tick plus the jitter of a busy server, or a healthy node gets
+        // declared dead and its crown handed to somebody else for one cycle
         val DEFAULT_TIMEOUT: Duration = Duration.ofSeconds(15)
 
         const val HASH_TTL_MULTIPLIER = 4L
 
-        /** Enough to ride out an election settling; short enough not to hang a command. */
+        // Enough to ride out an election settling; short enough not to hang a command
         const val ROUTE_ATTEMPTS = 4
         const val ROUTE_BACKOFF_MILLIS = 250L
     }

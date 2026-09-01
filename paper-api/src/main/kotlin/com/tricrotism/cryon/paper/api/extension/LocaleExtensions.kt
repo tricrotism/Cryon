@@ -6,7 +6,9 @@ import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver
 import org.bukkit.entity.Player
 
-/** Render [key] in [player]'s resolved locale (override ?: client; with fallback chain). */
+/**
+ * Render [key] in [player]'s resolved locale (override ?: client; with fallback chain).
+ */
 fun MessageService.render(player: Player, key: String, vararg resolvers: TagResolver): Component =
     render(player.resolvedLocale(), key, *resolvers)
 

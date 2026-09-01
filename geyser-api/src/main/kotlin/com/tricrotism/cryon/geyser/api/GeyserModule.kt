@@ -29,19 +29,21 @@ abstract class GeyserModule : Module {
     protected val services: ServiceRegistry get() = moduleContext.services
     protected val logger: Logger get() = moduleContext.logger
 
-    /**
-     * This module's own directory, `extensions/Cryon/data/<id>/`, created on first use. The Geyser
-     * twin of `PaperModule.dataFolder`, and therefore the same reason: the loader's own directory is
-     * not a namespace, and two modules writing into it share whatever names they both picked.
-     */
+    // This module's own directory, `extensions/Cryon/data/<id>/`, created on first use. The Geyser
+    // twin of `PaperModule.dataFolder`, and therefore the same reason: the loader's own directory is
+    // not a namespace, and two modules writing into it share whatever names they both picked
     protected val dataFolder: File by lazy {
         moduleContext.dataDirectory.resolve("data").resolve(id).toFile().apply { mkdirs() }
     }
 
-    /** Resolve a required peer service: sugar for `services.get<T>()`. */
+    /**
+     * Resolve a required peer service: sugar for `services.get<T>()`.
+     */
     protected inline fun <reified T : Any> service(): T = services.get()
 
-    /** Resolve an optional peer service, or null: sugar for `services.find<T>()`. */
+    /**
+     * Resolve an optional peer service, or null: sugar for `services.find<T>()`.
+     */
     protected inline fun <reified T : Any> serviceOrNull(): T? = services.find()
 
     override fun onLoad(context: ModuleContext) {
@@ -72,7 +74,9 @@ abstract class GeyserModule : Module {
      */
     protected fun <T : AutoCloseable> track(closeable: T): T = closeable.also { closeables += it }
 
-    /** Whether this module is currently in the `ENABLED` state, per the [ModuleManager]. */
+    /**
+     * @return whether this module is currently in the `ENABLED` state, per the [ModuleManager].
+     */
     protected fun isEnabled(): Boolean =
         services.find<ModuleManager>()?.state(id) == ModuleState.ENABLED
 

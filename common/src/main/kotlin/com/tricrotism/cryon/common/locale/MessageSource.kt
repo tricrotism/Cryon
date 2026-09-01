@@ -9,7 +9,9 @@ import java.util.*
  */
 interface MessageSource {
 
-    /** The raw MiniMessage template for [key] in [locale], or `null` if this source lacks it. */
+    /**
+     * The raw MiniMessage template for [key] in [locale], or `null` if this source lacks it.
+     */
     fun template(locale: Locale, key: String): String?
 
     /**
@@ -18,6 +20,8 @@ interface MessageSource {
      */
     fun keys(locale: Locale): Set<String> = emptySet()
 
-    /** Re-read backing storage (files, config). No-op for static sources. */
+    /**
+     * Re-read backing storage (files, config). No-op for static sources.
+     */
     fun reload() {}
 }

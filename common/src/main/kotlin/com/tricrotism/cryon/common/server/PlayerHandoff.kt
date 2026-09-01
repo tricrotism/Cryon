@@ -46,10 +46,10 @@ interface PlayerHandoff {
 
     companion object {
 
-        /** For a flush that hands state back to another feature, so it lands before that feature saves. */
+        // For a flush that hands state back to another feature, so it lands before that feature saves
         const val BEFORE_OWNERS: Int = -100
 
-        /** Where a feature that owns what it writes belongs. */
+        // Where a feature that owns what it writes belongs
         const val DEFAULT_STAGE: Int = 0
     }
 }

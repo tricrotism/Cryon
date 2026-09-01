@@ -4,40 +4,6 @@ import com.tricrotism.cryon.common.net.KeyValueStore
 import org.slf4j.Logger
 import java.time.Duration
 
-/** What kind of process an entry in the presence hash describes. */
-enum class PresenceKind {
-    PROXY,
-    GEYSER,
-}
-
-/**
- * One process announcing that it is up, and what it is.
- *
- * [detail] is whatever that kind of process is worth knowing beyond its name: a listen address, a
- * player count, a version. It is free text because nothing branches on it; it exists to be read by a
- * human in `/cryon network`.
- */
-data class PresenceEntry(
-    val kind: PresenceKind,
-    val id: String,
-    val detail: String,
-    val heartbeat: Long,
-) {
-    fun encode(): String = "$heartbeat$SEP${kind.name}$SEP$id$SEP$detail"
-
-    companion object {
-        private val SEP = Char(1)
-
-        fun decode(raw: String): PresenceEntry? {
-            val parts = raw.split(SEP, limit = 4)
-            if (parts.size != 4) return null
-            val heartbeat = parts[0].toLongOrNull() ?: return null
-            val kind = runCatching { PresenceKind.valueOf(parts[1]) }.getOrNull() ?: return null
-            return PresenceEntry(kind, parts[2], parts[3], heartbeat)
-        }
-    }
-}
-
 /**
  * Who else is on the network that the server registry cannot see.
  *
@@ -65,7 +31,9 @@ class Presence(
     private val timeout: Duration = DEFAULT_TIMEOUT,
 ) {
 
-    /** Publish this process, replacing its previous entry. Call on the heartbeat interval. */
+    /**
+     * Publish this process, replacing its previous entry. Call on the heartbeat interval.
+     */
     suspend fun announce(kind: PresenceKind, id: String, detail: String) {
         val entry = PresenceEntry(kind, id, detail, System.currentTimeMillis())
         try {
@@ -75,7 +43,9 @@ class Presence(
         }
     }
 
-    /** Every process announced within the timeout, newest heartbeat first. */
+    /**
+     * Every process announced within the timeout, newest heartbeat first.
+     */
     suspend fun all(): List<PresenceEntry> {
         val cutoff = System.currentTimeMillis() - timeout.toMillis()
         return try {
@@ -93,10 +63,11 @@ class Presence(
         private const val KEY = "cryon:presence"
         private const val FIELD_SEP = ':'
 
-        /** How long an entry is trusted after its last heartbeat. */
+        // How long an entry is trusted after its last heartbeat
         val DEFAULT_TIMEOUT: Duration = Duration.ofSeconds(30)
 
-        /** The hash outlives an entry by enough that a brief outage does not drop everyone at once. */
+        // The hash outlives an entry by enough that a brief outage does not drop everyone at once
         const val HASH_TTL_MULTIPLIER = 4L
     }
 }
+

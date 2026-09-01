@@ -1,8 +1,11 @@
 package com.tricrotism.cryon.velocity.motd
 
+import com.tricrotism.cryon.common.config.Config
+import com.tricrotism.cryon.common.config.CoreKeys
+import com.tricrotism.cryon.common.config.YamlConfigSource
 import com.tricrotism.cryon.common.text.FontWidth
 import com.tricrotism.cryon.common.text.Mini
-import com.tricrotism.cryon.velocity.config.VelocityConfig
+import com.tricrotism.cryon.velocity.config.VelocityKeys
 import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer
 import java.nio.file.Path
@@ -24,7 +27,7 @@ class Motd(private val configFile: Path) {
     private var rendered: Component? = null
 
     fun reload() {
-        val s = MotdSettings.from(VelocityConfig.load(configFile))
+        val s = MotdSettings.from(Config(YamlConfigSource.load(configFile)))
         settings = s
         rendered = if (!s.enabled) null else {
             val top = renderLine(s.topLeft, s.topCenter, s.topRight, s.width)
@@ -35,7 +38,9 @@ class Motd(private val configFile: Path) {
 
     fun isEnabled(): Boolean = settings.enabled
 
-    /** The two-line description, or `null` when disabled (so the caller leaves the ping untouched). */
+    /**
+     * The two-line description, or `null` when disabled (so the caller leaves the ping untouched).
+     */
     fun render(): Component? = rendered
 
     private fun renderLine(left: String, center: String, right: String, width: Int): Component {
@@ -82,15 +87,15 @@ class Motd(private val configFile: Path) {
         companion object {
             val EMPTY = MotdSettings(false, DEFAULT_WIDTH, "", "", "", "", "", "")
 
-            fun from(config: VelocityConfig) = MotdSettings(
-                enabled = config.boolean("motd.enabled", false),
-                width = config.int("motd.width", DEFAULT_WIDTH),
-                topLeft = config.string("motd.top.left", ""),
-                topCenter = config.string("motd.top.center", ""),
-                topRight = config.string("motd.top.right", ""),
-                bottomLeft = config.string("motd.bottom.left", ""),
-                bottomCenter = config.string("motd.bottom.center", ""),
-                bottomRight = config.string("motd.bottom.right", ""),
+            fun from(config: Config) = MotdSettings(
+                enabled = config[CoreKeys.MOTD_ENABLED],
+                width = config[VelocityKeys.MOTD_WIDTH],
+                topLeft = config[CoreKeys.MOTD_TOP_LEFT],
+                topCenter = config[CoreKeys.MOTD_TOP_CENTER],
+                topRight = config[CoreKeys.MOTD_TOP_RIGHT],
+                bottomLeft = config[CoreKeys.MOTD_BOTTOM_LEFT],
+                bottomCenter = config[CoreKeys.MOTD_BOTTOM_CENTER],
+                bottomRight = config[CoreKeys.MOTD_BOTTOM_RIGHT],
             )
         }
     }

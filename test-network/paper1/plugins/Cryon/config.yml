@@ -34,11 +34,11 @@ remote:
     poll-seconds: 300
     repositories:
         internal:
-            url: "https://maven.example.com/snapshots"
+            url: https://maven.example.com/snapshots
             # Prefer the environment variables above. These exist for a local test network where
             # there is no secret worth protecting.
-            username: ""
-            password: ""
+            username: ''
+            password: ''
     # Maven has no branches, so a branch is spliced into the version: version 1.0.0 on branch main
     # resolves to 1.0.0-main-SNAPSHOT, which is what CI publishes. Leave `branch` blank for a plain
     # 1.0.0-SNAPSHOT. A version with no -SNAPSHOT anywhere is a PIN: it resolves to exactly one

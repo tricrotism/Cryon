@@ -41,18 +41,18 @@ class NodeReporter(
     private val scope: CoroutineScope,
 ) {
 
-    /**
-     * Extra facts this node advertises alongside its liveness, merged into every heartbeat.
-     *
-     * A supplier rather than a fixed map because the things worth advertising are decided after the
-     * reporter exists, and because a heartbeat should carry what is true now rather than what was
-     * true at construction. This is what fills `Node.metadata`, which `NodeSelector.tagged` matches
-     * a provisioning request against.
-     */
+    // Extra facts this node advertises alongside its liveness, merged into every heartbeat.
+    //
+    // A supplier rather than a fixed map because the things worth advertising are decided after the
+    // reporter exists, and because a heartbeat should carry what is true now rather than what was
+    // true at construction. This is what fills `Node.metadata`, which `NodeSelector.tagged` matches
+    // a provisioning request against
     @Volatile
     private var metadata: () -> Map<String, String> = { emptyMap() }
 
-    /** Contribute [supplier]'s entries to every future heartbeat. Replaces any previous supplier. */
+    /**
+     * Contribute [supplier]'s entries to every future heartbeat. Replaces any previous supplier.
+     */
     fun advertise(supplier: () -> Map<String, String>) {
         metadata = supplier
     }
@@ -62,7 +62,7 @@ class NodeReporter(
     private var task: ScheduledTask? = null
 
     private companion object {
-        /** How long shutdown waits for the deregister before giving up and letting the TTL do it. */
+        // How long shutdown waits for the deregister before giving up and letting the TTL do it
         const val DEREGISTER_TIMEOUT_MILLIS = 2_000L
     }
 

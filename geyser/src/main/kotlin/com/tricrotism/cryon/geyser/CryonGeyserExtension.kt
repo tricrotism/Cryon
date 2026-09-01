@@ -1,12 +1,14 @@
 package com.tricrotism.cryon.geyser
 
 import com.tricrotism.cryon.common.concurrent.CryonIO
-import com.tricrotism.cryon.common.config.ConfigDefaults
+import com.tricrotism.cryon.common.config.Config
 import com.tricrotism.cryon.common.config.ConfigMigrator
-import com.tricrotism.cryon.common.data.Database
-import com.tricrotism.cryon.common.data.DatabaseConfig
-import com.tricrotism.cryon.common.data.SqlDatabase
-import com.tricrotism.cryon.common.data.SqlDialect
+import com.tricrotism.cryon.common.config.CoreKeys
+import com.tricrotism.cryon.common.config.YamlConfigSource
+import com.tricrotism.cryon.common.data.*
+import com.tricrotism.cryon.common.deploy.DeployKeys
+import com.tricrotism.cryon.common.deploy.DeployResult
+import com.tricrotism.cryon.common.deploy.GitDeploy
 import com.tricrotism.cryon.common.locale.DirectoryMessageSource
 import com.tricrotism.cryon.common.locale.LangScanner
 import com.tricrotism.cryon.common.locale.MessageService
@@ -24,7 +26,6 @@ import com.tricrotism.cryon.common.server.ServerRegistry
 import com.tricrotism.cryon.common.server.SharedServerRegistry
 import com.tricrotism.cryon.geyser.api.command.AnnotationCommands
 import com.tricrotism.cryon.geyser.command.ModuleCommands
-import com.tricrotism.cryon.geyser.config.GeyserConfig
 import com.tricrotism.cryon.geyser.maintenance.MaintenanceCommand
 import com.tricrotism.cryon.geyser.maintenance.MaintenanceGate
 import com.tricrotism.cryon.geyser.motd.BedrockMotd
@@ -68,11 +69,9 @@ class CryonGeyserExtension : Extension {
     private var database: Database? = null
     private var registry: ServerRegistry? = null
 
-    /**
-     * What this Geyser calls itself in the presence hash, resolved as `NodeIdentity` resolves a node
-     * id, random suffix and all: the presence hash is keyed by this name, so two processes falling
-     * back to the same literal would silently overwrite each other and read as one.
-     */
+    // What this Geyser calls itself in the presence hash, resolved as `NodeIdentity` resolves a node
+    // id, random suffix and all: the presence hash is keyed by this name, so two processes falling
+    // back to the same literal would silently overwrite each other and read as one
     private val geyserId: String by lazy {
         sequenceOf(System.getenv("CRYON_NODE"), System.getenv("HOSTNAME"))
             .firstOrNull { !it.isNullOrBlank() }
@@ -85,12 +84,12 @@ class CryonGeyserExtension : Extension {
     private var manager: ModuleManager? = null
     private var loader: GeyserModuleLoader? = null
     private val watchers = ArrayList<JarWatcher>()
+    private var gitDeploy: GitDeploy? = null
+    private var deployPoller: java.util.concurrent.ScheduledExecutorService? = null
 
-    /**
-     * The extension's coroutine scope, cancelled on shutdown. The Geyser twin of the proxy's: the
-     * Geyser event and command APIs are not suspending, so this is where calls into `:common`'s
-     * suspending services are launched from.
-     */
+    // The extension's coroutine scope, cancelled on shutdown. The Geyser twin of the proxy's: the
+    // Geyser event and command APIs are not suspending, so this is where calls into `:common`'s
+    // suspending services are launched from
     private val scope = CoroutineScope(
         SupervisorJob() + CryonIO.dispatcher + CoroutineExceptionHandler { _, error ->
             log.error("Unhandled failure in a Cryon Geyser coroutine", error)
@@ -113,6 +112,7 @@ class CryonGeyserExtension : Extension {
         setupMaintenance(services, cfg)
         setupMotd(dataDirectory)
         setupModules(services, dataDirectory, cfg)
+        startGitDeploy(services, dataDirectory, cfg)
         log.info("Cryon Geyser loader enabled")
     }
 
@@ -137,6 +137,9 @@ class CryonGeyserExtension : Extension {
 
     @Subscribe
     fun onShutdown(event: GeyserShutdownEvent) {
+        deployPoller?.shutdownNow()
+        deployPoller = null
+        gitDeploy = null
         watchers.forEach { runCatching { it.close() } }
         watchers.clear()
         manager?.disableAll()
@@ -150,6 +153,7 @@ class CryonGeyserExtension : Extension {
         // Last: a launch on a canceled scope is silently inert, so cancelling ahead of the teardown
         // above would drop the work it dispatches through this scope without a line in the log.
         scope.cancel("Geyser is shutting down")
+        SpillStore.install(null)
         CryonIO.shutdown()
     }
 
@@ -157,7 +161,7 @@ class CryonGeyserExtension : Extension {
      * Load `config.yml`, first bringing it up to date with the one shipped in this jar so a key
      * added since it was written is actually there to read. See [ConfigMigrator].
      */
-    private fun loadConfig(dataDirectory: Path): GeyserConfig {
+    private fun loadConfig(dataDirectory: Path): Config {
         Files.createDirectories(dataDirectory)
         val configFile = dataDirectory.resolve("config.yml")
         val template = javaClass.getResourceAsStream("/config.yml")?.use { it.readBytes().decodeToString() }
@@ -168,7 +172,7 @@ class CryonGeyserExtension : Extension {
                 .onFailure { log.error("Failed to migrate config.yml, continuing with what is on disk", it) }
                 .onSuccess { if (it) log.info("config.yml updated with keys added since it was written") }
         }
-        return GeyserConfig.load(configFile)
+        return Config(YamlConfigSource.load(configFile))
     }
 
     /**
@@ -189,18 +193,18 @@ class CryonGeyserExtension : Extension {
         File(javaClass.protectionDomain.codeSource.location.toURI())
     }.getOrNull()
 
-    private fun setupInfrastructure(services: ServiceRegistry, cfg: GeyserConfig) {
-        if (cfg.boolean("database.enabled", ConfigDefaults.DATABASE_ENABLED)) {
+    private fun setupInfrastructure(services: ServiceRegistry, cfg: Config) {
+        if (cfg[CoreKeys.DATABASE_ENABLED]) {
             try {
-                val dialect = SqlDialect.of(cfg.string("database.type", ConfigDefaults.DATABASE_TYPE))
+                val dialect = SqlDialect.of(cfg[CoreKeys.DATABASE_TYPE])
                 val db = SqlDatabase.connect(
                     DatabaseConfig(
-                        host = cfg.string("database.host", ConfigDefaults.DATABASE_HOST),
-                        port = cfg.int("database.port", dialect.defaultPort),
-                        database = cfg.string("database.database", ConfigDefaults.DATABASE_NAME),
-                        username = cfg.string("database.username", ConfigDefaults.DATABASE_USERNAME),
-                        password = cfg.string("database.password", ConfigDefaults.DATABASE_PASSWORD),
-                        maxPoolSize = cfg.int("database.max-pool-size", ConfigDefaults.DATABASE_MAX_POOL_SIZE),
+                        host = cfg[CoreKeys.DATABASE_HOST],
+                        port = cfg.find(CoreKeys.DATABASE_PORT) ?: dialect.defaultPort,
+                        database = cfg[CoreKeys.DATABASE_NAME],
+                        username = cfg[CoreKeys.DATABASE_USERNAME],
+                        password = cfg[CoreKeys.DATABASE_PASSWORD],
+                        maxPoolSize = cfg[CoreKeys.DATABASE_MAX_POOL_SIZE],
                         dialect = dialect,
                     ),
                     log,
@@ -215,11 +219,13 @@ class CryonGeyserExtension : Extension {
         setupTransport(services, cfg)
     }
 
-    /** Install the transport every other service is built on. Mirrors the Paper core and the proxy. */
-    private fun setupTransport(services: ServiceRegistry, cfg: GeyserConfig) {
-        if (cfg.boolean("redis.enabled", ConfigDefaults.REDIS_ENABLED)) {
+    /**
+     * Install the transport every other service is built on. Mirrors the Paper core and the proxy.
+     */
+    private fun setupTransport(services: ServiceRegistry, cfg: Config) {
+        if (cfg[CoreKeys.REDIS_ENABLED]) {
             try {
-                val config = RedisConfig(cfg.string("redis.uri", ConfigDefaults.REDIS_URI))
+                val config = RedisConfig(cfg[CoreKeys.REDIS_URI])
                 messenger = RedisMessenger(config, log)
                 store = RedisKeyValueStore(config)
                 sharedTransport = true
@@ -245,16 +251,16 @@ class CryonGeyserExtension : Extension {
      * because Geyser is not a place a player can be, and it never routes, because the connect is
      * performed by the proxy.
      */
-    private fun setupNetwork(services: ServiceRegistry, cfg: GeyserConfig) {
+    private fun setupNetwork(services: ServiceRegistry, cfg: Config) {
         if (!sharedTransport) {
             log.info("Server registry off (no redis). Geyser reads no network state")
             return
         }
-        if (!cfg.boolean("network.registry-enabled", ConfigDefaults.REGISTRY_ENABLED)) {
+        if (!cfg[CoreKeys.REGISTRY_ENABLED]) {
             log.info("Server registry disabled by config (network.registry-enabled=false)")
             return
         }
-        val heartbeat = cfg.long("network.heartbeat-seconds", ConfigDefaults.HEARTBEAT_SECONDS).coerceAtLeast(1)
+        val heartbeat = cfg[CoreKeys.HEARTBEAT_SECONDS]
         startPresence(Duration.ofSeconds(heartbeat))
         val reg = SharedServerRegistry(store, messenger, database, Duration.ofSeconds(heartbeat * 3), log)
         reg.init()
@@ -287,13 +293,13 @@ class CryonGeyserExtension : Extension {
      * at its own edge rather than letting the player travel to the proxy to be kicked there. See
      * [MaintenanceGate] for the one rule that cannot be enforced this early.
      */
-    private fun setupMaintenance(services: ServiceRegistry, cfg: GeyserConfig) {
+    private fun setupMaintenance(services: ServiceRegistry, cfg: Config) {
         val service = SharedMaintenanceService(
             database,
             messenger,
-            cfg.string("maintenance.default-message", ConfigDefaults.MAINTENANCE_MESSAGE),
+            cfg[CoreKeys.MAINTENANCE_MESSAGE],
             log,
-            Duration.ofSeconds(cfg.long("maintenance.refresh-seconds", ConfigDefaults.MAINTENANCE_REFRESH_SECONDS)),
+            Duration.ofSeconds(cfg[CoreKeys.MAINTENANCE_REFRESH_SECONDS]),
         ).also { it.init() }
         maintenance = service
         services.register<MaintenanceService>(service)
@@ -303,7 +309,9 @@ class CryonGeyserExtension : Extension {
         log.info("Maintenance mode available (/maintenance on|off [message], add|remove|list)")
     }
 
-    /** The Bedrock server-list MOTD, reading the same `motd.*` block the proxy does. */
+    /**
+     * The Bedrock server-list MOTD, reading the same `motd.*` block the proxy does.
+     */
     private fun setupMotd(dataDirectory: Path) {
         val service = maintenance ?: return
         val bedrockMotd = BedrockMotd(dataDirectory.resolve("config.yml")).also { it.reload() }
@@ -312,10 +320,13 @@ class CryonGeyserExtension : Extension {
         log.info("Bedrock MOTD available (/motd reload)")
     }
 
-    private fun setupModules(services: ServiceRegistry, dataDirectory: Path, cfg: GeyserConfig) {
+    private fun setupModules(services: ServiceRegistry, dataDirectory: Path, cfg: Config) {
         val dataDir = dataDirectory.toFile()
         val apiDir = File(dataDir, "api").apply { mkdirs() }
         val modulesDir = File(dataDir, "modules").apply { mkdirs() }
+        // Before any module builds a repository. See the Paper loader for why it sits beside
+        // `modules/` rather than inside it.
+        SpillStore.install(dataDirectory.resolve(".spill"))
         val mgr = ModuleManager(log, PluginPresence { GeyserApi.api().extensionManager().extension(it) != null })
         services.register<ModuleManager>(mgr)
         val ctx = GeyserContext(GeyserApi.api(), this, log, services, dataDirectory)
@@ -339,9 +350,60 @@ class CryonGeyserExtension : Extension {
      * feature jar on its own and a production one does not. `/cryon modules load|unload|scan|reload-api`
      * works either way. Best-effort: a watcher that fails to start degrades to manual hot-swap.
      */
-    private fun startWatchers(cfg: GeyserConfig, modulesDir: File, apiDir: File, ldr: GeyserModuleLoader) {
-        val production = cfg.boolean("production", ConfigDefaults.PRODUCTION)
-        if (!cfg.boolean("modules.auto-reload", !production)) {
+    /**
+     * Poll the deploy repository, the Geyser twin of the core's. See `GitDeploy`.
+     *
+     * `{server}` resolves to `geyser`: like a proxy, this belongs to no pool, so a repository holds
+     * its config at `servers/geyser/config.yml`.
+     *
+     * Its own single daemon thread because Geyser exposes no scheduler to an extension. Shut down
+     * with `shutdownNow` rather than drained: a poll in flight has already recorded whatever it
+     * wrote, and the next start re-applies the same commit anyway.
+     */
+    private fun startGitDeploy(services: ServiceRegistry, dataDirectory: Path, cfg: Config) {
+        val configFile = dataDirectory.resolve("config.yml")
+        val deploy = GitDeploy.from(
+            config = cfg,
+            serverId = "geyser",
+            dataFolder = dataDirectory,
+            configFile = configFile,
+            langDirectory = dataDirectory.resolve("lang"),
+            modulesDirectory = dataDirectory.resolve("modules"),
+            onConfigChanged = {
+                cfg.reload(YamlConfigSource.load(configFile))
+                    .forEach { log.error("A config reload listener failed", it) }
+                log.info("config.yml reloaded from the deploy repository")
+            },
+            onLangChanged = {
+                services.find(MessageService::class)?.reload()
+                log.info("Language files reloaded from the deploy repository")
+            },
+            logger = log,
+        ) ?: return
+
+        gitDeploy = deploy
+        val seconds = cfg[DeployKeys.POLL_SECONDS]
+        val poller = java.util.concurrent.Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "Cryon-Deploy").apply { isDaemon = true }
+        }
+        deployPoller = poller
+        poller.scheduleWithFixedDelay({
+            when (val result = deploy.poll()) {
+                is DeployResult.UpToDate -> Unit
+                is DeployResult.Applied -> log.info(
+                    "Deployed {} ({} file(s)): {}",
+                    result.commit.take(8), result.changed.size, result.changed.joinToString(", "),
+                )
+
+                is DeployResult.Failed -> log.warn("Deploy poll failed: {}", result.reason)
+            }
+        }, 15, seconds, java.util.concurrent.TimeUnit.SECONDS)
+        log.info("Deploying branch {} every {}s", cfg[DeployKeys.BRANCH], seconds)
+    }
+
+    private fun startWatchers(cfg: Config, modulesDir: File, apiDir: File, ldr: GeyserModuleLoader) {
+        val production = cfg[CoreKeys.PRODUCTION]
+        if (!(cfg.find(CoreKeys.MODULES_AUTO_RELOAD) ?: !production)) {
             log.info(
                 "Hot-reload watchers off (production={}); use /cryon modules load|unload|scan|reload-api to hot-swap",
                 production,

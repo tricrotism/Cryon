@@ -14,16 +14,14 @@ import java.util.*
  */
 interface PlayerRouter {
 
-    /** Route [player] to the best node of [serverId] (matchmaking one if that server is ephemeral). */
+    /**
+     * Route [player] to the best node of [serverId] (matchmaking one if that server is ephemeral).
+     */
     suspend fun route(player: UUID, serverId: String): RouteResult
 
-    /** Route [player] to a specific [nodeId]. */
+    /**
+     * Route [player] to a specific [nodeId].
+     */
     suspend fun routeToInstance(player: UUID, nodeId: String): RouteResult
 }
 
-/** Outcome of a routing request. */
-sealed interface RouteResult {
-    data class Sent(val nodeId: String) : RouteResult
-    data object NoInstance : RouteResult
-    data class Failed(val reason: String) : RouteResult
-}

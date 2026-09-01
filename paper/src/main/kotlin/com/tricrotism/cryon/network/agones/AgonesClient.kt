@@ -56,7 +56,9 @@ class AgonesClient private constructor(
     companion object {
         private const val EMPTY = "{}"
 
-        /** An [AgonesClient] if this process runs under an Agones sidecar, else null. */
+        /**
+         * An [AgonesClient] if this process runs under an Agones sidecar, else null.
+         */
         fun detect(logger: Logger, env: (String) -> String? = System::getenv): AgonesClient? {
             val port = env("AGONES_SDK_HTTP_PORT")?.toIntOrNull() ?: return null
             logger.info("Agones sidecar detected on port {}", port)

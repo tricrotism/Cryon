@@ -7,7 +7,9 @@ import org.geysermc.geyser.api.extension.Extension
 import org.slf4j.Logger
 import java.nio.file.Path
 
-/** The concrete [GeyserModuleContext] the loader hands to every Geyser module. */
+/**
+ * The concrete [GeyserModuleContext] the loader hands to every Geyser module.
+ */
 class GeyserContext(
     override val geyser: GeyserApi,
     override val extension: Extension,

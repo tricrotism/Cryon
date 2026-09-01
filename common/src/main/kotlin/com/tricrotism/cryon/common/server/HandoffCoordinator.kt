@@ -40,15 +40,23 @@ class HandoffCoordinator(
 
     private var subscription: MessengerSubscription? = null
 
-    /** Start answering handoff requests addressed to this instance. */
+    /**
+     * Start answering handoff requests addressed to this instance.
+     */
     fun init() {
         subscription = messenger.handle(channel(nodeId)) { payload ->
             val player = runCatching { UUID.fromString(payload) }.getOrNull()
             if (player != null) {
-                flush(player)
-                val now = System.currentTimeMillis()
-                handedOff.values.removeIf { now - it >= HANDOFF_WINDOW_MILLIS }
-                handedOff[player] = now
+                if (flush(player)) {
+                    val now = System.currentTimeMillis()
+                    handedOff.values.removeIf { now - it >= HANDOFF_WINDOW_MILLIS }
+                    handedOff[player] = now
+                } else {
+                    logger.warn(
+                        "A flush failed for {} during handoff, so their quit save will still run",
+                        player,
+                    )
+                }
             }
             REPLY
         }
@@ -68,31 +76,41 @@ class HandoffCoordinator(
      *
      * Parallel within a stage, sequential between stages: features that own their own state have no
      * ordering between them, but one that hands state back to another has to land before that other
-     * one saves. See [PlayerHandoff.onFlush]. A flush that fails is logged and treated as done, and
-     * a whole stage failing still lets the next one run: one broken feature must not strand the
-     * player mid-transfer, and must not take the rest of their state down with it.
+     * one saves. See [PlayerHandoff.onFlush]. A flush that fails is logged and does not stop the
+     * others, and a whole stage failing still lets the next one run: one broken feature must not
+     * strand the player mid-transfer, and must not take the rest of their state down with it.
+     *
+     * Returns whether every flush succeeded. Callers that skip later work on the strength of this
+     * one having run must branch on it; see [init].
      */
-    suspend fun flush(player: UUID) {
+    suspend fun flush(player: UUID): Boolean {
         val stages = flushes.entries.groupBy { it.value.stage }.toSortedMap()
-        if (stages.isEmpty()) return
+        if (stages.isEmpty()) return true
+        var complete = true
         for ((_, group) in stages) {
-            coroutineScope {
+            val results = coroutineScope {
                 group.map { (id, registered) ->
                     async {
                         try {
                             registered.flush(player)
+                            true
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
                             logger.error("Flush '{}' failed for {}", id, player, e)
+                            false
                         }
                     }
                 }.awaitAll()
             }
+            if (results.any { !it }) complete = false
         }
+        return complete
     }
 
-    /** The quit path: a no-op when we already flushed [player] to hand them over moments ago. */
+    /**
+     * The quit path: a no-op when we already flushed [player] to hand them over moments ago.
+     */
     suspend fun flushOnQuit(player: UUID) {
         val flushedAt = handedOff.remove(player)
         val handedOverRecently = flushedAt != null &&
@@ -108,10 +126,12 @@ class HandoffCoordinator(
     }
 
     companion object {
-        /** The request channel for the instance with [nodeId]. */
+        /**
+         * The request channel for the instance with [nodeId].
+         */
         fun channel(nodeId: String): String = "cryon:handoff:$nodeId"
 
-        /** The acknowledgement body; the proxy only waits for *a* reply, never reads it. */
+        // The acknowledgement body; the proxy only waits for *a* reply, never reads it
         const val REPLY = "ok"
 
         // How long a handoff flush suppresses the quit flush. Comfortably longer than the moment

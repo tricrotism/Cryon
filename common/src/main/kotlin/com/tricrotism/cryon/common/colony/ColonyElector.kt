@@ -3,54 +3,6 @@ package com.tricrotism.cryon.common.colony
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * One node's advertisement: what it claims, and when it last said so.
- *
- * Encoded as a line rather than JSON because `KeyValueStore` speaks strings and this is written once
- * per heartbeat by every node. A format with no parser is one less thing between a stall and a
- * diagnosis in `redis-cli`.
- */
-data class ColonyAdvertisement(
-    val nodeId: String,
-    val heartbeat: Long,
-    val leaving: Boolean,
-    /** Service ids this node hosts, and whether it currently claims the crown for each. */
-    val claims: Map<String, ColonyMode>,
-) {
-
-    fun encode(): String = buildString {
-        append(nodeId).append(FIELD)
-        append(heartbeat).append(FIELD)
-        append(if (leaving) '1' else '0')
-        for ((service, mode) in claims) {
-            append(FIELD).append(service).append(PAIR).append(if (mode == ColonyMode.Queen) 'q' else 'd')
-        }
-    }
-
-    companion object {
-        /**
-         * Built at runtime rather than written as literals: a control character in the source makes
-         * git treat the file as binary and refuse to diff it. Same reason `RedisMessenger` does it.
-         */
-        private val FIELD = Char(1)
-        private val PAIR = Char(2)
-
-        fun decode(raw: String): ColonyAdvertisement? {
-            val parts = raw.split(FIELD)
-            if (parts.size < 3) return null
-            val heartbeat = parts[1].toLongOrNull() ?: return null
-            val claims = LinkedHashMap<String, ColonyMode>(parts.size)
-            for (i in 3 until parts.size) {
-                val split = parts[i].indexOf(PAIR)
-                if (split <= 0) continue
-                claims[parts[i].substring(0, split)] =
-                    if (parts[i][split + 1] == 'q') ColonyMode.Queen else ColonyMode.Drone
-            }
-            return ColonyAdvertisement(parts[0], heartbeat, parts[2] == "1", claims)
-        }
-    }
-}
-
-/**
  * The election itself, with no I/O in it.
  *
  * Kept separate from the transport for one reason: this is the only part that can be *wrong* in a
@@ -60,10 +12,10 @@ data class ColonyAdvertisement(
  */
 class ColonyElector(private val nodeId: String) {
 
-    /** What this node believes it is, per service. The only mutable state that outlives a tick. */
+    // What this node believes it is, per service. The only mutable state that outlives a tick
     private val local = ConcurrentHashMap<String, ColonyMode>()
 
-    /** The cluster's view, per service, as of the last [apply]. */
+    // The cluster's view, per service, as of the last [apply]
     private val view = ConcurrentHashMap<String, ServiceView>()
 
     data class ServiceView(
@@ -72,7 +24,9 @@ class ColonyElector(private val nodeId: String) {
         val shards: List<String>,
     )
 
-    /** Outcome of a tick: services this node just took, and ones it just gave up. */
+    /**
+     * Outcome of a tick: services this node just took, and ones it just gave up.
+     */
     data class Decisions(val promoted: Set<String>, val demoted: Set<String>)
 
     fun host(serviceId: String) {
@@ -89,10 +43,14 @@ class ColonyElector(private val nodeId: String) {
 
     fun shards(serviceId: String): List<String> = view[serviceId]?.shards ?: emptyList()
 
-    /** What this node should be claiming right now, for the next advertisement. */
+    /**
+     * What this node should be claiming right now, for the next advertisement.
+     */
     fun claims(): Map<String, ColonyMode> = local.toMap()
 
-    /** Rebuild the view from [advertisements], then promote or demote this node accordingly. */
+    /**
+     * Rebuild the view from [advertisements], then promote or demote this node accordingly.
+     */
     fun apply(advertisements: List<ColonyAdvertisement>, leaving: Boolean): Decisions {
         refresh(advertisements)
         return decide(leaving)
@@ -204,3 +162,4 @@ class ColonyElector(private val nodeId: String) {
         const val SEPARATOR = '|'.code
     }
 }
+

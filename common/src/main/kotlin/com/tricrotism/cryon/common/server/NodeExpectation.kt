@@ -12,10 +12,10 @@ package com.tricrotism.cryon.common.server
  */
 enum class NodeExpectation {
 
-    /** This process is the whole server. State that never leaves it is correct here. */
+    // This process is the whole server. State that never leaves it is correct here
     ONE_NODE,
 
-    /** One of N interchangeable nodes serving [NodeIdentity.serverId], sharing players and state. */
+    // One of N interchangeable nodes serving [NodeIdentity.serverId], sharing players and state
     MANY_NODES;
 
     companion object {

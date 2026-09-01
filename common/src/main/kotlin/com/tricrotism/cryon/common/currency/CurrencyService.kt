@@ -36,10 +36,14 @@ interface CurrencyService {
 
     fun all(): Collection<Currency>
 
-    /** The authoritative balance, or the currency's starting value if the player has no account yet. */
+    /**
+     * The authoritative balance, or the currency's starting value if the player has no account yet.
+     */
     suspend fun balance(currency: Currency, player: UUID): PackedDecimal
 
-    /** Every registered currency's balance for [player], in one round trip per scope. */
+    /**
+     * Every registered currency's balance for [player], in one round trip per scope.
+     */
     suspend fun balances(player: UUID): Map<Currency, PackedDecimal>
 
     /**
@@ -69,6 +73,11 @@ interface CurrencyService {
      * False means nothing was taken. Gate the reward on this value and nothing else: a balance read
      * beforehand is a prediction, and by the time it is acted on it may be describing money that has
      * already been spent elsewhere in the same tick.
+     *
+     * **Use [tryWithdraw] for anything that tells the player why.** This collapses "they were short"
+     * and "the ledger is unreachable" into one `false`, which is correct for deciding whether to hand
+     * the goods over and wrong for the message that follows: it makes a shop call a player broke
+     * during a database outage.
      */
     suspend fun withdraw(
         currency: Currency,
@@ -77,7 +86,23 @@ interface CurrencyService {
         reason: String = "unspecified",
     ): Boolean
 
-    /** Overwrite the balance outright. For administration; ordinary flows use [deposit]/[withdraw]. */
+    /**
+     * [withdraw], with the two ways of failing kept apart.
+     *
+     * The same distinction [transfer] is already required to make. Branch all three: refusing a
+     * purchase and being unable to attempt one are different facts, and only one of them is the
+     * player's fault.
+     */
+    suspend fun tryWithdraw(
+        currency: Currency,
+        player: UUID,
+        amount: PackedDecimal,
+        reason: String = "unspecified",
+    ): WithdrawResult
+
+    /**
+     * Overwrite the balance outright. For administration; ordinary flows use [deposit]/[withdraw].
+     */
     suspend fun set(
         currency: Currency,
         player: UUID,
@@ -124,6 +149,8 @@ interface CurrencyService {
      */
     suspend fun refreshLeaderboards()
 
-    /** Watch every balance change made on this instance. Close the handle to stop watching. */
+    /**
+     * Watch every balance change made on this instance. Close the handle to stop watching.
+     */
     fun onChange(listener: (CurrencyChange) -> Unit): AutoCloseable
 }

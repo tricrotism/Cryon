@@ -47,24 +47,20 @@ class AdminMenu(
     private val scope: CoroutineScope,
 ) : AutoCloseable {
 
-    /**
-     * One live session per viewer, replaced on re-open, dropped on [quit] and on [close].
-     *
-     * InvUI holds the click handlers, and those handlers are this plugin's code reaching services the
-     * core owns. There is no module classloader to strand here, but a window left open across a
-     * shutdown is still dispatching into things that have been torn down. Keyed by UUID rather than by
-     * `Player`, so a stale entry cannot pin a disconnected player's object graph.
-     */
+    // One live session per viewer, replaced on re-open, dropped on [quit] and on [close].
+    //
+    // InvUI holds the click handlers, and those handlers are this plugin's code reaching services the
+    // core owns. There is no module classloader to strand here, but a window left open across a
+    // shutdown is still dispatching into things that have been torn down. Keyed by UUID rather than by
+    // `Player`, so a stale entry cannot pin a disconnected player's object graph
     private val sessions = ConcurrentHashMap<UUID, MenuTree.Session>()
 
-    /**
-     * Drops a viewer's session when they disconnect.
-     *
-     * Without it the map fits none of the lifecycles a keyed map may have: re-opening replaces an
-     * entry and [close] takes the rest, but nothing removes one for a player who simply left, so an
-     * InvUI window and its click handlers stay reachable for the life of the process, one per admin
-     * who ever opened the menu.
-     */
+    // Drops a viewer's session when they disconnect.
+    //
+    // Without it the map fits none of the lifecycles a keyed map may have: re-opening replaces an
+    // entry and [close] takes the rest, but nothing removes one for a player who simply left, so an
+    // InvUI window and its click handlers stay reachable for the life of the process, one per admin
+    // who ever opened the menu
     private val quit: Subscription = Events.subscribe<PlayerQuitEvent>()
         .handler { event -> sessions.remove(event.player.uniqueId)?.let { runCatching { it.close() } } }
 

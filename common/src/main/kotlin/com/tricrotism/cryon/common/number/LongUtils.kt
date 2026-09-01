@@ -10,7 +10,9 @@ object LongUtils {
 
     val FAILURE = LongParseResult(false, 0)
 
-    /** Parse a plain (optionally negative) integer string, failing on non-digits or overflow. */
+    /**
+     * Parse a plain (optionally negative) integer string, failing on non-digits or overflow.
+     */
     fun parseLong(string: String?): LongParseResult {
         if (string.isNullOrEmpty()) return FAILURE
         val length = string.length
@@ -97,7 +99,9 @@ object LongUtils {
         }
     }
 
-    /** Parse without validation. Assumes a well-formed integer string. Use only on trusted input. */
+    /**
+     * Parse without validation. Assumes a well-formed integer string. Use only on trusted input.
+     */
     fun unsafelyParseLong(string: String): Long {
         val length = string.length
         var number = 0L

@@ -37,7 +37,9 @@ import java.lang.reflect.*
  */
 object SparkSupport {
 
-    /** What [uninstall] needs to put spark back the way it found it. */
+    /**
+     * What [uninstall] needs to put spark back the way it found it.
+     */
     private class Splice(
         val platform: Any,
         val pluginField: Field,
@@ -48,7 +50,9 @@ object SparkSupport {
     @Volatile
     private var installed: Splice? = null
 
-    /** [author] is shown on the viewer's sources view for every module. Pass the core plugin's authors. */
+    /**
+     * [author] is shown on the viewer's sources view for every module. Pass the core plugin's authors.
+     */
     fun install(server: Server, loader: ModuleLoader, author: String, log: Logger) {
         if (installed != null) return
         val api = findSparkApi(server)
@@ -105,7 +109,9 @@ object SparkSupport {
         return null
     }
 
-    /** Swap `SparkPlatform.plugin` for a proxy overriding the three attribution methods. */
+    /**
+     * Swap `SparkPlatform.plugin` for a proxy overriding the three attribution methods.
+     */
     private fun splice(api: Any, loader: ModuleLoader, author: String): Splice {
         val platform = field(api.javaClass, "platform").get(api)
             ?: throw IllegalStateException("spark platform not initialised")
@@ -142,7 +148,9 @@ object SparkSupport {
         return Splice(platform, pluginField, realPlugin, proxy)
     }
 
-    /** A [Proxy] over spark's lookup: our module classloaders first, spark's real lookup for the rest. */
+    /**
+     * A [Proxy] over spark's lookup: our module classloaders first, spark's real lookup for the rest.
+     */
     private fun wrapLookup(lookupType: Class<*>, realLookup: Any, loader: ModuleLoader): Any =
         Proxy.newProxyInstance(lookupType.classLoader, arrayOf(lookupType)) { _, method, args ->
             if (method.name == "identify" && args?.size == 1 && args[0] is Class<*>) {
@@ -167,7 +175,9 @@ object SparkSupport {
             }
         }
 
-    /** spark's real known sources plus a `SourceMetadata(name, version, author, description)` per jar. */
+    /**
+     * spark's real known sources plus a `SourceMetadata(name, version, author, description)` per jar.
+     */
     private fun appendModuleSources(
         real: Any?,
         newMetadata: (String, String, String, String) -> Any,
@@ -213,7 +223,9 @@ object SparkSupport {
     private fun defaultValue(type: Class<*>): Any? =
         java.lang.reflect.Array.get(java.lang.reflect.Array.newInstance(type, 1), 0)
 
-    /** [Class.getDeclaredField] walked up the hierarchy, made accessible. */
+    /**
+     * [Class.getDeclaredField] walked up the hierarchy, made accessible.
+     */
     private fun field(type: Class<*>, name: String): Field {
         var c: Class<*>? = type
         while (c != null) {
@@ -226,7 +238,9 @@ object SparkSupport {
         throw NoSuchFieldException("$name on ${type.name}")
     }
 
-    /** Reflective delegate that unwraps [InvocationTargetException] so checked throws propagate cleanly. */
+    /**
+     * Reflective delegate that unwraps [InvocationTargetException] so checked throws propagate cleanly.
+     */
     private fun delegate(method: Method, target: Any, args: Array<out Any?>?): Any? =
         try {
             if (args == null) method.invoke(target) else method.invoke(target, *args)

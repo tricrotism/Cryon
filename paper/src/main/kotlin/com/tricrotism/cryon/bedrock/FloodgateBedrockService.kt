@@ -235,9 +235,7 @@ internal class FloodgateBedrockService(private val logger: Logger) : BedrockServ
     private companion object {
         val LEGACY: LegacyComponentSerializer = LegacyComponentSerializer.legacySection()
 
-        /**
-         * Long enough for the close to reach the client before the form does.
-         */
+        // Long enough for the close to reach the client before the form does
         const val FORM_REOPEN_DELAY_TICKS = 5L
     }
 }

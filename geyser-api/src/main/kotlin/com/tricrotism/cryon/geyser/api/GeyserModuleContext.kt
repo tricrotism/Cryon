@@ -15,9 +15,9 @@ import java.nio.file.Path
 interface GeyserModuleContext : ModuleContext {
     val geyser: GeyserApi
 
-    /** The loader extension, passed to `Command.builder(...)` and event-bus registrations. */
+    // The loader extension, passed to `Command.builder(...)` and event-bus registrations
     val extension: Extension
 
-    /** The loader's own directory. A module's folder is [GeyserModule.dataFolder] under it. */
+    // The loader's own directory. A module's folder is [GeyserModule.dataFolder] under it
     val dataDirectory: Path
 }

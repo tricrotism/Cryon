@@ -4,26 +4,6 @@ import com.velocitypowered.api.proxy.Player
 import java.util.*
 
 /**
- * How a Bedrock client is being driven. Mirrors Floodgate's input mode without exposing its types.
- *
- * **Duplicated from `com.tricrotism.cryon.paper.api.bedrock.BedrockInput`, deliberately**, exactly
- * like the `@Command` model: `:paper-api` carries Bukkit types and `:velocity` must stay Bukkit-free,
- * so the two copies are kept in step by hand rather than shared.
- */
-enum class BedrockInput {
-    KEYBOARD_MOUSE,
-    TOUCH,
-    CONTROLLER,
-    UNKNOWN;
-
-    /**
-     * Touch and unknown are the layouts worth special-casing: a touch player has no hotbar keys and no
-     * hover tooltips, so anything that depends on either needs a different presentation.
-     */
-    val isTouchLike: Boolean get() = this == TOUCH || this == UNKNOWN
-}
-
-/**
  * Bedrock-client identity on the proxy, bridged to Geyser through Floodgate by the core.
  *
  * **Always registered** into the module `ServiceRegistry`, exactly like `Messenger` and
@@ -43,10 +23,8 @@ enum class BedrockInput {
  */
 interface BedrockService {
 
-    /**
-     * The prefix Floodgate puts in front of a Bedrock player's Java username (typically `.`). Empty
-     * when Floodgate is absent, and empty when it is configured with no prefix.
-     */
+    // The prefix Floodgate puts in front of a Bedrock player's Java username (typically `.`). Empty
+    // when Floodgate is absent, and empty when it is configured with no prefix
     val usernamePrefix: String
 
     /**

@@ -38,9 +38,7 @@ class LocalMessenger(private val logger: Logger) : Messenger {
         Thread(r, "cryon-local-messenger").apply { isDaemon = true }
     }
 
-    /**
-     * Runs [handle] responders. Canceled by [close], so no responder outlives the transport.
-     */
+    // Runs [handle] responders. Canceled by [close], so no responder outlives the transport
     private val scope = CoroutineScope(
         SupervisorJob() + CryonIO.dispatcher + CoroutineExceptionHandler { _, error ->
             logger.error("Unhandled failure in a coroutine of the in-process messenger", error)
@@ -129,7 +127,7 @@ class LocalMessenger(private val logger: Logger) : Messenger {
     }
 
     private companion object {
-        /** The same envelope separator [RedisMessenger] uses, so the two encode requests alike. */
+        // The same envelope separator [RedisMessenger] uses, so the two encode requests alike
         private val SEP = Char(0)
     }
 }

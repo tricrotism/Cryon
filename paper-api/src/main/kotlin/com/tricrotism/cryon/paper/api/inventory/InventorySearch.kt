@@ -19,17 +19,25 @@ import java.util.*
  */
 interface InventorySearch {
 
-    /** One located item: who was holding it, the inventory slot it sat in, and the stack size. */
+    /**
+     * One located item: who was holding it, the inventory slot it sat in, and the stack size.
+     */
     data class Match(val playerId: UUID, val playerName: String, val slot: Int, val amount: Int)
 
-    /** Scan all online players; [matcher] runs against each non-empty slot. */
+    /**
+     * Scan all online players; [matcher] runs against each non-empty slot.
+     */
     fun search(matcher: (ItemStack) -> Boolean, onComplete: (List<Match>) -> Unit)
 
-    /** Items carrying [key] in their persistent-data container (a whole custom-item type). */
+    /**
+     * Items carrying [key] in their persistent-data container (a whole custom-item type).
+     */
     fun byTag(key: NamespacedKey, onComplete: (List<Match>) -> Unit): Unit =
         search({ it.hasTag(key) }, onComplete)
 
-    /** Items whose [key] tag equals [value]. Pin down one unique item by its stored id string. */
+    /**
+     * Items whose [key] tag equals [value]. Pin down one unique item by its stored id string.
+     */
     fun <P : Any, C : Any> byTag(
         key: NamespacedKey,
         type: PersistentDataType<P, C>,
@@ -38,7 +46,9 @@ interface InventorySearch {
     ): Unit = search({ it.getTag(key, type) == value }, onComplete)
 }
 
-/** [InventorySearch.byTag] with the [PersistentDataType] inferred from [value], for primitive-backed tags. */
+/**
+ * [InventorySearch.byTag] with the [PersistentDataType] inferred from [value], for primitive-backed tags.
+ */
 inline fun <reified C : Any> InventorySearch.byTag(
     key: NamespacedKey,
     value: C,

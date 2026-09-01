@@ -9,7 +9,9 @@ import java.math.MathContext
  */
 object BigDecimalUtils {
 
-    /** `floor(log10(value))` for `value > 0`, computed exactly from precision/scale (no math, no overflow). */
+    /**
+     * `floor(log10(value))` for `value > 0`, computed exactly from precision/scale (no math, no overflow).
+     */
     fun magnitude(value: BigDecimal): Int {
         require(value.signum() > 0) { "magnitude requires a positive value" }
         return value.precision() - value.scale() - 1

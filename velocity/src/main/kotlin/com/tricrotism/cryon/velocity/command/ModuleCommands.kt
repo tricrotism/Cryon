@@ -125,11 +125,15 @@ class ModuleCommands(
         source.sendLocalized("cryon.modules.api_reloaded", Placeholder.unparsed("count", enabled.size.toString()))
     }
 
-    /** Suggester for module-id arguments. */
+    /**
+     * Suggester for module-id arguments.
+     */
     @Suppress("unused")
     fun moduleIds(): Collection<String> = modules.ids()
 
-    /** Suggester for `/cryon load`: jars sitting in modules/ that aren't loaded yet. */
+    /**
+     * Suggester for `/cryon load`: jars sitting in modules/ that aren't loaded yet.
+     */
     @Suppress("unused")
     fun loadableJars(): Collection<String> = loader.loadableJarNames()
 

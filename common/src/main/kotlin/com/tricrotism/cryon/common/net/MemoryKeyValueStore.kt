@@ -64,6 +64,24 @@ class MemoryKeyValueStore : KeyValueStore {
         return claimed
     }
 
+    override suspend fun compareAndSet(
+        key: String,
+        expected: String?,
+        next: String,
+        ttl: Duration,
+    ): Boolean {
+        val now = System.currentTimeMillis()
+        var stored = false
+        entries.compute(key) { _, existing ->
+            val live = existing?.takeIf { !it.expired(now) }
+            val matches = if (expected == null) live == null else live?.value == expected
+            if (!matches) return@compute live
+            stored = true
+            Entry(next, if (ttl.isZero) Long.MAX_VALUE else now + ttl.toMillis())
+        }
+        return stored
+    }
+
     override suspend fun deleteIfEqual(key: String, value: String): Boolean {
         val now = System.currentTimeMillis()
         var removed = false
@@ -203,7 +221,9 @@ class MemoryKeyValueStore : KeyValueStore {
 
     private companion object {
 
-        /** Translate a Redis key glob (`*`, `?`, literals) into an equivalent regex. */
+        /**
+         * Translate a Redis key glob (`*`, `?`, literals) into an equivalent regex.
+         */
         private fun globToRegex(pattern: String): Regex = buildString {
             for (char in pattern) {
                 when (char) {

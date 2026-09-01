@@ -26,30 +26,38 @@ package com.tricrotism.cryon.common.module
  */
 sealed interface Dependency {
 
-    /** Whether the module cannot run without this. Soft dependencies only affect ordering. */
+    // Whether the module cannot run without this. Soft dependencies only affect ordering
     val hard: Boolean
 
-    /** Human-readable form for logs and `/cryon info`. */
+    // Human-readable form for logs and `/cryon info`
     val description: String
 
-    /** Another Cryon module, by [Module.id]. */
+    /**
+     * Another Cryon module, by [Module.id].
+     */
     data class OnModule(val id: String, override val hard: Boolean) : Dependency {
         override val description: String get() = "module $id"
     }
 
-    /** A [ServiceRegistry] entry, by the binary name of its API type. */
+    /**
+     * A [ServiceRegistry] entry, by the binary name of its API type.
+     */
     data class OnService(val className: String, override val hard: Boolean) : Dependency {
         override val description: String get() = "service ${className.substringAfterLast('.')}"
     }
 
-    /** A third-party plugin (Paper), plugin (Velocity) or extension (Geyser), by name. */
+    /**
+     * A third-party plugin (Paper), plugin (Velocity) or extension (Geyser), by name.
+     */
     data class OnPlugin(val name: String, override val hard: Boolean) : Dependency {
         override val description: String get() = "plugin $name"
     }
 
     companion object {
 
-        /** Depend on another Cryon module by id. */
+        /**
+         * Depend on another Cryon module by id.
+         */
         fun module(id: String, hard: Boolean = true): Dependency = OnModule(id, hard)
 
         /**
@@ -62,22 +70,15 @@ sealed interface Dependency {
          */
         fun service(className: String, hard: Boolean = true): Dependency = OnService(className, hard)
 
-        /** Depend on a service by type. Only for a type this module's jar can always load (see the string form). */
+        /**
+         * Depend on a service by type. Only for a type this module's jar can always load (see the string form).
+         */
         inline fun <reified T : Any> service(hard: Boolean = true): Dependency = OnService(T::class.java.name, hard)
 
-        /** Depend on a third-party plugin or Geyser extension by the name the platform registers it under. */
+        /**
+         * Depend on a third-party plugin or Geyser extension by the name the platform registers it under.
+         */
         fun plugin(name: String, hard: Boolean = true): Dependency = OnPlugin(name, hard)
     }
 }
 
-/**
- * Whether a third-party plugin/extension is present on the host platform, the seam [ModuleManager]
- * checks [Dependency.OnPlugin] through. `:common` carries no platform types, so each loader supplies
- * its own (`Bukkit.getPluginManager()`, the proxy's plugin manager, Geyser's extension manager).
- *
- * A manager built without one cannot verify plugin dependencies and skips them rather than failing
- * modules over a question it is unable to answer.
- */
-fun interface PluginPresence {
-    fun isPresent(name: String): Boolean
-}

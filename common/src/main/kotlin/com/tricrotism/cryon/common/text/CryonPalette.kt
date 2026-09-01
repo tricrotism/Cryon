@@ -1,6 +1,5 @@
 package com.tricrotism.cryon.common.text
 
-import com.tricrotism.cryon.common.text.CryonPalette.RESOLVER
 import net.kyori.adventure.text.format.TextColor
 import net.kyori.adventure.text.minimessage.tag.Tag
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver
@@ -112,7 +111,7 @@ object CryonPalette {
     val JET_BLACK: TextColor = TextColor.color(20, 20, 20)
     val MIDNIGHT_INDIGO: TextColor = TextColor.color(44, 44, 84)
 
-    /** Every palette colour as a MiniMessage styling tag. */
+    // Every palette colour as a MiniMessage styling tag
     val RESOLVER: TagResolver = TagResolver.builder().apply {
         fun add(name: String, color: TextColor) = resolver(TagResolver.resolver(name, Tag.styling(color)))
 

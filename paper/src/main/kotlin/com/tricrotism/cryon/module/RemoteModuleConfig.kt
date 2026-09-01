@@ -1,9 +1,11 @@
 package com.tricrotism.cryon.module
 
+import com.tricrotism.cryon.common.config.Config
+import com.tricrotism.cryon.common.config.ConfigKeys
 import com.tricrotism.cryon.common.module.remote.MavenRepository
 import com.tricrotism.cryon.common.module.remote.RemoteArtifact
 import com.tricrotism.cryon.common.module.remote.RemoteModules
-import org.bukkit.configuration.file.FileConfiguration
+import com.tricrotism.cryon.config.PaperKeys
 import org.slf4j.Logger
 import java.io.File
 
@@ -18,8 +20,8 @@ import java.io.File
  */
 object RemoteModuleConfig {
 
-    fun build(config: FileConfiguration, modulesDir: File, dataFolder: File, log: Logger): RemoteModules? {
-        if (!config.getBoolean("remote.enabled", false)) return null
+    fun build(config: Config, modulesDir: File, dataFolder: File, log: Logger): RemoteModules? {
+        if (!config[PaperKeys.REMOTE_ENABLED]) return null
 
         val repositories = repositories(config, log)
         if (repositories.isEmpty()) {
@@ -41,10 +43,9 @@ object RemoteModuleConfig {
         return RemoteModules(repositories, artifacts, modulesDir, File(dataFolder, STATE_FILE), log)
     }
 
-    private fun repositories(config: FileConfiguration, log: Logger): Map<String, MavenRepository> {
-        val section = config.getConfigurationSection("remote.repositories") ?: return emptyMap()
-        return section.getKeys(false).mapNotNull { name ->
-            val url = section.getString("$name.url").orEmpty()
+    private fun repositories(config: Config, log: Logger): Map<String, MavenRepository> {
+        return config.children("remote.repositories").mapNotNull { name ->
+            val url = config.find(ConfigKeys.string("remote.repositories.$name.url")).orEmpty()
             if (url.isBlank()) {
                 log.warn("Remote repository '{}' has no url; skipped", name)
                 return@mapNotNull null
@@ -52,8 +53,8 @@ object RemoteModuleConfig {
             val repository = MavenRepository.of(
                 name = name,
                 url = url,
-                configUsername = section.getString("$name.username"),
-                configPassword = section.getString("$name.password"),
+                configUsername = config.find(ConfigKeys.string("remote.repositories.$name.username")),
+                configPassword = config.find(ConfigKeys.string("remote.repositories.$name.password")),
             )
             if (!repository.requiresAuth) {
                 log.info(
@@ -68,10 +69,10 @@ object RemoteModuleConfig {
     }
 
     private fun artifacts(
-        config: FileConfiguration,
+        config: Config,
         known: Set<String>,
         log: Logger,
-    ): List<RemoteArtifact> = config.getMapList("remote.artifacts").mapIndexedNotNull { index, raw ->
+    ): List<RemoteArtifact> = config.maps("remote.artifacts").mapIndexedNotNull { index, raw ->
         fun value(key: String): String = raw[key]?.toString().orEmpty().trim()
 
         val coords = value("coords")

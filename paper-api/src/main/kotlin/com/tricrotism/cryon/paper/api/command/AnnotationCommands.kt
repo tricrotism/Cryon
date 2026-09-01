@@ -6,27 +6,12 @@ import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.builder.ArgumentBuilder
 import com.mojang.brigadier.context.CommandContext
-import com.mojang.brigadier.tree.LiteralCommandNode
 import io.papermc.paper.command.brigadier.CommandSourceStack
 import io.papermc.paper.command.brigadier.Commands
 import java.lang.reflect.Method
 import java.lang.reflect.Parameter
 import java.util.function.Predicate
 import com.mojang.brigadier.Command as BrigadierCommand
-
-/**
- * Registers [Command]-annotated classes onto a Paper Brigadier [Commands] registrar via reflection.
- * Each `@Subcommand` method becomes a node; the `CommandSender` parameter is injected, `@Arg` params
- * become Brigadier arguments (named via the annotation), and `@Arg(suggests = "method")` wires a
- * no-arg `Collection<String>` suggester. Uses Java reflection only. No kotlin-reflect.
- */
-/** A built command tree ready to hand to Paper's registrar or splice into the live dispatcher. */
-data class BuiltCommand(
-    val name: String,
-    val node: LiteralCommandNode<CommandSourceStack>,
-    val description: String?,
-    val aliases: List<String>,
-)
 
 object AnnotationCommands {
 
@@ -88,7 +73,9 @@ object AnnotationCommands {
         )
     }
 
-    /** The usage line for one handler method, e.g. `/f`, `/f create <name>`. */
+    /**
+     * The usage line for one handler method, e.g. `/f`, `/f create <name>`.
+     */
     private fun usage(root: String, method: Method): String {
         val path = method.getAnnotation(Subcommand::class.java).value
         val args = method.parameters
@@ -97,7 +84,9 @@ object AnnotationCommands {
         return (listOf("/$root") + path + args).joinToString(" ")
     }
 
-    /** Brigadier access predicate: the module must be [available] and the sender hold any [permission]. */
+    /**
+     * Brigadier access predicate: the module must be [available] and the sender hold any [permission].
+     */
     private fun guard(available: () -> Boolean, permission: String?): Predicate<CommandSourceStack> =
         Predicate { source -> available() && (permission == null || source.sender.hasPermission(permission)) }
 
@@ -187,3 +176,4 @@ object AnnotationCommands {
             else -> { ctx -> StringArgumentType.getString(ctx, name) }
         }
 }
+

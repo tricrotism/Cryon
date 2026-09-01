@@ -1,5 +1,6 @@
 package com.tricrotism.cryon.paper.api.command
 
+
 /**
  * The core-owned command registry, shared through the `ServiceRegistry`. Modules contribute their
  * `@Command` handlers here (via [com.tricrotism.cryon.paper.api.PaperModule.registerCommands]); the
@@ -54,19 +55,15 @@ interface CommandService {
      */
     fun unregister(owner: String)
 
-    /** Re-push command trees to online players (after an enable/disable changes what's visible). */
+    /**
+     * Re-push command trees to online players (after an enable/disable changes what's visible).
+     */
     fun refresh()
 
-    /** The reflected commands [owner] contributed, for admin listings. Empty if it has none. */
+    /**
+     * The reflected commands [owner] contributed, for admin listings. Empty if it has none.
+     */
     fun describe(owner: String): List<CommandDescriptor>
 }
 
-/** A reflected, display-ready view of one `@Command` class. */
-data class CommandDescriptor(
-    val name: String,
-    val description: String,
-    val aliases: List<String>,
-    val permission: String?,
-    /** One line per handler method, e.g. `/f`, `/f create <name>`, `/f claim`. */
-    val usages: List<String>,
-)
+

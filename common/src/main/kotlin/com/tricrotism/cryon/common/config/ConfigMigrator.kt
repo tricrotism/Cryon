@@ -86,7 +86,9 @@ object ConfigMigrator {
         return out.toString()
     }
 
-    /** Resolves a renamed key's former value out of the operator's file, by full dotted path. */
+    /**
+     * Resolves a renamed key's former value out of the operator's file, by full dotted path.
+     */
     private class Aliases(private val renames: Map<String, String>, private val root: Map<*, *>) {
         fun former(path: String): Any? {
             val from = renames[path] ?: return null
@@ -171,7 +173,9 @@ object ConfigMigrator {
         }
     }
 
-    /** Copy a template key and everything nested under it, for a key the operator has not set. */
+    /**
+     * Copy a template key and everything nested under it, for a key the operator has not set.
+     */
     private fun emitTemplateSubtree(cursor: Cursor, indent: Int, header: String, out: StringBuilder) {
         out.append(header).append('\n')
         while (true) {
@@ -188,7 +192,9 @@ object ConfigMigrator {
         }
     }
 
-    /** Drop the template's nested lines, the operator's value having replaced the whole subtree. */
+    /**
+     * Drop the template's nested lines, the operator's value having replaced the whole subtree.
+     */
     private fun skipSubtree(cursor: Cursor, indent: Int) {
         while (true) {
             val line = cursor.peek() ?: return
@@ -214,7 +220,9 @@ object ConfigMigrator {
         }
     }
 
-    /** The value as it would sit after `key: `, or null when it needs lines of its own. */
+    /**
+     * The value as it would sit after `key: `, or null when it needs lines of its own.
+     */
     private fun inlineScalar(value: Any?): String? {
         if (value is Map<*, *> && value.isNotEmpty()) return null
         if (value is Collection<*> && value.isNotEmpty()) return null
@@ -229,7 +237,9 @@ object ConfigMigrator {
 
     private fun indentOf(line: String): Int = line.indexOfFirst { !it.isWhitespace() }.takeIf { it >= 0 } ?: 0
 
-    /** The indent of the next line carrying anything, so blank runs and comments can be attributed. */
+    /**
+     * The indent of the next line carrying anything, so blank runs and comments can be attributed.
+     */
     private fun indentOfNextContent(cursor: Cursor): Int {
         var i = cursor.index
         while (i < cursor.lines.size) {

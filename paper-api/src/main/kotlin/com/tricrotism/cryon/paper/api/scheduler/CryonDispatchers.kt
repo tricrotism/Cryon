@@ -37,19 +37,19 @@ object CryonDispatchers {
 
     private val plugin get() = CryonPaper.plugin
 
-    /** The global region thread: server-wide state with no world context. */
+    // The global region thread: server-wide state with no world context
     val Global: CoroutineDispatcher = GlobalRegionDispatcher
 
-    /**
-     * Off-server work: blocking I/O, Redis, HTTP. **No Bukkit API.**
-     *
-     * The Paper-side name for [CryonIO.dispatcher], so features reach one shared virtual-thread pool
-     * through the same object as the region dispatchers rather than having to know about `:common`'s
-     * plumbing. See [CryonIO] for why virtual threads and why SQL is the exception.
-     */
+    // Off-server work: blocking I/O, Redis, HTTP. **No Bukkit API.**
+    //
+    // The Paper-side name for [CryonIO.dispatcher], so features reach one shared virtual-thread pool
+    // through the same object as the region dispatchers rather than having to know about `:common`'s
+    // plumbing. See [CryonIO] for why virtual threads and why SQL is the exception
     val Async: CoroutineDispatcher get() = CryonIO.dispatcher
 
-    /** The region owning [location]: blocks and world state there. */
+    /**
+     * The region owning [location]: blocks and world state there.
+     */
     fun region(location: Location): CoroutineDispatcher = RegionDispatcher(location)
 
     /**
@@ -60,7 +60,9 @@ object CryonDispatchers {
      */
     fun entity(entity: Entity): CoroutineDispatcher = EntityDispatcher(entity)
 
-    /** Milliseconds to whole ticks, rounding up: a sub-tick delay must still wait a tick. */
+    /**
+     * Milliseconds to whole ticks, rounding up: a sub-tick delay must still wait a tick.
+     */
     internal fun ticks(millis: Long): Long = ((millis + MILLIS_PER_TICK - 1) / MILLIS_PER_TICK).coerceAtLeast(1)
 
     private const val MILLIS_PER_TICK = 50L

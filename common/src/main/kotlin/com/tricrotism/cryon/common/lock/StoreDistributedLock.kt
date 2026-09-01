@@ -110,7 +110,9 @@ class StoreDistributedLock(
         }
     }
 
-    /** Poll for the key until it is ours or [deadline] passes. */
+    /**
+     * Poll for the key until it is ours or [deadline] passes.
+     */
     private suspend fun claim(storeKey: String, token: String, ttl: Duration, deadline: Long): Boolean {
         if (store.setIfAbsent(storeKey, token, ttl.toJavaDuration())) return true
         val left = remaining(deadline)
@@ -125,7 +127,9 @@ class StoreDistributedLock(
         } ?: false
     }
 
-    /** Milliseconds left before [deadline]; at least 1 so a zero wait still gets one attempt. */
+    /**
+     * Milliseconds left before [deadline]; at least 1 so a zero wait still gets one attempt.
+     */
     private fun remaining(deadline: Long): Long =
         ((deadline - System.nanoTime()) / 1_000_000).coerceAtLeast(1)
 
@@ -154,7 +158,9 @@ class StoreDistributedLock(
         }
     }
 
-    /** Push the lease out at half the TTL until canceled, or throw once it is no longer ours. */
+    /**
+     * Push the lease out at half the TTL until canceled, or throw once it is no longer ours.
+     */
     private suspend fun renew(
         namespace: String,
         key: String,
@@ -195,7 +201,9 @@ class StoreDistributedLock(
         }
     }
 
-    /** Reference-counted so the map entry cannot be dropped while another caller is queued on it. */
+    /**
+     * Reference-counted so the map entry cannot be dropped while another caller is queued on it.
+     */
     private fun acquireLocal(key: String): Local {
         while (true) {
             val local = locals.computeIfAbsent(key) { Local() }
@@ -209,14 +217,16 @@ class StoreDistributedLock(
         if (local.users.decrementAndGet() == 0) locals.remove(key, local)
     }
 
-    /** Distinguishes "the block returned null" from "the lock was never taken". */
+    /**
+     * Distinguishes "the block returned null" from "the lock was never taken".
+     */
     private object Missed
 
     private companion object {
         const val LOCK_PREFIX = "cryon:lock:"
         val POLL_INTERVAL = 50.milliseconds
 
-        /** Floor on the renewal interval, so a very short TTL cannot spin the watchdog. */
+        // Floor on the renewal interval, so a very short TTL cannot spin the watchdog
         const val MIN_RENEWAL_MILLIS = 100L
     }
 }

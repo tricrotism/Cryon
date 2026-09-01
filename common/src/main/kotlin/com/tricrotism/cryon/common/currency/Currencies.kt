@@ -48,6 +48,8 @@ class Currencies(
     database: Database?,
     private val messenger: Messenger,
     private val logger: Logger,
+    private val journal: CurrencyJournal? = null,
+    private val pending: PendingLedger? = null,
 ) : CurrencyService {
 
     private val hasDatabase = database != null
@@ -55,24 +57,20 @@ class Currencies(
 
     private val currencies = ConcurrentHashMap<String, Currency>()
 
-    /**
-     * "scope|currency" -> (player -> balance). A read cache; never consulted to decide a spend.
-     *
-     * Each book is bounded and self-evicting. A plain map here would hold one entry per player this
-     * process has ever touched in that currency, for the life of the process: nothing removes them,
-     * because a balance is not session state and a player offline here may well be spending on
-     * another node of the same server.
-     */
+    // "scope|currency" -> (player -> balance). A read cache; never consulted to decide a spend.
+    //
+    // Each book is bounded and self-evicting. A plain map here would hold one entry per player this
+    // process has ever touched in that currency, for the life of the process: nothing removes them,
+    // because a balance is not session state and a player offline here may well be spending on
+    // another node of the same server
     private val cache = ConcurrentHashMap<String, Cache<UUID, PackedDecimal>>()
 
-    /**
-     * Tells our own broadcast apart from another instance's.
-     *
-     * Both transports deliver a publish back to the publisher, deliberately: `SharedServerRegistry`
-     * is built on that echo. Without this token the write that just filled the cache arrives as an
-     * invalidation and empties it again, leaving [cachedBalance] answering null on the one instance
-     * that actually knows the number.
-     */
+    // Tells our own broadcast apart from another instance's.
+    //
+    // Both transports deliver a publish back to the publisher, deliberately: `SharedServerRegistry`
+    // is built on that echo. Without this token the write that just filled the cache arrives as an
+    // invalidation and empties it again, leaving [cachedBalance] answering null on the one instance
+    // that actually knows the number
     private val origin = UUID.randomUUID().toString()
 
     /**
@@ -97,6 +95,65 @@ class Currencies(
             logger.error("Failed to initialize currency storage", e)
         }
         subscription = messenger.subscribe(CHANNEL, ::onSync)
+        drainJournal()
+    }
+
+    /**
+     * Apply every queued deposit the ledger will now take.
+     *
+     * Safe to call on an interval and again at boot: each credit is claimed by its op id inside the
+     * transaction that moves the balance, so an entry that already landed is skipped rather than
+     * doubled. Entries the database still refuses are written back and tried again next time.
+     *
+     * Returns how many credits reached the ledger. A journal that will not drain is not an error
+     * worth throwing over, it is the outage continuing.
+     */
+    suspend fun drainJournal(): Int {
+        drainPending()
+
+        val log = journal ?: return 0
+        if (!log.hasPending) return 0
+
+        val queued = log.takeAll()
+        if (queued.isEmpty()) {
+            log.finish(emptyList())
+            return 0
+        }
+
+        var applied = 0
+        val unapplied = ArrayList<PendingCredit>()
+        for (credit in queued) {
+            val book = "${credit.scope}|${credit.currency}"
+            try {
+                locks.withLock("$book|${credit.player}") {
+                    if (store.applyCredit(
+                            credit.opId, credit.scope, credit.currency,
+                            credit.player, credit.amount, credit.starting,
+                        )
+                    ) {
+                        applied++
+                    }
+                }
+                cache[book]?.invalidate(credit.player)
+                messenger.publish(CHANNEL, "$book$SEPARATOR${credit.player}$SEPARATOR$origin")
+            } catch (e: CancellationException) {
+                log.finish(unapplied + queued.subList(queued.indexOf(credit), queued.size))
+                throw e
+            } catch (e: Exception) {
+                unapplied += credit
+            }
+        }
+
+        log.finish(unapplied)
+        if (applied > 0) {
+            logger.info("Applied {} queued deposit(s) to the ledger", applied)
+            runCatching { store.pruneOps(System.currentTimeMillis() - OPS_RETENTION_MILLIS) }
+                .onFailure { logger.warn("Could not prune applied currency operation ids", it) }
+        }
+        if (unapplied.isNotEmpty()) {
+            logger.warn("{} deposit(s) are still queued; the ledger is not taking them yet", unapplied.size)
+        }
+        return applied
     }
 
     fun close() {
@@ -125,8 +182,9 @@ class Currencies(
     override fun all(): Collection<Currency> = currencies.values.toList()
 
     override suspend fun balance(currency: Currency, player: UUID): PackedDecimal = try {
-        val stored = store.balance(scopeOf(currency), currency.id, player)
-        PackedDecimal.of(stored ?: startingOf(currency)).also { remember(currency, player, it) }
+        val stored = store.balance(scopeOf(currency), currency.id, player) ?: startingOf(currency)
+        pending?.rebase(scopeOf(currency), currency.id, player, stored)
+        PackedDecimal.of(stored).also { remember(currency, player, it) }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -168,9 +226,129 @@ class Currencies(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                logger.error("Failed to deposit {} {} for {}", amount, currency.id, player, e)
-                throw e
+                offline(currency, player, amount.toBigDecimal(), floor = null)
+                    ?: queue(currency, player, amount, reason, e)
+                    ?: run {
+                        logger.error("Failed to deposit {} {} for {}", amount, currency.id, player, e)
+                        throw e
+                    }
             }
+        }
+    }
+
+    /**
+     * Move every shared pending delta into the local journal, ready to be written to SQL.
+     *
+     * The order matters. The delta is taken from the shared store, which exactly one node can win,
+     * and written to the journal before anything else. A crash between the two would lose it, so the
+     * write comes first and the journal's op id makes the later ledger apply exactly-once. Writing to
+     * the ledger here instead would widen that window by a database round trip.
+     *
+     * A journal that will not accept the entry puts the delta back.
+     */
+    private suspend fun drainPending() {
+        val ledger = pending ?: return
+        val log = journal ?: return
+        for (account in ledger.pending()) {
+            val taken = try {
+                ledger.take(account.scope, account.currency, account.player) ?: continue
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn("Could not take the pending {} delta for {}", account.currency, account.player, e)
+                continue
+            }
+            val credit = PendingCredit(
+                opId = UUID.randomUUID().toString(),
+                scope = account.scope,
+                currency = account.currency,
+                player = account.player,
+                amount = taken,
+                starting = currencies[account.currency]?.let { startingOf(it) } ?: BigDecimal.ZERO,
+                reason = "offline",
+                at = System.currentTimeMillis(),
+            )
+            try {
+                log.append(credit)
+            } catch (e: Exception) {
+                logger.error(
+                    "Could not journal the pending {} delta for {}; returning it to the shared ledger",
+                    account.currency, account.player, e,
+                )
+                ledger.restore(account.scope, account.currency, account.player, taken)
+            }
+        }
+    }
+
+    /**
+     * Move the account in the shared pending ledger, for when SQL is gone but the transport is not.
+     *
+     * [floor] is null for a credit (nothing to refuse) and zero for a debit (refuse rather than
+     * overdraw). Null back means it was refused or could not be recorded, and both are refusals: a
+     * caller must never hand goods over on it.
+     */
+    private suspend fun offline(
+        currency: Currency,
+        player: UUID,
+        amount: BigDecimal,
+        floor: BigDecimal?,
+    ): PackedDecimal? {
+        val ledger = pending ?: return null
+        val effective = try {
+            ledger.adjust(scopeOf(currency), currency.id, player, amount, floor) ?: return null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn("The pending {} ledger is unreachable for {}", currency.id, player, e)
+            return null
+        }
+        val after = PackedDecimal.of(effective)
+        remember(currency, player, after)
+        return after
+    }
+
+    /**
+     * Write a failed deposit to the journal and answer the balance the player should now see.
+     *
+     * Null when there is no journal, or when the journal itself could not be written: the caller then
+     * rethrows, because a deposit that exists nowhere must not be reported as having landed.
+     *
+     * The projection is the cached balance plus this credit. It can be behind on a `GLOBAL` currency
+     * another node is also crediting, and it converges when the journal drains. Being briefly low is
+     * the right direction to be wrong in: it never authorises a spend the ledger would refuse.
+     */
+    private fun queue(
+        currency: Currency,
+        player: UUID,
+        amount: PackedDecimal,
+        reason: String,
+        cause: Exception,
+    ): PackedDecimal? {
+        val log = journal ?: return null
+        val credit = PendingCredit(
+            opId = UUID.randomUUID().toString(),
+            scope = scopeOf(currency),
+            currency = currency.id,
+            player = player,
+            amount = amount.toBigDecimal(),
+            starting = startingOf(currency),
+            reason = reason,
+            at = System.currentTimeMillis(),
+        )
+        return try {
+            log.append(credit)
+            val projected = (cachedBalance(currency, player)?.toBigDecimal() ?: startingOf(currency))
+                .add(amount.toBigDecimal())
+            val after = PackedDecimal.of(projected)
+            remember(currency, player, after)
+            logger.warn(
+                "Queued a {} {} deposit for {}; the ledger is unreachable ({})",
+                amount, currency.id, player, cause.message,
+            )
+            after
+        } catch (e: Exception) {
+            logger.error("Could not queue a {} {} deposit for {}", amount, currency.id, player, e)
+            null
         }
     }
 
@@ -181,14 +359,41 @@ class Currencies(
         reason: String,
     ): Boolean {
         require(amount.signum() > 0) { "withdraw amount must be positive, got $amount" }
+        return tryWithdraw(currency, player, amount, reason) == WithdrawResult.COMPLETED
+    }
+
+    /**
+     * The same debit, with the refusal and the outage kept apart.
+     *
+     * There is deliberately no queue on this path. `balance -= n if balance >= n` cannot be decided
+     * without an authoritative read, so deferring it would mean handing goods over against a balance
+     * nobody can verify, and two nodes doing that for one player is how an outage becomes a dupe.
+     * See [CurrencyJournal] for the asymmetry in full.
+     */
+    override suspend fun tryWithdraw(
+        currency: Currency,
+        player: UUID,
+        amount: PackedDecimal,
+        reason: String,
+    ): WithdrawResult {
+        require(amount.signum() > 0) { "withdraw amount must be positive, got $amount" }
         return locks.withLock(account(currency, player)) {
             try {
-                debit(currency, player, amount, reason)
+                if (debit(currency, player, amount, reason)) {
+                    WithdrawResult.COMPLETED
+                } else {
+                    WithdrawResult.INSUFFICIENT
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 logger.error("Failed to withdraw {} {} from {}", amount, currency.id, player, e)
-                false
+                val floor = if (currency.allowNegative) null else BigDecimal.ZERO
+                if (offline(currency, player, amount.toBigDecimal().negate(), floor) != null) {
+                    WithdrawResult.COMPLETED
+                } else {
+                    WithdrawResult.UNAVAILABLE
+                }
             }
         }
     }
@@ -233,6 +438,7 @@ class Currencies(
             if (store.compareAndSet(scope, currency.id, player, before, next)) {
                 val after = PackedDecimal.of(next)
                 remember(currency, player, after)
+                pending?.rebase(scope, currency.id, player, next)
                 announce(currency, player)
                 fire(
                     CurrencyChange(
@@ -434,19 +640,9 @@ class Currencies(
     private companion object {
         const val CHANNEL = "cryon:currency"
         const val GLOBAL_SCOPE = "global"
-
-        /**
-         * Retry budget for a contended account. Reached only under cross-instance contention, since
-         * same-process callers are already serialised, so anything approaching it means the account
-         * is being written from several servers faster than a round trip.
-         */
         const val MAX_ATTEMPTS = 8
-
-        /**
-         * Built at runtime, never a literal NUL. See `RedisMessenger`.
-         */
+        const val OPS_RETENTION_MILLIS = 7L * 24 * 60 * 60 * 1000
         val SEPARATOR = Char(0)
-
         const val CACHE_ENTRIES = 20_000L
         const val CACHE_MINUTES = 30L
     }

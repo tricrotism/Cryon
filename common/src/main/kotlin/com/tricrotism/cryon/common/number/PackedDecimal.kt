@@ -28,7 +28,7 @@ value class PackedDecimal private constructor(private val bits: Long) : Comparab
     val exponent: Int get() = e
     val isZero: Boolean get() = bits == 0L
 
-    /** Decimal order of magnitude, `floor(log10|value|)` (0 for zero). The mantissa sits at `10^13`. */
+    // Decimal order of magnitude, `floor(log10|value|)` (0 for zero). The mantissa sits at `10^13`
     val magnitude: Int get() = if (isZero) 0 else e + DIGITS - 1
 
     fun signum(): Int = when {
@@ -76,7 +76,9 @@ value class PackedDecimal private constructor(private val bits: Long) : Comparab
     operator fun times(other: Number): PackedDecimal = this * of(other)
     operator fun div(other: Number): PackedDecimal = this / of(other)
 
-    /** Integer power by squaring. Negative powers go through [reciprocal]. */
+    /**
+     * Integer power by squaring. Negative powers go through [reciprocal].
+     */
     fun pow(power: Int): PackedDecimal {
         if (power == 0) return ONE
         if (isZero) return ZERO
@@ -92,7 +94,9 @@ value class PackedDecimal private constructor(private val bits: Long) : Comparab
         return result
     }
 
-    /** Real power via logs: `x^y = 10^(y · log10 x)`. Negative bases allow only integer powers. */
+    /**
+     * Real power via logs: `x^y = 10^(y · log10 x)`. Negative bases allow only integer powers.
+     */
     fun pow(power: Double): PackedDecimal {
         if (power == 0.0) return ONE
         if (isZero) return ZERO
@@ -119,7 +123,9 @@ value class PackedDecimal private constructor(private val bits: Long) : Comparab
         return scaled(Math.cbrt(m.toDouble() * POW10D[e - 3 * q]), q)
     }
 
-    /** Base-10 logarithm; requires a positive value. `m ∈ [1e13,1e14)` so `log10(m) ∈ [13,14)`. */
+    /**
+     * Base-10 logarithm; requires a positive value. `m ∈ [1e13,1e14)` so `log10(m) ∈ [13,14)`.
+     */
     fun log10(): Double {
         if (signum() <= 0) throw ArithmeticException("log10 of a non-positive PackedDecimal")
         return e + log10(m.toDouble())
@@ -145,7 +151,9 @@ value class PackedDecimal private constructor(private val bits: Long) : Comparab
 
     operator fun compareTo(other: Number): Int = compareTo(of(other))
 
-    /** Lossy outside `double` range: `±Infinity` above ~10^308, `0` below ~10^-308. */
+    /**
+     * Lossy outside `double` range: `±Infinity` above ~10^308, `0` below ~10^-308.
+     */
     fun toDouble(): Double = m.toDouble() * 10.0.pow(e)
 
     fun toLong(): Long = toBigDecimal().toLong()
@@ -154,7 +162,9 @@ value class PackedDecimal private constructor(private val bits: Long) : Comparab
     fun toBigDecimal(): BigDecimal =
         if (isZero) BigDecimal.ZERO else BigDecimal.valueOf(m).scaleByPowerOfTen(e)
 
-    /** Scientific form, e.g. `1.2345e7`. Cheap and exact. The exponent is already base-10. */
+    /**
+     * Scientific form, e.g. `1.2345e7`. Cheap and exact. The exponent is already base-10.
+     */
     fun toScientificString(): String {
         if (isZero) return "0"
         val digits = abs(m).toString()
@@ -166,7 +176,9 @@ value class PackedDecimal private constructor(private val bits: Long) : Comparab
 
     override fun toString(): String = toScientificString()
 
-    /** The packed bit pattern, for compact storage (PDC tags, columns); rebuild with [fromRaw]. */
+    /**
+     * The packed bit pattern, for compact storage (PDC tags, columns); rebuild with [fromRaw].
+     */
     fun raw(): Long = bits
 
     companion object {
@@ -187,7 +199,9 @@ value class PackedDecimal private constructor(private val bits: Long) : Comparab
         val MAX_VALUE = PackedDecimal((EXP_MAX.toLong() shl 48) or ((TEN14 - 1) and MASK48))
         val MIN_VALUE = -MAX_VALUE
 
-        /** `1 × 10^power`. */
+        /**
+         * `1 × 10^power`.
+         */
         fun tenPow(power: Int): PackedDecimal = packed(TEN13, power - DIGITS + 1)
 
         fun of(value: Long): PackedDecimal = if (value == 0L) ZERO else packed(value, 0)
@@ -207,13 +221,19 @@ value class PackedDecimal private constructor(private val bits: Long) : Comparab
             else -> of(value.toDouble())
         }
 
-        /** Exact to 14 significant figures via [BigDecimal]; accepts `e`-notation. */
+        /**
+         * Exact to 14 significant figures via [BigDecimal]; accepts `e`-notation.
+         */
         fun parse(s: String): PackedDecimal = of(BigDecimal(s.trim()))
 
-        /** Rebuild a value stored via [raw]. */
+        /**
+         * Rebuild a value stored via [raw].
+         */
         fun fromRaw(bits: Long): PackedDecimal = PackedDecimal(bits)
 
-        /** Build from a `double` mantissa × 10^[extraExp], for of(Double)/sqrt/cbrt/pow. */
+        /**
+         * Build from a `double` mantissa × 10^[extraExp], for of(Double)/sqrt/cbrt/pow.
+         */
         private fun scaled(value: Double, extraExp: Int): PackedDecimal {
             if (value == 0.0 || !value.isFinite()) return ZERO
             val neg = value < 0
@@ -223,7 +243,9 @@ value class PackedDecimal private constructor(private val bits: Long) : Comparab
             return packed(if (neg) -mant else mant, d - 13 + extraExp)
         }
 
-        /** Fast normalize for times/div: the input is in [1e13,1e14] bar one carry from rounding up. */
+        /**
+         * Fast normalize for times/div: the input is in [1e13,1e14] bar one carry from rounding up.
+         */
         private fun normalized(signedM: Long, rawE: Int): PackedDecimal {
             val neg = signedM < 0
             var mAbs = if (neg) -signedM else signedM
@@ -235,7 +257,9 @@ value class PackedDecimal private constructor(private val bits: Long) : Comparab
             return finish(neg, mAbs, e)
         }
 
-        /** General normalize: bring any `rawM × 10^rawE` to canonical 14-digit form. */
+        /**
+         * General normalize: bring any `rawM × 10^rawE` to canonical 14-digit form.
+         */
         private fun packed(rawM: Long, rawE: Int): PackedDecimal {
             if (rawM == 0L) return ZERO
             val neg = rawM < 0

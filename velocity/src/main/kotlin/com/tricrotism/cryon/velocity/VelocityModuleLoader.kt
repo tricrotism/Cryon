@@ -59,14 +59,18 @@ class VelocityModuleLoader(
         Thread(runnable, "Cryon-Module-Loader").apply { isDaemon = true }
     }
 
-    /** Run [block] on the loader's own thread, the proxy's stand-in for Paper's global region thread. */
+    /**
+     * Run [block] on the loader's own thread, the proxy's stand-in for Paper's global region thread.
+     */
     fun submit(block: () -> Unit) {
         worker.execute {
             runCatching(block).onFailure { log.error("Module operation failed", it) }
         }
     }
 
-    /** Load the shared `api/` contract layer into one loader that parents every feature loader. */
+    /**
+     * Load the shared `api/` contract layer into one loader that parents every feature loader.
+     */
     fun loadSharedApi(dir: File) {
         apiDir = dir
         val contracts = dir.listFiles { f: File -> f.isFile && f.name.endsWith(".jar") }?.sortedBy(File::getName)
@@ -102,13 +106,17 @@ class VelocityModuleLoader(
         return enabled
     }
 
-    /** Wipe any copies left behind by a previous run, then ensure the cache dir exists. */
+    /**
+     * Wipe any copies left behind by a previous run, then ensure the cache dir exists.
+     */
     fun prepareCache() {
         cacheDir.listFiles()?.forEach { it.delete() }
         cacheDir.mkdirs()
     }
 
-    /** Read and register every jar in `modules/`; the caller then drives loadAll/enableAll. */
+    /**
+     * Read and register every jar in `modules/`; the caller then drives loadAll/enableAll.
+     */
     fun registerAll() {
         val files = jarFiles()
         if (files.isEmpty()) {
@@ -132,21 +140,31 @@ class VelocityModuleLoader(
         return loaded.filter { manager.state(it) == ModuleState.ENABLED }
     }
 
-    /** Hot-load every jar in `modules/` that isn't loaded yet. Returns newly enabled ids. */
+    /**
+     * Hot-load every jar in `modules/` that isn't loaded yet. Returns newly enabled ids.
+     */
     fun loadNew(): List<String> = jarFiles().filterNot(::isLoaded).flatMap(::loadJar)
 
-    /** Hot-remove the jar that declares [id] (disables + unregisters all its modules). */
+    /**
+     * Hot-remove the jar that declares [id] (disables + unregisters all its modules).
+     */
     fun unloadModule(id: String): List<String>? = moduleToJar[id]?.let(::unloadByKey)
 
-    /** Hot-remove a jar by file (the watcher's delete path; the file may already be gone). */
+    /**
+     * Hot-remove a jar by file (the watcher's delete path; the file may already be gone).
+     */
     fun unloadJar(source: File): List<String>? = unloadByKey(key(source))
 
     fun isLoaded(source: File): Boolean = jars.containsKey(key(source))
 
-    /** Jar files sitting in `modules/` that aren't loaded yet, for the `/cryon load` suggester. */
+    /**
+     * Jar files sitting in `modules/` that aren't loaded yet, for the `/cryon load` suggester.
+     */
     fun loadableJarNames(): List<String> = jarFiles().filterNot(::isLoaded).map(File::getName)
 
-    /** Close every loader (modules before the shared parent) and clear the cache. For proxy shutdown. */
+    /**
+     * Close every loader (modules before the shared parent) and clear the cache. For proxy shutdown.
+     */
     fun close() {
         worker.shutdownNow()
         jars.values.forEach { jar ->
