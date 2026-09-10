@@ -369,6 +369,7 @@ class CryonGeyserExtension : Extension {
             configFile = configFile,
             langDirectory = dataDirectory.resolve("lang"),
             modulesDirectory = dataDirectory.resolve("modules"),
+            apiDirectory = dataDirectory.resolve("api"),
             onConfigChanged = {
                 cfg.reload(YamlConfigSource.load(configFile))
                     .forEach { log.error("A config reload listener failed", it) }

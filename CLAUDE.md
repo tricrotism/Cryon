@@ -589,9 +589,13 @@ blocking startup on a network fetch would make an unreachable repository an unbo
 `/cryon remote` (what is tracked, what has been fetched) and `/cryon remote check` (poll now).
 
 **GitOps delivery (`…common.deploy`).** A git repository is polled and its contents laid down where the loaders already
-look: `config.yml`, the `lang/` overrides, and `modules/*.jar`. Off by default (`deploy.enabled`), and wired identically
-on all three platforms through `buildGitDeploy(...)`, so the loaders differ only in their directories and their two
-reload hooks.
+look: `config.yml`, the `lang/` overrides, `modules/*.jar`, `api/*.jar` and the per-module `data/` configs. Off by
+default (`deploy.enabled`), and wired identically on all three platforms through `GitDeploy.from(...)`, so the loaders
+differ only in their directories and their two reload hooks. **`api/` is a target of its own rather than part of
+`modules/`** because the two land in different classloaders: a contract jar shared between repositories has to load from
+the shared parent, and a repository carrying a feature whose API another repository compiles against has nowhere else to
+put it. It gets no reload hook, since swapping a contract jar takes every module down with it, so that stays the `api/`
+watcher's `reload-api` cascade or the next restart.
 
 **No git client and no JGit.** The two things needed are a ref lookup and a download, so it is two `HttpClient`
 requests, exactly as `RemoteModules` talks to Maven. The ref comes from git's own smart-HTTP advertisement
@@ -608,6 +612,17 @@ reaches the server whose folder it sits in. `{server}` is the default and resolv
 what a pool of interchangeable nodes wants; name it explicitly when the folder is not called after the pool. A folder
 the repository does not have is logged with the list of folders it *does* have, because a typo there is otherwise
 indistinguishable from a commit that changed nothing, and `/cryon deploy` prints the folder in use for the same reason.
+
+**A shared layer under it (`deploy.global-folder`, default `global`), because most features are configured the same
+everywhere.** Without it the only way to give ten servers one metrics config is ten copies of it, which is ten places to
+forget. Every `deploy.paths.*` entry is resolved in the global folder first and the server folder second, and **the
+server folder wins file by file rather than wholesale**: a server carrying only `data/metrics/config.yml` still inherits
+every other global file, which is the whole point, since a wholesale override would put the operator back to copying.
+Layers are resolved before anything is copied, so a file the server shadows is written once with the winning bytes and a
+shadowed global entry is not reported as a change at all, keeping "written only where the bytes differ"
+true. Blank turns the layer off. **A missing global folder is silent**, unlike a missing server folder: having nothing
+shared is the ordinary state, so warning about it would be noise, and `/cryon deploy` naming the folder is what catches
+a typo instead.
 
 **`deploy.paths.data` mirrors `plugins/Cryon/data/<module-id>/`**, so a server folder holds only the module configs it
 actually changes. **A module the folder does not carry is not overridden at all**: it extracts the default bundled in
@@ -1594,6 +1609,7 @@ of populated shards on node upgrades. Add infrastructure **and document it here 
 | `remote.enabled` + let `modules.auto-reload` gate applying        | A second switch letting remote builds swap when local can't     |
 | A stable jar filename per remote artifact                         | A versioned filename (the loader then sees the module twice)    |
 | A folder per server, paths resolved inside it                     | One shared tree every server reads the same files out of        |
+| `global/` for a feature configured the same everywhere            | The same module config copied into every server folder          |
 | Ship only the module configs a server actually changes            | Copying every module's default in so it can never be updated    |
 | `Provisioner` + a `NodeSelector`                                  | Hand-rolling a scan-then-scale loop over the registry           |
 | Branching `Pending` apart from `Unavailable`                      | Telling a player "broken" while a node is still booting         |

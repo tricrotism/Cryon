@@ -15,4 +15,11 @@ dependencies {
     compileOnly(libs.packetevents)
 
     implementation(project(":common"))
+
+    testImplementation(kotlin("test"))
+    testImplementation(libs.paper.api)
+}
+
+tasks.test {
+    useJUnitPlatform()
 }

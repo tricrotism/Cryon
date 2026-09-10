@@ -37,6 +37,20 @@ object DeployKeys {
      */
     val FOLDER = ConfigKeys.nonBlankString("deploy.folder", "{server}")
 
+    /**
+     * The directory every server takes files from, laid down under [FOLDER].
+     *
+     * A feature configured the same on every server is written once here instead of copied into each
+     * server folder, and a server that disagrees carries only the file it changes: the layers merge
+     * per file, so `global/data/metrics/config.yml` still lands on a server whose own folder holds
+     * nothing for `metrics`.
+     *
+     * Blank turns the shared layer off. A folder the repository does not carry is not a
+     * misconfiguration and says nothing, unlike [FOLDER], whose absence means this server gets
+     * nothing at all.
+     */
+    val GLOBAL_FOLDER = ConfigKeys.string("deploy.global-folder", "global")
+
     val POLL_SECONDS = ConfigKeys.long("deploy.poll-seconds", 60L, 15L..86400L)
     val TIMEOUT_SECONDS = ConfigKeys.long("deploy.timeout-seconds", 30L, 5L..600L)
     val USERNAME = ConfigKeys.string("deploy.username", "")
@@ -44,6 +58,16 @@ object DeployKeys {
     val PATH_CONFIG = ConfigKeys.string("deploy.paths.config", "config.yml")
     val PATH_LANG = ConfigKeys.string("deploy.paths.lang", "lang")
     val PATH_MODULES = ConfigKeys.string("deploy.paths.modules", "modules")
+
+    /**
+     * Contract jars, mirroring `plugins/Cryon/api/`.
+     *
+     * Separate from [PATH_MODULES] because the two land in different classloaders: a contract jar
+     * has to load from the shared parent or a provider and its consumer hold two copies of the same
+     * interface. A repository carrying a feature whose API another repository compiles against has
+     * nowhere else to put it.
+     */
+    val PATH_API = ConfigKeys.string("deploy.paths.api", "api")
 
     /**
      * Per-module config directories, mirroring `plugins/Cryon/data/<module-id>/`.

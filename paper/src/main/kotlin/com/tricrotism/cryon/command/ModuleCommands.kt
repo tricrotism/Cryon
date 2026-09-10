@@ -174,6 +174,15 @@ class ModuleCommands(
                 Placeholder.unparsed("folder", poller.folder().ifEmpty { "(repository root)" }),
             )
         )
+        val global = poller.globalFolder()
+        if (global.isNotEmpty()) {
+            sender.sendMessage(
+                Mini.format(
+                    "<off_white> Shared folder <highlight><folder></highlight>",
+                    Placeholder.unparsed("folder", global),
+                )
+            )
+        }
     }
 
     /**

@@ -18,6 +18,7 @@ import org.slf4j.Logger
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import org.geysermc.cumulus.util.FormImage as CumulusImage
 
 /**
  * The real Bedrock bridge, used when Floodgate is installed. **This class names Floodgate and Cumulus
@@ -79,7 +80,15 @@ internal class FloodgateBedrockService(private val logger: Logger) : BedrockServ
         val form = SimpleForm.builder()
             .title(legacy(title))
             .content(legacy(content))
-            .apply { buttons.forEach { button -> button(legacy(button.label)) } }
+            .apply {
+                for (button in buttons) {
+                    when (val image = button.image) {
+                        null -> button(legacy(button.label))
+                        is FormImage.Path -> button(legacy(button.label), CumulusImage.Type.PATH, image.path)
+                        is FormImage.Url -> button(legacy(button.label), CumulusImage.Type.URL, image.url)
+                    }
+                }
+            }
             .validResultHandler { response ->
                 val tapped = buttons.getOrNull(response.clickedButtonId())
                 if (tapped == null) session.cancel() else session.deliver(tapped.onTap)

@@ -383,6 +383,7 @@ class CryonVelocityPlugin @Inject constructor(
             configFile = configFile,
             langDirectory = dataDirectory.resolve("lang"),
             modulesDirectory = dataDirectory.resolve("modules"),
+            apiDirectory = dataDirectory.resolve("api"),
             onConfigChanged = {
                 cfg.reload(YamlConfigSource.load(configFile))
                     .forEach { logger.error("A config reload listener failed", it) }

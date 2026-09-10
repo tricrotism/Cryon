@@ -201,7 +201,7 @@ class Cryon : JavaPlugin() {
         setupNetwork(services)
         val status = reportNetwork(services)
 
-        commandRegistry = CommandRegistry(server, log)
+        commandRegistry = CommandRegistry(server, pluginMeta.namespace(), log)
         services.register<CommandService>(commandRegistry)
 
         val papi = PapiBridge(this, log)
@@ -323,6 +323,7 @@ class Cryon : JavaPlugin() {
             configFile = configFile,
             langDirectory = File(dataFolder, "lang").toPath(),
             modulesDirectory = modulesDir.toPath(),
+            apiDirectory = apiDir.toPath(),
             onConfigChanged = {
                 cryonConfig.reload(YamlConfigSource.load(configFile))
                     .forEach { log.error("A config reload listener failed", it) }

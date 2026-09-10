@@ -30,7 +30,11 @@ import java.util.concurrent.CopyOnWriteArrayList
  *
  * Main-thread only, matching the module loader.
  */
-class CommandRegistry(private val server: Server, private val log: Logger) : CommandService {
+class CommandRegistry(
+    private val server: Server,
+    private val namespace: String,
+    private val log: Logger,
+) : CommandService {
 
     private class Entry(val owner: String, val available: () -> Boolean, val handler: Any)
 
@@ -135,6 +139,33 @@ class CommandRegistry(private val server: Server, private val log: Logger) : Com
             }
         }
         booted = true
+        reclaim()
+    }
+
+    /**
+     * Take the labels the registrar would not hand over.
+     *
+     * Paper grants a literal to whoever asks first and cannot evict the holder, which is why the
+     * flush above records what it was given rather than what it asked for: against a plugin already
+     * holding `v`, an alias is simply dropped. The live path does evict, so every whole-root
+     * contribution is pushed back through it on the first tick, by which point every other plugin
+     * has enabled and registered. A plugin that registers later still wins; nothing either side does
+     * here settles that, short of one of them not claiming the label.
+     *
+     * Roots only. A shared root is joined rather than seized, so re-asserting a branch against a
+     * foreign holder of the same literal would graft our subcommands onto their command instead of
+     * replacing it.
+     */
+    private fun reclaim() {
+        Schedulers.global {
+            var changed = false
+
+            for (entry in entries) {
+                changed = liveRegister(entry.owner, entry.handler, entry.available) || changed
+            }
+
+            if (changed) refresh()
+        }
     }
 
     /**
@@ -224,12 +255,30 @@ class CommandRegistry(private val server: Server, private val log: Logger) : Com
         root.addChild(node)
         val names = liveRoots.getOrPut(owner) { linkedSetOf() }
         names.add(built.name)
-        for (alias in built.aliases) {
+        val aliases = built.aliases.flatMap { listOf(it, "$namespace:$it") } + "$namespace:${built.name}"
+        for (alias in aliases) {
             removeRoot(alias)
-            root.addChild(LiteralArgumentBuilder.literal<Any>(alias).redirect(node).requires(node.requirement).build())
+            root.addChild(copyLiteral(alias, node))
             names.add(alias)
         }
         return true
+    }
+
+    /**
+     * An alias literal for [node], copying what Paper's registrar copies on the boot path: the access
+     * check, the executor, and the children.
+     *
+     * A plain `redirect` is not enough. Brigadier only follows a redirect when there is input left to
+     * re-parse, so a bare `/alias` with no arguments reaches the node, finds no executor, and reports
+     * an unknown command while `/alias <sub>` works.
+     */
+    private fun copyLiteral(alias: String, node: CommandNode<Any>): CommandNode<Any> {
+        val copy = LiteralArgumentBuilder.literal<Any>(alias)
+            .requires(node.requirement)
+            .forward(node.redirect, node.redirectModifier, node.isFork)
+        node.command?.let(copy::executes)
+        node.children.forEach(copy::then)
+        return copy.build()
     }
 
     private fun removeRoot(name: String): Boolean {

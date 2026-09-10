@@ -118,20 +118,33 @@ deploy:
     # {server} resolves to this node's pool name (network.server), which is the right default for a
     # pool of interchangeable nodes. Name it explicitly when the folder is not called after the pool.
     folder: "{server}"
-    # Where each kind of thing lives INSIDE that folder. Blank turns that one off.
+    # A folder every server reads FIRST, so a feature configured the same everywhere is written once
+    # instead of copied into every server folder. The folder above still wins, but file by file
+    # rather than wholesale: a server carrying only data/metrics/config.yml keeps every other global
+    # file. Blank turns the shared layer off.
+    global-folder: "global"
+    # Where each kind of thing lives INSIDE those folders. Blank turns that one off.
     #
     # data/ mirrors plugins/Cryon/data/<module-id>/, so a server folder holds only the module configs
-    # it actually changes. A module the folder does not carry is not overridden at all: it extracts
-    # the default bundled in its own jar, exactly as it would with no deploy configured.
+    # it actually changes. A module neither folder carries is not overridden at all: it extracts the
+    # default bundled in its own jar, exactly as it would with no deploy configured.
     #
+    # api/ is separate from modules/ because the two land in different classloaders: a contract jar
+    # shared between repositories has to load from plugins/Cryon/api/, or a provider and its consumer
+    # end up holding two copies of the same interface.
+    #
+    #   global/
+    #       api/commons-api.jar
+    #       modules/cryon-economy.jar
+    #       data/cryon-economy/config.yml     every server, unless one overrides it
     #   lifesteal8/
     #       config.yml
     #       lang/en_US.properties
-    #       data/cryon-economy/config.yml
-    #       modules/cryon-economy.jar
+    #       data/cryon-economy/config.yml     this server only, wins over the global copy
     paths:
         config: "config.yml"
         lang: "lang"
         modules: "modules"
+        api: "api"
         data: "data"
 

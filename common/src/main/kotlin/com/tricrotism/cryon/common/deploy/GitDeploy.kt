@@ -17,6 +17,11 @@ import java.util.concurrent.atomic.AtomicReference
  * change could not is the surprise this refuses, the same rule `remote.enabled` follows. `config.yml`
  * is the exception and is re-read immediately, because nothing was watching it before.
  *
+ * Files come from two folders, not one: `deploy.global-folder` first, then this server's own, and a
+ * server folder overrides the shared one **file by file**. So a feature configured the same
+ * everywhere is written once globally and a server that disagrees carries only the file it changes.
+ * Blank the global folder and the layer is gone.
+ *
  * Nothing is ever deleted, so a bad merge cannot empty a server. A target is written only where the
  * bytes differ, so an unrelated commit does not fire the config reload hook.
  *
@@ -28,6 +33,7 @@ class GitDeploy(
     private val archive: RepositorySource,
     private val ref: String,
     private val serverId: String,
+    private val globalFolder: String,
     // the directory in the repository this server's files live under, `{server}` already resolved
     private val folder: String,
     private val targets: List<DeployTarget>,
@@ -35,6 +41,9 @@ class GitDeploy(
     private val workDirectory: Path,
     private val logger: Logger,
 ) {
+
+    private val layers: List<String> =
+        listOfNotNull(globalFolder.takeIf { it.isNotEmpty() && it != folder }) + folder
 
     // held in memory rather than re-read, so a command can ask on a region thread without disk I/O
     @Volatile
@@ -56,6 +65,12 @@ class GitDeploy(
      * @return the repository folder this server takes its files from
      */
     fun folder(): String = folder
+
+    /**
+     * @return the shared repository folder laid down under [folder], or an empty string when there
+     *   is no shared layer
+     */
+    fun globalFolder(): String = globalFolder
 
     /**
      * Look for a new commit and, if there is one, write it out.
@@ -163,7 +178,6 @@ class GitDeploy(
         else logger.warn("The deploy repository has no {}, so falling back to {}", ref, resolved)
     }
 
-    /** Copy [target]'s source into place, returning the repository-relative paths actually written. */
     /**
      * @return the top-level directory names in [tree], so a missing folder can say what is there
      */
@@ -173,27 +187,46 @@ class GitDeploy(
         }
     }.getOrDefault(emptyList())
 
+    /**
+     * Copy [target]'s source into place.
+     *
+     * Every layer is resolved before anything is copied, so a file the server folder overrides is
+     * written once with the winning bytes rather than written twice and reported as two changes.
+     * That keeps "a target is written only where the bytes differ" true with a shared layer present:
+     * a global entry a server shadows is not a change at all.
+     *
+     * @return the repository-relative paths actually written
+     */
     private fun syncTarget(target: DeployTarget, tree: Path): List<String> {
         val within = target.repositoryPath.replace(SERVER_PLACEHOLDER, serverId)
-        // every path is relative to this server's folder, so one repository holds many servers and a
-        // file only ever reaches the server whose folder it sits in
-        val relative = if (folder.isEmpty()) within else "$folder/$within"
-        val source = tree.resolve(relative)
-        if (!Files.exists(source)) return emptyList()
+        val sources = LinkedHashMap<String, Path>()
 
-        val written = ArrayList<String>()
-        if (Files.isDirectory(source)) {
+        for (layer in layers) {
+            val source = tree.resolve(if (layer.isEmpty()) within else "$layer/$within")
+            if (!Files.exists(source)) continue
+
+            if (!Files.isDirectory(source)) {
+                sources[""] = source
+                continue
+            }
+
             Files.walk(source).use { paths ->
                 paths.filter { Files.isRegularFile(it) }.forEach { file ->
-                    val within = source.relativize(file).toString().replace('\\', '/')
-                    if (copyIfChanged(file, target.destination.resolve(within))) {
-                        written += "$relative/$within"
-                    }
+                    sources[source.relativize(file).toString().replace('\\', '/')] = file
                 }
             }
-        } else if (copyIfChanged(source, target.destination)) {
-            written += relative
         }
+
+        val written = ArrayList<String>()
+        for ((relative, source) in sources) {
+            val destination =
+                if (relative.isEmpty()) target.destination else target.destination.resolve(relative)
+
+            if (copyIfChanged(source, destination)) {
+                written += tree.relativize(source).toString().replace('\\', '/')
+            }
+        }
+
         return written
     }
 
@@ -266,6 +299,7 @@ class GitDeploy(
             configFile: Path,
             langDirectory: Path,
             modulesDirectory: Path,
+            apiDirectory: Path,
             onConfigChanged: () -> Unit,
             onLangChanged: () -> Unit,
             logger: Logger,
@@ -300,6 +334,12 @@ class GitDeploy(
                 // rule a jar an operator dropped in follows
                 targets += DeployTarget("modules", path, modulesDirectory)
             }
+            config[DeployKeys.PATH_API].takeIf { it.isNotBlank() }?.let { path ->
+                // no hook: swapping a contract jar takes every module down with it, so it is the
+                // api/ watcher's reload-api cascade or the next restart, never something delivery
+                // decides on its own
+                targets += DeployTarget("api", path, apiDirectory)
+            }
             config[DeployKeys.PATH_DATA].takeIf { it.isNotBlank() }?.let { path ->
                 // no hook: a module reads its own config through PaperModule.config(), which is a
                 // fresh read each call, so a redeploy lands on its next reload rather than needing
@@ -328,6 +368,7 @@ class GitDeploy(
                 archive = archive,
                 ref = DeployKeys.refOf(config[DeployKeys.BRANCH]),
                 serverId = serverId,
+                globalFolder = config[DeployKeys.GLOBAL_FOLDER].trim('/'),
                 folder = config[DeployKeys.FOLDER].replace(SERVER_PLACEHOLDER, serverId).trim('/'),
                 targets = targets,
                 stateFile = dataFolder.resolve("deploy-state.properties"),
