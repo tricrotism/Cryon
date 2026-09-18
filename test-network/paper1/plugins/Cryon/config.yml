@@ -47,7 +47,7 @@ remote:
     #
     # Each artifact lands on a stable filename (cryon-economy.jar), so a new build replaces the old
     # one rather than landing beside it.
-    artifacts: [ ]
+    artifacts: []
     #    - repository: internal
     #      coords: "com.tricrotism.cryon:cryon-economy"
     #      version: "1.0.0"

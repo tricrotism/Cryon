@@ -112,6 +112,14 @@ internal object CommandUi {
         if (input.isEmpty() || candidates.isEmpty()) return null
         val needle = input.lowercase()
         candidates.firstOrNull { it.lowercase().startsWith(needle) }?.let { return it }
+
+        // A module id reads `<repo>-<name>` and the name is the half an operator remembers, so `npc`
+        // for `commons-npc` is a near-certain intent that neither a prefix nor an edit distance can
+        // see: the distance is 8 against a budget of 1. Exact segment equality only, and only when
+        // one candidate matches, since two would make the offer a coin flip that fails twice.
+        candidates.singleOrNull { candidate -> candidate.lowercase().split('-').any { it == needle } }
+            ?.let { return it }
+
         val budget = min(MAX_DISTANCE, maxOf(1, needle.length / 3))
         return candidates
             .map { it to distance(needle, it.lowercase(), budget) }

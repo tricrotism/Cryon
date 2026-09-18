@@ -21,18 +21,20 @@ Modules in this repo (core + published API):
   **Published.**
 - **`:paper`**. The core plugin / **loader** (`com.tricrotism.cryon.Cryon`). paperweight.userdev +
   Shadow + run-paper; bundles `:common` + `:paper-api` + kotlin-stdlib for loaded features.
+  **Published as `cryon-paper`**, shaded jar only.
 - **`:velocity-api`**. What Velocity feature repos compile against: `VelocityModule`/
   `VelocityModuleContext`. Velocity `compileOnly`. **Published.**
 - **`:velocity`**. The proxy **loader** (`com.tricrotism.cryon.velocity.CryonVelocityPlugin`). Shadow;
   shades `:common` + `:velocity-api` + kotlin-stdlib + the cross-server client libs (no Paper-style
   `libraries:` loader on Velocity). Reads the shared server registry to route players and register
-  backends live.
+  backends live. **Published as `cryon-velocity`**, shaded jar only.
 - **`:geyser-api`**. What Geyser Standalone feature repos compile against: `GeyserModule`/
   `GeyserModuleContext`, `command` (a third annotation framework), and the `Component` to legacy string seam Geyser's
   `CommandSource` forces. Geyser API `compileOnly`. **Published.**
 - **`:geyser`**. The Bedrock **loader** (`com.tricrotism.cryon.geyser.CryonGeyserExtension`), a Geyser Standalone
   *extension* rather than a plugin. Shadow; shades the same set `:velocity` does plus MiniMessage, which the Geyser jar
   does not carry. Gates Bedrock logins on maintenance and writes the Bedrock MOTD.
+  **Published as `cryon-geyser`**, shaded jar only.
 
 Features live in **separate repos** (e.g. `Cryon-Modules/cryon-example-feature/`), `compileOnly` the
 API, and ship a thin jar dropped into `plugins/Cryon/modules/`.
@@ -152,6 +154,46 @@ overrides (canary rollouts, support cases) apply. Reference: the survival gamemo
 
 ---
 
+## Experiments (A/B, A/B/C, A/B/N)
+
+**`Experiments`** (`…common.experiment`), created by the core and shared via the `ServiceRegistry`,
+beside `FeatureFlags` and built the same way: SQL is the source of truth when configured, memory
+answers every read, and a change is broadcast over the `Messenger` and applied idempotently including
+to its own echo. It is a second store rather than a wider flag because a flag is a boolean end to end
+— in the map, on the wire and in its column — and cannot carry an arm.
+
+**Two arms and five arms are the same code.** An A/B/C test is an A/B test with a longer list; there is
+no arity anywhere in the system. Weights are relative (`90/10` is a canary, `1/1` is a coin flip).
+
+Same layering as a flag, most specific first: player override → this server's pool → global → the
+hash. Assignment is `SHA`-free arithmetic (SplitMix64 over the UUID, seeded from a per-experiment
+salt) because it runs in display code; it is deterministic, stable across restarts and servers, and
+independent between experiments, which is what the salt is for.
+
+```kotlin
+// at the display, because that is what an exposure means
+when (experiments.expose("WELCOME_COPY", player.uniqueId, "chat")) {
+    "friendly" -> messages.send(player, "welcome.friendly")
+    "brief" -> messages.send(player, "welcome.brief")
+    else -> messages.send(player, "welcome")   // not assigned, or the experiment is off
+}
+```
+
+- **`expose` at the display, `arm` when you only need to branch.** Same rule as message impressions: an
+  assignment nobody reached is not an exposure, and counting it puts players in the denominator who
+  never had the chance to react.
+- **Every call site needs an `else`.** A disabled, deleted or unregistered experiment assigns nobody.
+  That is what makes one safe to stop at 3am.
+- **`register` in `onEnable`; a stored definition always wins.** Registering says what the experiment is
+  on a server that has never seen it — it must not overwrite weights an admin has since changed.
+- **Editing arms reshuffles the population**, including players already exposed, because weights are
+  relative. Prefer stopping and registering a new id over reweighting a running test; a result measured
+  across the edit is a blend of two populations.
+- Arm ids are `[a-z0-9_]`, checked at construction: they go into a packed `id:weight,…` column, a sync
+  payload and eventually a dashboard grouping.
+
+---
+
 ## Messaging: Adventure + MiniMessage
 
 Send `Component`s, **never legacy `§` strings, never string interpolation into messages.** Use the
@@ -178,6 +220,41 @@ player.sendMessage(
 `Placeholder.unparsed`/`.component`/`.parsed`. Palette tags (`<off_white>`, `<scarlet>`, semantic
 `<error>`/`<success>`/…) resolve through `Mini`. Multi-language copy pulls from `MessageService` by
 key (never hardcode English); localized + prefixed ack → `messages.send(player, "key", …)`.
+
+**`CryonPalette.TAGS` is the one list** — 142 named colours across semantic, warm, green, blue, violet,
+pink, neon, coral, lime, teal, metallic, jewel, white, gray and black families. `RESOLVER` and the
+`tag`/`tags` inverse are both derived from it, so **a colour is added in exactly one place**: a `val`
+plus a `TAGS` entry whose name is that field lowercased. Adding it to one and not the other fails
+nowhere, so `CryonPaletteTest` pins the invariants — every declared tag parses, naming a parsed colour
+round-trips, and the only names sharing a hex are the five known aliases. An accidental duplicate
+otherwise becomes a silent alias and folds two names into whichever was declared first.
+
+`tags(component)` names the palette colours in a rendered message — a MiniMessage tag is compiled away
+at parse time, so that map is the only route from what a player saw back to the decision that coloured
+it. Colours outside the palette are ignored, never reported as hex: an unbounded colour dimension is
+the cardinality mistake label rules exist to prevent. Aliases collapse onto the first name declared;
+the table on `TAGS` says which wins, including the one that surprises (`white`, not `off_white`).
+
+The `neon_*`/`electric_*`/`plasma` family is fully saturated and for sparing use — a rarity line, a
+jackpot, the one word that has to be read first. A menu built out of them is unreadable.
+
+### Observation seams
+
+Two places in the core report what a player was **shown**, so a feature that wants to know which of
+our messages and menus actually work registers once instead of instrumenting every screen:
+
+- `MessageObservers.observe { … }` (`common.locale`) — fired by `MessageService.send(player, key, …)`.
+- `MenuTree.observe(observer)` (`paper-api.menu`) — fired on every page draw and every entry click,
+  so it covers menus written by modules that have never heard of it. `menu` is the breadcrumb path of
+  node ids, because `MenuNode.id` is only unique within its parent.
+
+Both are inert with nothing registered (one field read), both catch and log an observer that throws
+rather than costing a player their message, and both run on the caller's thread — record and return.
+
+**Instrument the display, never the render.** `MessageService.render` turns a key into a component
+that may end up in a menu icon, an action bar, a log line or nowhere at all, so counting it fills the
+denominator of every "did anyone act on this" figure with text no player saw. Only the display site
+knows the surface, and whether there was one. A new surface means hooking where it is shown.
 
 ---
 
@@ -268,10 +345,11 @@ and hopping back.
 
 - **Cancellation is cooperative.** It unblocks a suspension point; a thread already inside a JDBC call runs to
   completion. Teardown that must *finish* goes in `onDisable` before the super call, not in a coroutine racing it.
-- **`runBlocking` is for shutdown only**, and there are exactly three, all in `onDisable`/`stop`:
-  `Cryon.flushOnlinePlayers`, the colony crown resign in `Cryon.onDisable`, and `NodeReporter.stop`. Each is bounded by
-  a timeout, and each exists because there is no later tick to resume on and the work has to land before the pool
-  closes. Never reachable from a tick, event or Netty thread.
+- **`runBlocking` is for teardown only**, and there are exactly four: `Cryon.flushOnlinePlayers`, the colony crown
+  resign in `Cryon.onDisable`, `NodeReporter.stop`, and `PaperModule.flushBeforeTeardown`. Each is bounded by a
+  timeout, and each exists because there is no later tick to resume on: the work has to land before the pool closes or
+  the classloader does. The fourth is the only one not on a server stop, and it is an admin path (`/cryon
+  reload|unload`, the watcher) rather than a tick, event or Netty one.
 - **A monitor cannot be held across a suspension point.** `@Synchronized` goes on a non-suspending helper
   (`MemoryCurrencyStore.moveLocked` is the worked example); for anything that suspends, use a `Mutex`.
 - **Non-suspending seams stay non-suspending on purpose.** `Messenger.subscribe` handlers run on the transport's ordered
@@ -363,9 +441,13 @@ No decorative dividers (`// ── fishing ──`). Comment the *why* when non-
 ## Build & Run
 
 JDK 25, Kotlin 2.4.20-Beta1, paperweight dev bundle 26.2. Gradle config-cache/parallel/build-cache on. **Verify on a
-local server**. There are no tests in this repo, and `./gradlew test` therefore passes without running anything.
+local server**. `./gradlew test` runs a deliberately small suite: the config drift checks on all three platforms and
+`ConfigTemplateTest` in `:common`. Nothing else. Everything observable from a running server belongs on a running
+server.
 
-If one is ever worth adding, the case is the narrow one a running server cannot reach: a state that needs a *dependency*
+The bar for adding another is the narrow case a running server cannot reach. The config checks clear it because both
+failures are silent at runtime and the mistake is in the repository, not the deployment: by the time a server is
+starting, nobody who can fix it is watching. The other shape that clears it is a state needing a *dependency*
 to fail part-way through a sequence, which is not reachable by stopping a database from outside because the first
 statement fails first. That would want a `src/test/kotlin` in the module it tests (Kotlin associates the two
 compilations, so the test sees `internal` types and can substitute a fake `CurrencyStore` without widening any public
@@ -374,11 +456,26 @@ server belongs on a running server.
 
 - `./gradlew build`. All modules; `:paper`'s `build` runs `shadowJar` → `paper/build/libs/`. The shaded jar bundles
   `:common` + `:paper-api` + kotlin-stdlib, **don't relocate kotlin-stdlib**
-  (features resolve `kotlin.*` through it).
+  (features resolve `kotlin.*` through it). **Each loader's shaded jar is named for where it is dropped**, not for the
+  Gradle module it came from: `Cryon-Paper-<version>.jar`, `Cryon-Velocity-<version>.jar`,
+  `Cryon-Geyser-<version>.jar` (`archiveBaseName` + an empty `archiveClassifier`, so the plain unshaded `jar` keeps the
+  module name and nothing collides).
 - `./gradlew :paper:runServer`. Local Paper 26.2 with the core loaded; drop feature jars into `plugins/Cryon/modules/`.
-- `./gradlew :common:publishToMavenLocal :paper-api:publishToMavenLocal`. Publish the API locally, which
-  is how feature repos resolve it. No remote repository is configured, so this is the only publish
-  target that does anything.
+- **`./gradlew publishAllToMavenLocal` / `publishAll`. Everything publishes, and the task list is derived rather than
+  kept by hand.** Both aggregate `subprojects.map { "${it.path}:publish…" }` in the root build, so a new subproject
+  ships the moment it is in `settings.gradle.kts`; the old spelling was a hand-listed command whose failure mode was an
+  artifact that silently never shipped (`:geyser-api` was already in that state). The four APIs publish from
+  `components["java"]` under their **bare** coordinates (`com.tricrotism:common`, `:paper-api`, `:velocity-api`,
+  `:geyser-api`), which every feature repo already compiles against, so those names cannot be tidied. The three loaders
+  publish through `cryon.publish-shaded` as `cryon-paper`/`cryon-velocity`/`cryon-geyser`: **the shadow jar alone, with
+  an empty POM**, because their dependencies are inside the jar and a consumer resolving them again would get a second
+  copy of every shaded class. Nothing compiles against a loader; they are published so a deployment can pull a built one
+  instead of building it.
+- **The publish repository is env-first with no default** (`CRYON_PUBLISH_URL`, or the `cryonPublishUrl` Gradle
+  property; `CRYON_PUBLISH_USERNAME`/`CRYON_PUBLISH_PASSWORD`). Unset, **no remote repository is declared at all**, so
+  `publishAll` succeeds having pushed nowhere and mavenLocal still works, and no username resolved means no credentials
+  block rather than a build that refuses to run against an anonymous repository. Same rule `RemoteModules` follows on
+  the fetching side, and the reason there is no URL in a file to drift.
 - **Every version lives in `gradle/libs.versions.toml`**. Dependencies use `module=` + `version.ref`,
   never inline coordinates; `bundles` group the adventure and SQL-driver sets. Three separate Paper
   coordinates, because they are three different artifacts: `paperDevBundle` (`26.2.build.+`, what
@@ -390,9 +487,11 @@ server belongs on a running server.
   `paper/plugin.yml` `libraries:` is plain YAML and can't reference the catalog. Keep its versions in
   step by hand.
 - **Shared build config is convention plugins in `build-logic/`** (an included build):
-  `cryon.kotlin` (Kotlin JVM, toolchain 25, mavenCentral, kotlin-stdlib) and `cryon.publish`
-  (`cryon.kotlin` + `maven-publish`, local only). Modules apply `id("cryon.kotlin")` or
-  `id("cryon.publish")` and add only what is theirs. `build-logic/settings.gradle.kts` re-creates the
+  `cryon.kotlin` (Kotlin JVM, toolchain 25, mavenCentral, kotlin-stdlib), `cryon.publish-base`
+  (`maven-publish` + the env-driven repository, so the credential names have one home), `cryon.publish`
+  (`cryon.kotlin` + `cryon.publish-base` + the `components["java"]` publication, what the APIs use) and
+  `cryon.publish-shaded` (`cryon.publish-base` + a shadow-jar-only publication, what the loaders use). Modules apply
+  `id("cryon.kotlin")` or `id("cryon.publish")` and add only what is theirs. `build-logic/settings.gradle.kts` re-creates the
   `libs` catalog from `../gradle/libs.versions.toml`; the catalog reaches precompiled scripts via
   `implementation(files(libs.javaClass.superclass.protectionDomain.codeSource.location))` plus
   `the<LibrariesForLibs>()`.
@@ -550,6 +649,28 @@ restart. The one thing outside our control is a feature that bypasses these help
 lifecycle handler. Route command registration through `registerCommands`, and keep the
 published `:paper-api` binary-compatible (`@JvmOverloads` on defaulted params) so old feature jars still link.
 
+**Source compatibility is not binary compatibility, and the difference is invisible until a deployed feature jar
+throws.** `FormButton` gained an optional `image` placed *in the middle* precisely so trailing-lambda call sites kept
+compiling, and every repo did. But a caller that omits a defaulted argument does not call the function you wrote, it
+calls a synthetic one carrying a bitmask of which arguments were supplied, and adding a parameter changes that
+signature too. So a jar built against the old shape asked for
+`FormButton.<init>(Component, Function0)`, which no longer existed, and died with `NoSuchMethodError` at the call rather
+than at load. **A defaulted parameter in published API gets `@JvmOverloads`**, which emits a real overload per arity
+and leaves the old ones intact. Kotlin drops only the defaulted parameter, not everything after it, so it works with a
+default in the middle. Verify with `javap -p` on the built class rather than assuming; the whole failure mode is that
+nothing complains at compile time. The rule applies to `:common`, `:velocity-api` and `:geyser-api` equally.
+
+**A rule nobody can check is a rule that gets missed, so the ABI is dumped to git.** Each published API carries
+`<module>/api/<module>.api` listing every public signature; `updateKotlinAbi` rewrites them and `checkKotlinAbi` fails
+when the code no longer matches, already wired into `check`. **Commit the dump with the change that moved it.** A
+removed overload then shows up as a `-` line in review, where the same mistake previously showed up as a
+`NoSuchMethodError` in somebody's server log a week later. It rides on `cryon.publish`, because "something else compiles
+against this" is what publishing means here, so the three loaders are excluded without a list to maintain: they publish
+a shaded jar with an empty POM and nothing links against them. **Not** JetBrains'
+`binary-compatibility-validator`, whose ASM rejects Java 25 bytecode (`Unsupported class file major version 69`)
+through 0.18.2; this is Kotlin's own, version-matched to the compiler, and its DSL is still experimental, hence the
+opt-in in `build-logic`.
+
 **Hot-swap (jar level).** `ModuleLoader` adds/removes whole jars at runtime: `/cryon load <jar>`
 (load + enable a jar in `modules/`), `/cryon unload <id>` (disable + unregister every module in that jar, close its
 loader; the jar file stays. Delete to remove permanently), `/cryon scan` (load newly
@@ -627,9 +748,9 @@ a typo instead.
 **`deploy.paths.data` mirrors `plugins/Cryon/data/<module-id>/`**, so a server folder holds only the module configs it
 actually changes. **A module the folder does not carry is not overridden at all**: it extracts the default bundled in
 its own jar on first run, exactly as it does with no deploy configured. That falls out of two rules already in place
-rather than being a new mechanism, and is why it needs no merge step: the delivery never deletes, and
-`PaperModule.config()` extracts the bundled default whenever the file is absent. It also needs no reload hook, since
-`config()` is a fresh read each call.
+rather than being a new mechanism, and is why the delivery needs no merge logic of its own: it never deletes, and
+`PaperModule.config()` extracts the bundled default whenever the file is absent and folds in any key added since. It
+also needs no reload hook, since `config()` is a fresh read each call.
 
 **A branch is selected by name, and a branch that is not there falls back rather than failing.**
 `deploy.branch` is a bare name (`main`, `feature/shop-rework`), mirroring `remote.artifacts[].branch`, because that is
@@ -660,8 +781,8 @@ rewrite everything and throw again. `{server}` in a repository path resolves to 
 
 The fourth thing that travels through git, the `deploy/` Helm chart, is **not** the plugin's job: nothing inside the
 cluster is watching the repository, so it is pushed by `.github/workflows/deploy-helm.yml` on commits touching the
-chart. Exercised by `common/src/test/kotlin/…/GitDeployTest.kt`, which fakes the repository, because the semantics worth
-proving (never delete, rewrite only what changed, record after writing) are not about HTTP.
+chart. **Untested.** The semantics worth proving (never delete, rewrite only what changed, record after writing) are not
+about HTTP, so a fake `RepositorySource` would reach them; nobody has written one.
 
 **`api/` reload (cascade).** The `api/` contract layer parents every module loader, so it can't be
 swapped alone (running modules stay linked to the old contract classes). `/cryon reload-api` does the
@@ -827,9 +948,12 @@ The core owns its sessions and closes them on disable.
 
 **An unknown id is answered with the nearest real one, not just a rejection.**
 `CommandUi.unknown(sender, noun, input, candidates) { retry }` (`…cryon.command`) prints the rejection plus a clickable
-correction when something is close enough to be worth offering: a prefix match wins outright, otherwise the edit
-distance has to be within a third of the input. Nothing is offered when nothing is close, because a wrong guess invites
-a click that fails twice. Route every
+correction when something is close enough to be worth offering: a prefix match wins outright, then an input equal to
+exactly one candidate's hyphen-separated segment, otherwise the edit distance has to be within a third of the input.
+The segment rule exists because ids read `<repo>-<name>` and the name is the half an operator remembers, so `npc` for
+`commons-npc` is near-certain intent that the other two cannot see (the distance is 8 against a budget of 1). It
+requires exact equality and a single match, since two candidates sharing a segment would make the offer a coin flip.
+Nothing is offered when nothing is close, because a wrong guess invites a click that fails twice. Route every
 `no such module / jar / currency / player / locale` path through it. `CommandUi` also owns the shared
 `button`/`suggestButton`/`usage` look, so clickable output is the same wherever it appears.
 
@@ -904,6 +1028,17 @@ through
 `getResourceAsStream`: that delegates parent-first, and the core jar also has a `config.yml`, so a module asking for its
 own default would silently be handed the core's. `VelocityModule.dataFolder` is the proxy twin, under
 `plugins/cryon/data/<id>/`.
+
+**A key the bundled default has and the file on disk does not is folded in**, the way lang keys already are, so a
+release that adds an option ships it to every server instead of to fresh installs only. Without it the key is never
+written, the admin never learns the option exists, and the module quietly runs on its compiled-in default while its own
+config says nothing about the setting. **Leaf by leaf, never a section at a time**: copying a whole section would take
+the sub-keys the release just added out with it. A **list counts as a leaf**, so a customised list wins whole rather
+than being merged into, and anything the admin wrote that the default has never heard of is copied back so the rewrite
+cannot lose it. The **bundled copy is the base**, which is what carries the new comments and key order, and the trade is
+that an admin's own comments do not survive and the file comes back in Bukkit's dump style. **A deleted key comes back**,
+since nothing on disk tells deleted apart from never present; emptying the value is how an option gets turned off. The
+file is rewritten **only when something is genuinely missing**, so a config already current is left untouched.
 
 **Items (`…paper.api.item`/`…extension`):** `ItemBuilder`. Name/lore (auto `<!i>`, palette-parsed),
 flags, glow, `enchant`, attributes, PDC `tag`s, `meta {}`. Extensions: `Material.toItem()`,
@@ -1012,6 +1147,17 @@ and `LinkedPlayer` ship in Floodgate's core rather than its
 `api` artifact, so the input mode is read reflectively by name and the linked id is taken as
 `isLinked() ? correctUniqueId : null` instead of through `LinkedPlayer`.
 
+**Single-flight lookups (`…common.concurrent.SingleFlight`).** Collapses concurrent lookups of one key onto one running
+request: twenty players walking into range of an NPC ask for its skin twenty times in a tick, behind an endpoint that
+rate-limits. `flight.join(key) { start(it) }`, checking your own cache first, since this holds only what is in flight
+and is not a cache. Extracted because the shape was written three times across the feature repos (the NPC skin cache,
+and both halves of the player-name cache) and carries two traps that are invisible until they bite. **The entry is
+removed with the two-argument `remove(key, value)`**, since a plain `remove(key)` from a slow failure deletes a newer
+caller's live request, and the caller after that joins a future nothing completes. **Each caller awaits a
+`CompletableFuture.copy()`, never the shared future**, because `await` cancels what it waits on, so one player
+disconnecting mid-lookup would fail the request for everyone queued behind them. Both are covered by
+`SingleFlightTest`, which is worth reading before writing a fourth one by hand.
+
 **Cooldowns (`…common.cooldown`).** `CooldownService` (impl `MemoryCooldowns`), always registered. **
 `trigger(subject, id, duration)` is the whole API**. It decides *and* records in one atomic step, because
 `remaining()` then `mark()` is a check-then-act race that on Folia fires twice for one player. `remaining` exists to
@@ -1079,20 +1225,48 @@ into `track(…)`. Cancel or rewrite in the handler (`event.isCancelled = true`)
   Read what you need off the event, then `Schedulers.entity(player) { … }`. Handlers are deliberately *not* hopped for
   you: cancellation has to be decided before the packet moves on, and a scheduled handler always runs too late. Handler
   exceptions are logged, never propagated, one escaping onto a Netty thread can drop the connection.
-- `:paper` shades **PacketEvents unrelocated**, exactly like InvUI and kotlin-stdlib, so module classloaders resolve
-  `com.github.retrooper.*` through the core. Features
-  `compileOnly("com.github.retrooper:packetevents-spigot:2.13.0")` (repo
-  `https://repo.codemc.io/repository/maven-releases/`) and **never shade it**. The consequence of unrelocated shading:
-  **do not also install the standalone PacketEvents plugin**, two copies both inject the pipeline.
-- The core owns the lifecycle in `Cryon.initPackets` (`setAPI` + `load()` in `onLoad`, `init()` in
-  `onEnable` ahead of the modules that subscribe, `terminate()` after they disable). Its API is a static singleton, so
-  **a module must never call `setAPI`/`load`/`init`**, the same rule as
-  `InvUI.setPlugin`. Best-effort like spark: a failure logs and leaves `Packets.isReady` false rather than taking the
-  server down.
-- One PacketEvents listener is registered per subscription (mirroring `Events`), and every listener is walked for every
-  packet. Fine for the handful of subscriptions a feature set needs; the ceiling and the upgrade path (one shared
-  listener per priority, dispatching through a type map) are marked in
-  `Packets.kt`. Version pinned in `libs.versions.toml`; 2.13.0 is the first release supporting 26.2.
+- **PacketEvents is NOT shaded. The standalone plugin supplies it**, and `packetevents` is a `softdepend`, so its
+  classes reach module loaders through the plugin classloader group rather than through the core. It used to be shaded
+  unrelocated like InvUI and kotlin-stdlib, which made installing that plugin alongside a conflict: two copies both
+  injected the pipeline. Not shading it removes the conflict instead of documenting it, and takes 5.4MB off the jar.
+  Features are unaffected and still `compileOnly("com.github.retrooper:packetevents-spigot:2.13.0")` (repo
+  `https://repo.codemc.io/repository/maven-releases/`) and **never shade it**.
+- **The core does not own the lifecycle.** The plugin that supplies PacketEvents calls `setAPI`, `load`, `init` and
+  `terminate` itself, so nothing here may call any of them: a second `setAPI` is a second injector, and a `terminate()`
+  from teardown would pull the pipeline out from under everything else using it. `Cryon.initPackets` only reports
+  whether the layer is there, and `Packets.uninstall()` drops this plugin's own lanes and nothing more.
+- **The classes can be absent entirely now, which the guard has to survive.** `initPackets` checks
+  `getPlugin("packetevents")` before naming a PacketEvents type, the discipline `PapiBridge` and
+  `FloodgateBedrockService` already follow, and `Packets.isReady` catches `NoClassDefFoundError` by type, since an
+  absent class raises an `Error` rather than an `Exception`. Best-effort like spark: a missing packet layer logs once
+  and leaves `Packets.isReady` false rather than taking the server down.
+- **Every packet listener sees every packet of every online player**, and PacketEvents offers no way to say otherwise.
+  So subscriptions no longer each register one: there is **one shared listener per lane** (a direction and a priority),
+  and a lane dispatches through a map keyed by packet type (`PacketDispatcher`). Previously a module watching
+  `INTERACT_ENTITY` was still invoked for every movement packet from every player, the highest-volume packet in the
+  game, and then scanned its own type list to conclude it did not care, so every packet cost M*K invocations for M
+  modules holding K subscriptions and none of that was visible to the module causing it. Now a packet nobody subscribed
+  to costs one hash lookup, and a feature costs what it watches rather than what the server is doing. Ordering is
+  unchanged: PacketEvents orders lanes by priority, registration order decides within one.
+- **Scope a subscription with `filter`, not with a check inside the handler.** A subscription that concerns one player
+  still runs for every player, so `filter` is where that is said once. Filters run on the Netty thread for every packet
+  of a subscribed type, so keep them to field reads.
+- Version pinned in `libs.versions.toml`; 2.13.0 is the first release supporting 26.2.
+
+**Packet entities (`…paper.api.packet`).** `PacketEntities` + `PacketEntity`, the `BossBars` of the packet layer, for
+an entity that exists only in the packets sent to its viewers: a hologram, an NPC, a preview model. **The id allocator
+is the reason this is core.** A packet-only entity needs an id the server will never use for a real one, and two
+features each counting down from `Int.MAX_VALUE` in their own jar collide on their first entity. The symptom is one
+feature's hologram flickering when another spawns an NPC, which nobody traces back to id allocation, so the counter has
+to be somewhere every feature can see: `PacketEntities.allocateId()`/`allocateIds(n)`. **Never hand an allocator
+between jars.** The base class owns the other half every packet entity shares, the viewer set and the dispatch that
+turns a change into a packet per viewer, and prunes a quitting player from every live entity, which nothing else
+notices because there is no server-side entity to be removed. Subclasses own only the spawn and destroy sequence for
+their type, which genuinely differs: a text display is a spawn plus metadata, while a player has to be announced in the
+player list first with `listed = false`, being the one type the client will not render from a spawn packet alone.
+Sending is safe from any thread so none of it hops; a subclass deciding visibility from `player.world` still needs
+`Schedulers.entity(player)` around that **read**. A module closes its entities on disable for the same reason it closes
+a boss bar: they live on other people's connections.
 
 **PlaceholderAPI (`…paper.api.placeholder`, bridge in `…cryon.papi`).** Optional integration, structured
 like the module system itself: the **core** owns the single PAPI dependency and each module gets its **own**
@@ -1207,9 +1381,10 @@ Four rules, and the first is the one that matters:
   `cryon_currency_ops`, pruned on a week's retention. A queued credit carries its currency's starting balance rather
   than looking it up, because the drain runs at boot, *before* modules register their currencies, and a lookup made that
   drain a silent no-op. Drained on `init` and on the
-  `currency.drain-seconds` timer, because an outage ends while the server is still up. Exercised by
-  `common/src/test/kotlin/…/CurrencyOutageTest.kt`, the case a running server cannot reach: a database that takes the
-  schema, then refuses, then returns.
+  `currency.drain-seconds` timer, because an outage ends while the server is still up. **The replay is untested**: the
+  case worth reaching is a database that takes the schema, then refuses, then returns, and `Currencies` builds its own
+  `CurrencyStore` from the `Database` it is handed, so substituting a failing one means giving it a seam it does not
+  have. `CurrencyJournalTest` covers only the durability question the drain asks of the journal.
 
 Core commands: `/balance [player]` (`cryon.currency.balance.others`), `/pay <player> <currency> <amount>`
 (`cryon.currency.pay`), `/currency list|top|give|take|set` (`cryon.currency.admin`). Leaderboards are a cached snapshot
@@ -1263,9 +1438,8 @@ refreshed by an async timer (`currency.leaderboard-refresh-seconds`, default 300
   spills, and `CurrencyService` must never.** Its writes are compare-and-set, so replaying one after an outage applies a
   debit against a balance that has since moved: an outage would become a dupe. That is the same split `Repository`
   already draws between single-owner state, where last-write-wins makes a replay idempotent, and state several nodes
-  write at once, where it does not. **A withdraw refused because SQL is unreachable stays refused.** Exercised by
-  `common/src/test/kotlin/…/SpillDurabilityTest.kt`, the one case a running server cannot reach (a database that takes
-  the schema and then refuses the checkpoint).
+  write at once, where it does not. **A withdraw refused because SQL is unreachable stays refused.** **Untested**, and
+  the case a running server cannot reach is a database that takes the schema and then refuses the checkpoint.
 - `Messenger`. `publish`/`subscribe` + `request`/`handle`. String payloads. **Always registered**
   (`get<Messenger>()`): `RedisMessenger` when `redis.enabled`, else `LocalMessenger`.
 - `KeyValueStore`. Suspending KV with TTL (`set`/`get`/`delete`/`keys`/`mget`/`tryHold`), for state that must expire on
@@ -1298,8 +1472,12 @@ it in `plugin.yml` `libraries:` for `ConfigMigrator`, and the proxies shade it.
 (`database.max-pool-size` → `CRYON_DATABASE_MAX_POOL_SIZE`) so the two cannot drift. That generalizes the env-first
 handling `NodeIdentity` and the remote-module credentials already did by hand. **A key declared with no default is
 required**, and reading one that is unset throws naming both the key and its variable, which is the shape credentials
-want. Two keys are deliberately defaultless because their fallback is not a constant: `database.port` follows the
-dialect and `modules.auto-reload` follows `production`, so both are read with `find(...) ?: …`.
+want. `modules.auto-reload` is deliberately defaultless because its fallback is not a constant, it follows
+`production`, so it is read with `find(...) ?: …` and ships commented out. **A value that follows something else but
+must stay in the template uses a sentinel instead**, which is what `database.port: 0` and `network.port: 0` are:
+`ConfigMigrator` never deletes what an operator wrote, so a key that is commented out in the template but set in their
+file ends up present twice, inert above and live below. A sentinel keeps one key, one value, and still lets the code
+decide.
 
 **Reloading swaps the source and tells its listeners** (`config.onReload { }`, returning a handle a module must close on
 disable). Nothing is re-read behind a consumer's back: a value a running process cannot act on, a pool that is already
@@ -1307,9 +1485,43 @@ built, is simply not re-read by anyone, which is honest where quietly updating t
 something the process is not doing.
 
 **The migration rules are unchanged, and both exist because the same keys are read by three platforms.** The
-shipped `config.yml` templates still spell the values out, and that duplication is the one direction that cannot drift
-silently: the template is documentation an operator reads and edits, and the migration copies their edit over the
-default rather than the other way round.
+shipped `config.yml` templates still spell the values out, because the template is documentation an operator reads and
+edits, and the migration copies their edit over the default rather than the other way round.
+
+**That duplication drifted, so a test per platform now holds the two together (`ConfigDrift`, checked by
+`PaperConfigDriftTest`, `VelocityConfigDriftTest`, `GeyserConfigDriftTest`).** A key declared without a template entry
+is the quiet failure: it works everywhere it is read, so the server behaves correctly and the option simply never
+reaches an operator. A default that disagrees is worse, the file then documents behaviour the server does not have, and
+the person who reads it is the one who acts on it. Neither is visible at runtime, which is why the check is a test
+rather than a boot warning.
+
+**It paid for itself on the first two runs.** `currency.offline-spending` was missing from the Paper template
+entirely, an option gating whether players may spend during a database outage that no operator could discover. And all
+three templates shipped `database.port: 5432` **set**, while every platform resolved it as
+`find(DATABASE_PORT) ?: dialect.defaultPort`: the point of the key being defaultless was that an unset port follows the
+backend, so a config switching `database.type` to `mysql` dialled 5432 at MySQL and failed obscurely.
+
+**Commenting it out in the template fixed only fresh installs, and running it is what showed that.** `ConfigMigrator`
+never deletes what an operator wrote, so an existing config came back carrying `#port: 5432` from the template *and*
+their own live `port: 5432` appended below it, the file contradicting itself and the port still pinned. It is now the
+sentinel `port: 0`, read as `cfg[DATABASE_PORT].takeIf { it > 0 } ?: dialect.defaultPort`, matching `network.port`
+four lines down. The key stays present, so migration slots the operator's value into it instead of appending a second
+one. **A key an operator may already have set cannot be retired by commenting it out.** Note what each platform checks: `CoreKeys` holds what **more than one** platform reads, not what
+all three do, so Paper exempts the maintenance and MOTD blocks it genuinely never reads. An exemption is a claim about
+the code, so give it a reason.
+
+**Keys are declared through `ConfigSchema`, not `ConfigKeys` directly**, so each registers itself as it initializes and
+`keys` comes back in source order. A hand-kept `listOf(...)` beside the declarations would be a second place to add a
+key, and forgetting it there fails in exactly the silent way above. `hidden(...)` withdraws one that is read but
+deliberately not shipped, which is what a legacy alias wants: a retired name in the file invites an operator to set it,
+and an alias that is *set* wins over the new key.
+
+**Generating the template from the keys was the obvious next step and does not work.** The file also carries structure
+that is not a declared key at all, `remote.repositories` is keyed by names the operator invents and `remote.artifacts`
+is a list they curate, both read through `children`/`maps`, and a generator would silently drop them along with the
+worked examples in their comments. `ConfigTemplate` renders keys to YAML and is kept for that reason alone: it is how a
+*new* platform's template is started, not how an existing one is maintained. Its tests are worth reading before using
+it, since a key named `on` or `yes` is a boolean key to YAML 1.1 and vanishes unquoted.
 
 **`ConfigMigrator` brings an operator's file up to date with the one in the jar**, run before any key is read (Paper in
 `onLoad`, the other two in `loadConfig`). All three previously wrote the template only when the file was missing, so a
@@ -1479,6 +1691,20 @@ outside can see this: `LagFinder` attributes heap by package prefix and every mo
 live count right after an unload usually just means no GC has run; one that climbs across reloads of the same jar is the
 leak.
 
+**The census. What is still running, and whose is it? (`…paper.api.diagnostic.TaskCensus`).** Retention's other half:
+that one says a classloader was not collected, this one usually says why. `/cryon tasks` lists repeating tasks and
+listeners per module, and an owner marked **(not loaded)** is work still running after its module went away, which is
+the thing holding the loader open. **Ownership is the classloader of the lambda**, not Paper's owning-plugin field:
+every module's task belongs to the Cryon plugin, so asking Paper produces one row for the whole server, which is why
+porting a conventional scheduler census would have answered nothing. It also means **no reflection into Folia's
+scheduler internals and nothing to re-verify on a Paper bump**, because the count happens at the door every module
+already comes through (`Schedulers`, `Events`) rather than by reading the queues afterwards. **Only repeating work is
+counted**: a one-shot finishes on its own and is not what leaks, while `Schedulers.entity` is hot enough that a map
+write per call would cost real time for a number nobody reads. Entries are weak and pruned on read, so the census can
+never be the thing keeping a module alive, and nothing drops a jar's rows on unload, since that would hide exactly the
+leak it exists to report. spark cannot answer this: it attributes sampled frames, so it sees a task only while that
+task is on a CPU, and a leaked timer that ticks cheaply is invisible in a profile.
+
 **Provisioning, find a node that fits, make one if none does (`…common.server`).** The rung between
 `ServerRegistry` (which nodes exist) and `PlayerRouter` (send a player to one): `provision(request)`
 matches a `NodeSelector` against the live replica and, with `createIfMissing`, asks a `NodeAllocator`
@@ -1547,6 +1773,15 @@ already updated your state before the core writes it down. The **same callback**
 shutdown (`Cryon.flushOnlinePlayers`, before modules disable and the DB pool closes), so a single server, where no
 transfer ever happens, exercises the identical code.
 
+**And on disable, which is what makes a hot-swap safe for a module holding state.** `PaperModule.onDisable` runs these
+callbacks for every online player before it releases anything. Without it a `/cryon reload|unload`, or a watcher
+picking up a replaced jar, cancelled the save timer, cancelled the scope and unregistered the callbacks **without ever
+invoking them**, so whatever was dirty in memory was dropped with no exception and no log line. Shutdown was covered
+and the runtime path was not, which is the one an admin actually uses with players online. It is bounded by a timeout,
+past which the reload proceeds and the log names how many players were affected. **Do not discard state before calling
+`super.onDisable()`**: the flush happens when super runs, so a subclass that clears its cache first hands it an empty
+one to write down.
+
 **Deployment** lives in `deploy/` (outside the Gradle build): per-family Paper / Velocity / Geyser
 Dockerfiles + entrypoints (`images/`), baked family jar sets (`families/`), and a Helm chart
 (`helm/cryon/`) of Agones Fleets + Buffer FleetAutoscalers, the proxy Deployment/Service, standalone
@@ -1578,6 +1813,8 @@ of populated shards on node upgrades. Add infrastructure **and document it here 
 | `timer`/`asyncTimer`/`track(…)` on `PaperModule`                  | Raw `Schedulers.*Timer` in a module with no cancel on disable   |
 | `Events.subscribe(...).filter{}.handler{}`                        | ad-hoc `Listener` plumbing for one handler                      |
 | `Packets.onReceive/onSend(...).handler{}` + `track(…)`            | Registering a raw PacketEvents listener with no teardown        |
+| `PacketEntities.allocateId()` for a client-only entity            | A per-jar id counter (two features collide on entity one)       |
+| `track(...)` a `PacketEntity` and close it on disable             | Leaving one live (it renders with nothing owning it)            |
 | Hop out of a packet handler before any Bukkit call                | Touching entities/inventories on the Netty thread               |
 | `PackedDecimal` for values that grow past ~1e15                   | `BigDecimal` on hot incremental-math paths                      |
 | `Module.children` for an independently loadable half              | An umbrella module with a flag standing in for a lifecycle      |
@@ -1600,12 +1837,14 @@ of populated shards on node upgrades. Add infrastructure **and document it here 
 | `services.find<Database>()` (genuinely optional)                  | `get<Database>()` assuming SQL is enabled                       |
 | `get<Messenger>()`/`get<KeyValueStore>()`/`get<ServerRegistry>()` | Null-checking them, or branching on the deployment mode         |
 | `onFlush("…") { uuid -> … }` for player state                     | Saving player state in a quit handler (too late on a transfer)  |
+| Call `super.onDisable()` before discarding any state              | Clearing a cache first (the final flush then writes nothing)    |
 | `PlayerRouter.route(uuid, serverId)` to move players              | Hardcoding a backend server name to connect to                  |
 | `find<PlayerRouter>()`. Null means nowhere to route               | Assuming a route is always possible                             |
 | `bestNode(serverId)`                                              | Assuming a fixed server list; picking a full/STARTING node      |
 | `signals.dispatch(…)` at one emit point                           | Hooking every call site by hand and missing the fifth           |
 | `signals.allows(cancellable)` to gate                             | Dispatching and forgetting to read `cancelled`                  |
 | `/cryon retention` trend across reloads                           | Reading one live count as proof of a leak                       |
+| `/cryon tasks` to find who is still running after an unload       | Guessing which module held the classloader open                 |
 | `remote.enabled` + let `modules.auto-reload` gate applying        | A second switch letting remote builds swap when local can't     |
 | A stable jar filename per remote artifact                         | A versioned filename (the loader then sees the module twice)    |
 | A folder per server, paths resolved inside it                     | One shared tree every server reads the same files out of        |
@@ -1620,6 +1859,9 @@ of populated shards on node upgrades. Add infrastructure **and document it here 
 | `withContext(CryonDispatchers.Async)` for I/O                     | Blocking I/O on a region thread; `runBlocking` outside shutdown |
 | `@Synchronized` on a non-suspending helper                        | Holding a monitor across a suspension point                     |
 | `cooldowns.trigger(...)` / `guard(...)` as the gate               | `remaining()` then `mark()` (check-then-act)                    |
+| `SingleFlight.join(key) { … }` on a cache miss                    | A bare map of futures (see the two traps in its KDoc)           |
+| `@JvmOverloads` on any defaulted param in published API           | Trusting that it still compiles everywhere (it will)            |
+| Commit the `api/*.api` dump with the change that moved it         | Running `updateKotlinAbi` to silence a break you didn't mean    |
 | A CAS for one key; `DistributedLock` only across several          | A distributed lock where `withdraw`/`setIfAbsent` would do      |
 | `Dialogs.text(...)` for typed input                               | Anvil renames or chat prompts to collect a value                |
 | `Dialogs.choose(options)` returning the value                     | Returning an index the caller has to keep in step               |
@@ -1627,6 +1869,9 @@ of populated shards on node upgrades. Add infrastructure **and document it here 
 | `ActionBars.send(..., priority, key)`                             | Raw `sendActionBar` for anything persistent or contended        |
 | `Repository.stage(...)` + a flush timer for player state          | A hand-rolled map + dirty flag + full-file rewrite              |
 | `config[CoreKeys.X]` through a declared key                       | `getString("path", default)` with the default at the read site  |
+| Declare keys through `ConfigSchema` so they self-register         | A hand-kept key list beside them (one more place to forget)     |
+| Add the template entry in the same commit as the key              | A working option no operator can ever discover                  |
+| A sentinel (`port: 0`) for a value that follows something else    | Commenting the key out (migration leaves it set twice)          |
 | A defaultless key for anything that must be set                   | An env-fallback default that silently connects as somebody else |
 | Let git delivery write files and stop                             | A second switch letting a commit apply where a local one cannot |
 | Let a failed checkpoint spill to disk and retry                   | Journaling currency writes (a replayed CAS is a dupe)           |

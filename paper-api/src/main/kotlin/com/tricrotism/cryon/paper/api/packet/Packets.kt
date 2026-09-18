@@ -50,8 +50,27 @@ object Packets {
     fun onSend(vararg types: PacketTypeCommon): PacketSubscriptionBuilder<PacketSendEvent> =
         PacketSubscriptionBuilder(types, Direction.SEND, PacketListenerPriority.NORMAL)
 
-    // Whether the packet layer is initialized. False before the core enables
-    val isReady: Boolean get() = PacketEvents.getAPI()?.isInitialized == true
+    /**
+     * Whether the packet layer is usable. False before the core enables, and false when PacketEvents
+     * is not installed at all.
+     *
+     * PacketEvents is supplied by its own plugin rather than shaded here, so its classes can be
+     * missing entirely. This is the guard features are told to check, which makes it the one place
+     * that must not be the thing that throws: naming an absent class raises `NoClassDefFoundError`,
+     * an `Error` rather than an `Exception`, so it is caught by type here and nowhere else.
+     */
+    val isReady: Boolean
+        get() = try {
+            PacketEvents.getAPI()?.isInitialized == true
+        } catch (_: NoClassDefFoundError) {
+            false
+        }
+
+    /**
+     * Drop every shared lane and the PacketEvents listener behind it. The core's teardown; a module
+     * closes its own subscriptions instead, which `track(…)` already does.
+     */
+    fun uninstall() = PacketDispatcher.uninstall()
 
     internal enum class Direction { RECEIVE, SEND }
 }

@@ -200,7 +200,7 @@ class CryonGeyserExtension : Extension {
                 val db = SqlDatabase.connect(
                     DatabaseConfig(
                         host = cfg[CoreKeys.DATABASE_HOST],
-                        port = cfg.find(CoreKeys.DATABASE_PORT) ?: dialect.defaultPort,
+                        port = cfg[CoreKeys.DATABASE_PORT].takeIf { it > 0 } ?: dialect.defaultPort,
                         database = cfg[CoreKeys.DATABASE_NAME],
                         username = cfg[CoreKeys.DATABASE_USERNAME],
                         password = cfg[CoreKeys.DATABASE_PASSWORD],

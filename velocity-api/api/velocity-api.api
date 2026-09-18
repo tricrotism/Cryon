@@ -1,0 +1,77 @@
+public abstract class com/tricrotism/cryon/velocity/api/VelocityModule : com/tricrotism/cryon/common/module/Module {
+	public fun <init> ()V
+	protected final fun getBedrock ()Lcom/tricrotism/cryon/velocity/api/bedrock/BedrockService;
+	public fun getChildren ()Ljava/util/List;
+	protected final fun getContext ()Lcom/tricrotism/cryon/velocity/api/VelocityModuleContext;
+	protected final fun getDataFolder ()Ljava/io/File;
+	public fun getDependencies ()Ljava/util/List;
+	protected final fun getLogger ()Lorg/slf4j/Logger;
+	protected final fun getProxy ()Lcom/velocitypowered/api/proxy/ProxyServer;
+	protected final fun getServices ()Lcom/tricrotism/cryon/common/module/ServiceRegistry;
+	protected final fun isEnabled ()Z
+	protected final fun listen (Ljava/lang/Object;)V
+	public fun onDisable ()V
+	public fun onEnable ()V
+	public fun onLoad (Lcom/tricrotism/cryon/common/module/ModuleContext;)V
+	public fun postLoad ()V
+	public fun preLoad (Lcom/tricrotism/cryon/common/module/ModuleContext;)V
+	protected final fun registerCommands (Ljava/lang/Object;)V
+	protected final fun track (Lcom/velocitypowered/api/scheduler/ScheduledTask;)Lcom/velocitypowered/api/scheduler/ScheduledTask;
+	protected final fun track (Ljava/lang/AutoCloseable;)Ljava/lang/AutoCloseable;
+}
+
+public abstract interface class com/tricrotism/cryon/velocity/api/VelocityModuleContext : com/tricrotism/cryon/common/module/ModuleContext {
+	public abstract fun getDataDirectory ()Ljava/nio/file/Path;
+	public abstract fun getPlugin ()Ljava/lang/Object;
+	public abstract fun getProxy ()Lcom/velocitypowered/api/proxy/ProxyServer;
+}
+
+public final class com/tricrotism/cryon/velocity/api/bedrock/BedrockInput : java/lang/Enum {
+	public static final field CONTROLLER Lcom/tricrotism/cryon/velocity/api/bedrock/BedrockInput;
+	public static final field KEYBOARD_MOUSE Lcom/tricrotism/cryon/velocity/api/bedrock/BedrockInput;
+	public static final field TOUCH Lcom/tricrotism/cryon/velocity/api/bedrock/BedrockInput;
+	public static final field UNKNOWN Lcom/tricrotism/cryon/velocity/api/bedrock/BedrockInput;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun isTouchLike ()Z
+	public static fun valueOf (Ljava/lang/String;)Lcom/tricrotism/cryon/velocity/api/bedrock/BedrockInput;
+	public static fun values ()[Lcom/tricrotism/cryon/velocity/api/bedrock/BedrockInput;
+}
+
+public abstract interface class com/tricrotism/cryon/velocity/api/bedrock/BedrockService {
+	public abstract fun gamertag (Lcom/velocitypowered/api/proxy/Player;)Ljava/lang/String;
+	public abstract fun getUsernamePrefix ()Ljava/lang/String;
+	public abstract fun inputMode (Lcom/velocitypowered/api/proxy/Player;)Lcom/tricrotism/cryon/velocity/api/bedrock/BedrockInput;
+	public abstract fun isBedrock (Lcom/velocitypowered/api/proxy/Player;)Z
+	public abstract fun linkedJavaId (Lcom/velocitypowered/api/proxy/Player;)Ljava/util/UUID;
+	public abstract fun xuid (Lcom/velocitypowered/api/proxy/Player;)Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/velocity/api/command/AnnotationCommands {
+	public static final field INSTANCE Lcom/tricrotism/cryon/velocity/api/command/AnnotationCommands;
+	public final fun names (Ljava/lang/Object;)Ljava/util/List;
+	public final fun register (Lcom/velocitypowered/api/command/CommandManager;Ljava/lang/Object;)V
+	public final fun register (Lcom/velocitypowered/api/command/CommandManager;[Ljava/lang/Object;)V
+}
+
+public abstract interface annotation class com/tricrotism/cryon/velocity/api/command/Arg : java/lang/annotation/Annotation {
+	public abstract fun suggests ()Ljava/lang/String;
+	public abstract fun value ()Ljava/lang/String;
+}
+
+public abstract interface annotation class com/tricrotism/cryon/velocity/api/command/Command : java/lang/annotation/Annotation {
+	public abstract fun aliases ()[Ljava/lang/String;
+	public abstract fun description ()Ljava/lang/String;
+	public abstract fun name ()Ljava/lang/String;
+}
+
+public abstract interface annotation class com/tricrotism/cryon/velocity/api/command/Greedy : java/lang/annotation/Annotation {
+}
+
+public abstract interface annotation class com/tricrotism/cryon/velocity/api/command/Permission : java/lang/annotation/Annotation {
+	public abstract fun value ()Ljava/lang/String;
+}
+
+public abstract interface annotation class com/tricrotism/cryon/velocity/api/command/Subcommand : java/lang/annotation/Annotation {
+	public abstract fun value ()[Ljava/lang/String;
+}
+

@@ -18,6 +18,7 @@ import com.tricrotism.cryon.common.deploy.DeployKeys
 import com.tricrotism.cryon.common.deploy.DeployResult
 import com.tricrotism.cryon.common.deploy.GitDeploy
 import com.tricrotism.cryon.common.diagnostic.Retention
+import com.tricrotism.cryon.common.experiment.Experiments
 import com.tricrotism.cryon.common.flag.FeatureFlags
 import com.tricrotism.cryon.common.locale.*
 import com.tricrotism.cryon.common.lock.DistributedLock
@@ -50,16 +51,18 @@ import com.tricrotism.cryon.paper.api.bar.ActionBars
 import com.tricrotism.cryon.paper.api.bar.BossBars
 import com.tricrotism.cryon.paper.api.bedrock.BedrockService
 import com.tricrotism.cryon.paper.api.command.CommandService
+import com.tricrotism.cryon.paper.api.diagnostic.TaskCensus
 import com.tricrotism.cryon.paper.api.event.Events
 import com.tricrotism.cryon.paper.api.event.Subscription
 import com.tricrotism.cryon.paper.api.inventory.InventorySearch
 import com.tricrotism.cryon.paper.api.menu.MenuPalette
+import com.tricrotism.cryon.paper.api.packet.PacketEntities
+import com.tricrotism.cryon.paper.api.packet.Packets
 import com.tricrotism.cryon.paper.api.placeholder.PlaceholderService
 import com.tricrotism.cryon.paper.api.scheduler.CryonDispatchers
 import com.tricrotism.cryon.paper.api.scheduler.Schedulers
 import com.tricrotism.cryon.papi.CorePlaceholders
 import com.tricrotism.cryon.papi.PapiBridge
-import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder
 import io.papermc.paper.plugin.lifecycle.event.types.LifecycleEvents
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask
 import kotlinx.coroutines.*
@@ -105,6 +108,7 @@ class Cryon : JavaPlugin() {
     private lateinit var modulesDir: File
 
     private lateinit var featureFlags: FeatureFlags
+    private lateinit var experiments: Experiments
     private var currencies: Currencies? = null
     private var leaderboardTask: ScheduledTask? = null
     private var journalTask: ScheduledTask? = null
@@ -184,6 +188,10 @@ class Cryon : JavaPlugin() {
             retention,
         )
 
+        // Teach the census who owns a classloader. Installed before any module loads, so nothing a
+        // module schedules is recorded against the core for want of a name.
+        TaskCensus.install(loader::ownerName)
+
         loader.loadSharedApi(apiDir)
         loader.prepareCache()
         loader.registerAll()
@@ -193,8 +201,6 @@ class Cryon : JavaPlugin() {
 
     override fun onEnable() {
         initMenus()
-        runCatching { PacketEvents.getAPI()?.init() }
-            .onFailure { log.error("Failed to start the packet layer; Packets subscriptions will not fire", it) }
 
         setupInfrastructure(services)
 
@@ -415,23 +421,32 @@ class Cryon : JavaPlugin() {
     }
 
     /**
-     * Bind PacketEvents to this plugin, so `Packets` works for the core and every feature.
+     * Report whether the packet layer is available, so `Packets` either works for every feature or
+     * fails in one place with a line saying why.
      *
-     * Like InvUI this is core infrastructure a module must never set up itself: the library is shaded
-     * here unrelocated and its API is a static singleton, so one `setAPI` in one classloader is the
-     * whole contract. `load()` belongs in `onLoad` (it installs the injector before any connection can
-     * exist); `init()` runs in `onEnable`, ahead of the modules that subscribe.
+     * **The core no longer owns this lifecycle.** PacketEvents is not shaded here: the standalone
+     * plugin supplies it and calls `setAPI`, `load`, `init` and `terminate` itself. Doing any of that
+     * again from here would be a second copy injecting the same pipeline, which is precisely what
+     * shading it unrelocated used to cause whenever that plugin was installed alongside.
      *
-     * Best-effort, matching spark and PlaceholderAPI: a failure here logs and leaves `Packets`
-     * unavailable rather than taking the server down with it.
+     * The presence check comes first and the class is only touched after it, the discipline
+     * `PapiBridge` and `FloodgateBedrockService` already follow: with the plugin absent its classes
+     * are absent too, so naming one is a `NoClassDefFoundError` rather than a null.
+     *
+     * Best-effort, matching spark and PlaceholderAPI: a missing packet layer logs and leaves
+     * `Packets` unavailable rather than taking the server down with it.
      */
     private fun initPackets() {
+        if (server.pluginManager.getPlugin("packetevents") == null) {
+            log.warn("PacketEvents is not installed; Packets subscriptions will not fire")
+            return
+        }
         try {
-            PacketEvents.setAPI(SpigotPacketEventsBuilder.build(this))
-            PacketEvents.getAPI().settings.checkForUpdates(false) // the core pins the version
-            PacketEvents.getAPI().load()
+            if (PacketEvents.getAPI() == null) {
+                log.warn("PacketEvents is installed but has not built its API; Packets will not fire")
+            }
         } catch (t: Throwable) {
-            log.error("Failed to load the packet layer; Packets subscriptions will not fire", t)
+            log.error("The packet layer did not initialize; Packets subscriptions will not fire", t)
         }
     }
 
@@ -519,7 +534,7 @@ class Cryon : JavaPlugin() {
                 val db = SqlDatabase.connect(
                     DatabaseConfig(
                         host = cfg[CoreKeys.DATABASE_HOST],
-                        port = cfg.find(CoreKeys.DATABASE_PORT) ?: dialect.defaultPort,
+                        port = cfg[CoreKeys.DATABASE_PORT].takeIf { it > 0 } ?: dialect.defaultPort,
                         database = cfg[CoreKeys.DATABASE_NAME],
                         username = cfg[CoreKeys.DATABASE_USERNAME],
                         password = cfg[CoreKeys.DATABASE_PASSWORD],
@@ -546,11 +561,18 @@ class Cryon : JavaPlugin() {
         featureFlags.init()
         services.register<FeatureFlags>(featureFlags)
 
+        // Beside the flags rather than inside them: same layering, same SQL-plus-broadcast shape, but a
+        // flag is a boolean end to end and cannot carry which arm a player is in.
+        experiments = Experiments(identity.serverId, database, messenger, log)
+        experiments.init()
+        services.register<Experiments>(experiments)
+
         setupCurrency(services, cfg)
 
         services.register<InventorySearch>(DefaultInventorySearch())
         BossBars.install()
         ActionBars.install()
+        PacketEntities.install()
         services.register<CooldownService>(MemoryCooldowns())
         services.register<Retention>(retention)
         services.register<Signals>(LocalSignals(log))
@@ -878,6 +900,7 @@ class Cryon : JavaPlugin() {
         if (::loader.isInitialized) loader.close()
         registry?.let { runCatching { it.close() } }
         handoff?.let { runCatching { it.close() } }
+        runCatching { PacketEntities.uninstall() }
         runCatching { ActionBars.uninstall() }
         runCatching { BossBars.uninstall() }
         colonyTask?.let { runCatching { it.cancel() } }
@@ -897,13 +920,16 @@ class Cryon : JavaPlugin() {
         currencies?.close()
         currencies = null
         if (::featureFlags.isInitialized) featureFlags.close()
+        if (::experiments.isInitialized) experiments.close()
         localeStore?.close()
         scope.cancel("The Cryon core is shutting down")
         if (::messenger.isInitialized) messenger.close()
         if (::store.isInitialized) store.close()
         database?.close()
         if (::services.isInitialized) services.clear()
-        runCatching { PacketEvents.getAPI()?.terminate() }
+        // Our lanes only. PacketEvents itself is terminated by the plugin that owns it, and doing it
+        // here would tear the pipeline out from under anything else using it.
+        runCatching { Packets.uninstall() }
         Locales.install(null)
         SpillStore.install(null)
         CryonIO.shutdown()

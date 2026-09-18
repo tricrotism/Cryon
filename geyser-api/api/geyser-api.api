@@ -1,0 +1,64 @@
+public abstract class com/tricrotism/cryon/geyser/api/GeyserModule : com/tricrotism/cryon/common/module/Module {
+	public fun <init> ()V
+	public fun getChildren ()Ljava/util/List;
+	protected final fun getContext ()Lcom/tricrotism/cryon/geyser/api/GeyserModuleContext;
+	protected final fun getDataFolder ()Ljava/io/File;
+	public fun getDependencies ()Ljava/util/List;
+	protected final fun getExtension ()Lorg/geysermc/geyser/api/extension/Extension;
+	protected final fun getGeyser ()Lorg/geysermc/geyser/api/GeyserApi;
+	protected final fun getLogger ()Lorg/slf4j/Logger;
+	protected final fun getServices ()Lcom/tricrotism/cryon/common/module/ServiceRegistry;
+	protected final fun isEnabled ()Z
+	public fun onDisable ()V
+	public fun onEnable ()V
+	public fun onLoad (Lcom/tricrotism/cryon/common/module/ModuleContext;)V
+	public fun postLoad ()V
+	public fun preLoad (Lcom/tricrotism/cryon/common/module/ModuleContext;)V
+	protected final fun subscribe (Ljava/lang/Class;Lkotlin/jvm/functions/Function1;)Lorg/geysermc/event/subscribe/Subscriber;
+	protected final fun track (Ljava/lang/AutoCloseable;)Ljava/lang/AutoCloseable;
+}
+
+public abstract interface class com/tricrotism/cryon/geyser/api/GeyserModuleContext : com/tricrotism/cryon/common/module/ModuleContext {
+	public abstract fun getDataDirectory ()Ljava/nio/file/Path;
+	public abstract fun getExtension ()Lorg/geysermc/geyser/api/extension/Extension;
+	public abstract fun getGeyser ()Lorg/geysermc/geyser/api/GeyserApi;
+}
+
+public final class com/tricrotism/cryon/geyser/api/MessagingKt {
+	public static final fun render (Lcom/tricrotism/cryon/common/locale/MessageService;Lorg/geysermc/geyser/api/command/CommandSource;Ljava/lang/String;[Lnet/kyori/adventure/text/minimessage/tag/resolver/TagResolver;)Lnet/kyori/adventure/text/Component;
+	public static final fun resolvedLocale (Lorg/geysermc/geyser/api/command/CommandSource;)Ljava/util/Locale;
+	public static final fun send (Lcom/tricrotism/cryon/common/locale/MessageService;Lorg/geysermc/geyser/api/command/CommandSource;Ljava/lang/String;[Lnet/kyori/adventure/text/minimessage/tag/resolver/TagResolver;)V
+	public static final fun sendLocalized (Lorg/geysermc/geyser/api/command/CommandSource;Ljava/lang/String;[Lnet/kyori/adventure/text/minimessage/tag/resolver/TagResolver;)V
+	public static final fun sendMessage (Lorg/geysermc/geyser/api/command/CommandSource;Lnet/kyori/adventure/text/Component;)V
+	public static final fun sendNoPermission (Lorg/geysermc/geyser/api/command/CommandSource;)V
+	public static final fun toGeyserString (Lnet/kyori/adventure/text/Component;)Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/geyser/api/command/AnnotationCommands {
+	public static final field INSTANCE Lcom/tricrotism/cryon/geyser/api/command/AnnotationCommands;
+	public final fun build (Lorg/geysermc/geyser/api/extension/Extension;Ljava/lang/Object;)Lorg/geysermc/geyser/api/command/Command;
+	public final fun register (Lorg/geysermc/geyser/api/event/lifecycle/GeyserDefineCommandsEvent;Lorg/geysermc/geyser/api/extension/Extension;[Ljava/lang/Object;)V
+}
+
+public abstract interface annotation class com/tricrotism/cryon/geyser/api/command/Arg : java/lang/annotation/Annotation {
+	public abstract fun suggests ()Ljava/lang/String;
+	public abstract fun value ()Ljava/lang/String;
+}
+
+public abstract interface annotation class com/tricrotism/cryon/geyser/api/command/Command : java/lang/annotation/Annotation {
+	public abstract fun aliases ()[Ljava/lang/String;
+	public abstract fun description ()Ljava/lang/String;
+	public abstract fun name ()Ljava/lang/String;
+}
+
+public abstract interface annotation class com/tricrotism/cryon/geyser/api/command/Greedy : java/lang/annotation/Annotation {
+}
+
+public abstract interface annotation class com/tricrotism/cryon/geyser/api/command/Permission : java/lang/annotation/Annotation {
+	public abstract fun value ()Ljava/lang/String;
+}
+
+public abstract interface annotation class com/tricrotism/cryon/geyser/api/command/Subcommand : java/lang/annotation/Annotation {
+	public abstract fun value ()[Ljava/lang/String;
+}
+

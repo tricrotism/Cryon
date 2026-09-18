@@ -1,6 +1,7 @@
 package com.tricrotism.cryon.paper.api.scheduler
 
 import com.tricrotism.cryon.paper.api.CryonPaper
+import com.tricrotism.cryon.paper.api.diagnostic.TaskCensus
 import io.papermc.paper.threadedregions.scheduler.ScheduledTask
 import org.bukkit.Bukkit
 import org.bukkit.Location
@@ -32,6 +33,7 @@ object Schedulers {
 
     fun globalTimer(delayTicks: Long, periodTicks: Long, task: (ScheduledTask) -> Unit): ScheduledTask =
         Bukkit.getGlobalRegionScheduler().runAtFixedRate(plugin, { task(it) }, delayTicks, periodTicks)
+            .also { TaskCensus.recordTimer(task, it) }
 
     fun region(location: Location, task: () -> Unit): ScheduledTask =
         Bukkit.getRegionScheduler().run(plugin, location) { task() }
@@ -46,6 +48,7 @@ object Schedulers {
         task: (ScheduledTask) -> Unit
     ): ScheduledTask =
         Bukkit.getRegionScheduler().runAtFixedRate(plugin, location, { task(it) }, delayTicks, periodTicks)
+            .also { TaskCensus.recordTimer(task, it) }
 
     fun entity(entity: Entity, retired: Runnable? = null, task: () -> Unit): ScheduledTask? =
         entity.scheduler.run(plugin, { task() }, retired)
@@ -61,6 +64,7 @@ object Schedulers {
         task: (ScheduledTask) -> Unit,
     ): ScheduledTask? =
         entity.scheduler.runAtFixedRate(plugin, { task(it) }, retired, delayTicks, periodTicks)
+            ?.also { TaskCensus.recordTimer(task, it) }
 
     fun async(task: () -> Unit): ScheduledTask =
         Bukkit.getAsyncScheduler().runNow(plugin) { task() }
@@ -70,4 +74,5 @@ object Schedulers {
 
     fun asyncTimer(initialDelay: Long, period: Long, unit: TimeUnit, task: (ScheduledTask) -> Unit): ScheduledTask =
         Bukkit.getAsyncScheduler().runAtFixedRate(plugin, { task(it) }, initialDelay, period, unit)
+            .also { TaskCensus.recordTimer(task, it) }
 }

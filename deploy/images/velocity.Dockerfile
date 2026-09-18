@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends gettext-base &&
 # Provide the Velocity proxy jar at deploy/velocity.jar (https://papermc.io/downloads/velocity).
 COPY deploy/velocity.jar ./velocity.jar
 # The Cryon proxy loader (shaded).
-COPY --from=build /src/velocity/build/libs/*-all.jar plugins/cryon.jar
+COPY --from=build /src/velocity/build/libs/Cryon-Velocity-*.jar plugins/cryon.jar
 # For Bedrock: drop Floodgate-Velocity at deploy/floodgate-velocity.jar and uncomment.
 # COPY deploy/floodgate-velocity.jar plugins/floodgate-velocity.jar
 COPY deploy/images/entrypoint-velocity.sh /entrypoint.sh

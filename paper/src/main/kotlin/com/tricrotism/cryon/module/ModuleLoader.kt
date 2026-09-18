@@ -67,7 +67,13 @@ class ModuleLoader(
     /**
      * A module jar as the profiler should present it: display [name] (its module ids) + [version].
      */
-    data class ModuleSource(val name: String, val version: String)
+    /**
+     * [name] is spark's spelling (`Cryon-Module-Economy`), which its viewer groups by; [owner] is the
+     * plain module id, which is what an operator typed and what `/cryon tasks` lists. Kept apart
+     * rather than deriving one from the other, since stripping a display prefix back off to recover an
+     * id is the kind of thing that quietly stops working when the prefix changes.
+     */
+    data class ModuleSource(val name: String, val version: String, val owner: String)
 
     @Volatile
     private var apiLoader: URLClassLoader? = null
@@ -199,6 +205,12 @@ class ModuleLoader(
     fun sourceName(loader: ClassLoader?): String? = loader?.let { loaderSources[it]?.name }
 
     /**
+     * The module id(s) owning [loader], for `TaskCensus`. Null for anything that is not a feature jar,
+     * which the census reads as the core, since that is what a class outside every module loader is.
+     */
+    fun ownerName(loader: ClassLoader?): String? = loader?.let { loaderSources[it]?.owner }
+
+    /**
      * [name] if any live module loader has already *defined* it, else null. [SparkSupport]'s
      * class-finder fallback. spark can only attribute a sampled class it can find, and Paper's own
      * lookup can't see into these isolated loaders. Uses `findLoadedClass` (a native class-table read:
@@ -274,6 +286,7 @@ class ModuleLoader(
             loaderSources[loader] = ModuleSource(
                 ids.joinToString(", ") { id -> "Cryon-Module-${id.replaceFirstChar(Char::uppercase)}" },
                 jarVersion(source.name),
+                ids.joinToString(", "),
             )
             log.info("Discovered {} module(s) in {}", ids.size, source.name)
             return ids

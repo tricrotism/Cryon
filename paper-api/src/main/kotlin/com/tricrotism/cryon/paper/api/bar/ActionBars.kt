@@ -99,6 +99,7 @@ object ActionBars {
     /**
      * Drop one entry. Whatever was underneath it reappears on the next tick.
      */
+    @JvmOverloads
     fun clear(player: Player, key: String = DEFAULT_KEY) {
         val id = player.uniqueId
         entries[id]?.remove(key) ?: return

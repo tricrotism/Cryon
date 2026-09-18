@@ -1,6 +1,7 @@
 package com.tricrotism.cryon.paper.api.event
 
 import com.tricrotism.cryon.paper.api.CryonPaper
+import com.tricrotism.cryon.paper.api.diagnostic.TaskCensus
 import org.bukkit.Bukkit
 import org.bukkit.event.Event
 import org.bukkit.event.EventPriority
@@ -19,6 +20,7 @@ class SubscriptionBuilder<T : Event> internal constructor(
     private var expiry = -1L
 
     fun priority(priority: EventPriority): SubscriptionBuilder<T> = apply { this.priority = priority }
+    @JvmOverloads
     fun ignoreCancelled(value: Boolean = true): SubscriptionBuilder<T> = apply { ignoreCancelled = value }
     fun filter(predicate: (T) -> Boolean): SubscriptionBuilder<T> = apply { filters.add(predicate) }
 
@@ -48,6 +50,9 @@ class SubscriptionBuilder<T : Event> internal constructor(
         }
 
         Bukkit.getPluginManager().registerEvent(type, listener, priority, executor, plugin, ignoreCancelled)
+        // Attributed to whoever wrote the handler, since `listener` is an anonymous class from here
+        // and Bukkit records the owning plugin, which is the core for every module alike.
+        TaskCensus.recordListener(handler) { !subscription.isActive }
         return subscription
     }
 }

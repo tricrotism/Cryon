@@ -17,6 +17,7 @@ lettuce = "6.7.1.RELEASE"
 shadow = "9.4.2"
 runPaper = "3.0.2"
 paperweight = "2.0.0-beta.21"
+binaryCompatibility = "0.18.2"
 
 # Three separate coordinates on purpose: :paper builds against the 26.2 dev bundle, run-paper starts a
 # 26.2 server, and :paper-api compiles against the plain paper-api artifact. The last two share a range
@@ -74,3 +75,4 @@ shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
 runPaper = { id = "xyz.jpenilla.run-paper", version.ref = "runPaper" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 paperweight = { id = "io.papermc.paperweight.userdev", version.ref = "paperweight" }
+binaryCompatibility = { id = "org.jetbrains.kotlinx.binary-compatibility-validator", version.ref = "binaryCompatibility" }

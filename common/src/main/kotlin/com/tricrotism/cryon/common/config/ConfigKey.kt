@@ -11,6 +11,12 @@ package com.tricrotism.cryon.common.config
  * and connection details want: a missing password should stop a boot naming the key, not silently
  * connect as somebody else.
  *
+ * [doc] is the operator-facing explanation, and it lives here because the shipped `config.yml` is
+ * generated from these keys rather than hand-written beside them. Prose kept in the template drifts
+ * from the key silently: a default changed in code leaves the comment describing the old behaviour,
+ * and nothing fails. Write it as the operator reads it, in sentences, and it is rendered as the
+ * comment above the value.
+ *
  * @param expected what this key accepts, phrased to finish "… is not a valid ", used only in failures
  */
 class ConfigKey<T : Any> internal constructor(
@@ -19,6 +25,7 @@ class ConfigKey<T : Any> internal constructor(
     private val expected: String,
     private val decode: (Any) -> T?,
     private val validate: ((T) -> String?)?,
+    val doc: String = "",
 ) {
 
     val environmentVariable: String = "CRYON_" + path.uppercase().replace('.', '_').replace('-', '_')

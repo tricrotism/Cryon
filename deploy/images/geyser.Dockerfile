@@ -19,7 +19,7 @@ WORKDIR /geyser
 # Provide the Geyser Standalone jar at deploy/geyser.jar (https://geysermc.org/download).
 COPY deploy/geyser.jar ./geyser.jar
 # The Cryon Geyser extension (shaded). Geyser loads everything in extensions/ on boot.
-COPY --from=build /src/geyser/build/libs/*-all.jar extensions/cryon-geyser.jar
+COPY --from=build /src/geyser/build/libs/Cryon-Geyser-*.jar extensions/cryon-geyser.jar
 COPY deploy/images/entrypoint-geyser.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && mkdir -p config extensions
 

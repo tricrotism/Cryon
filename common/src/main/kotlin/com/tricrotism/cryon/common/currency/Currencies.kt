@@ -271,11 +271,23 @@ class Currencies(
             try {
                 log.append(credit)
             } catch (e: Exception) {
-                logger.error(
-                    "Could not journal the pending {} delta for {}; returning it to the shared ledger",
-                    account.currency, account.player, e,
-                )
-                ledger.restore(account.scope, account.currency, account.player, taken)
+                // The append is DSYNC, so the record reaches the device before the stream closes and
+                // a failing close throws with the credit already queued. Restoring on that would put
+                // the same delta in two places, and the next drain would give it a fresh op id, so
+                // the ledger's exactly-once claim would not catch it. Ask before putting it back.
+                if (log.contains(credit.opId)) {
+                    logger.error(
+                        "Journalling the pending {} delta for {} reported a failure but the record is " +
+                                "durable; leaving it queued rather than returning it to the shared ledger",
+                        account.currency, account.player, e,
+                    )
+                } else {
+                    logger.error(
+                        "Could not journal the pending {} delta for {}; returning it to the shared ledger",
+                        account.currency, account.player, e,
+                    )
+                    ledger.restore(account.scope, account.currency, account.player, taken)
+                }
             }
         }
     }

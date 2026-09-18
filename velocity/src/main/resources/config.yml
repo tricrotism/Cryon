@@ -29,8 +29,10 @@ database:
     # its path, host/port ignored), zero-setup but local to this process, not shared across servers.
     type: postgresql
     host: localhost
-    # Leave the port at the backend default (postgresql 5432, mysql 3306) or set your own.
-    port: 5432
+    # 0 follows the backend default (postgresql 5432, mysql 3306). Set a real port only to override
+    # it. A config that pins 5432 and later switches type to mysql dials 5432 at MySQL and fails
+    # obscurely, which is what the sentinel avoids.
+    port: 0
     database: cryon
     username: cryon
     password: ""

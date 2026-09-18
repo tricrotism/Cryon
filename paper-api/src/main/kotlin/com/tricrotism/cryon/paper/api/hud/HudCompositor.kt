@@ -64,6 +64,7 @@ class HudCompositor(
 
     fun at(x: Int): HudCompositor = space(x - cursor)
 
+    @JvmOverloads
     fun glyph(glyph: Glyph, color: TextColor = NamedTextColor.WHITE): HudCompositor {
         ensureRun(font.key, color, bold = false)
         run.appendCodePoint(glyph.codepoint)
@@ -76,6 +77,7 @@ class HudCompositor(
      * [half] is for a row font that draws the vanilla sheet at half height, where the client
      * halves each glyph's width and keeps the one pixel gap after it.
      */
+    @JvmOverloads
     fun text(text: String, row: Key, color: TextColor, bold: Boolean = false, half: Boolean = false): HudCompositor {
         ensureRun(row, color, bold)
         run.append(text)

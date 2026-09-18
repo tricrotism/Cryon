@@ -63,11 +63,23 @@ Requires **JDK 25**.
 # Drop feature jars into plugins/Cryon/modules/ (and any api/ contract jars into plugins/Cryon/api/).
 ./gradlew :paper:runServer
 
-# Publish the API locally so feature repos can compile against it
-./gradlew :common:publishToMavenLocal :paper-api:publishToMavenLocal :velocity-api:publishToMavenLocal
+# Publish every module and API locally so feature repos can compile against them
+./gradlew publishAllToMavenLocal
+
+# Publish everything to the remote repository (needs CRYON_PUBLISH_URL, see below)
+./gradlew publishAll
 ```
 
-Production publishes/consumes the API from `repo.striveservices.org` rather than mavenLocal. There are no unit tests,
+`publishAll`/`publishAllToMavenLocal` cover every subproject by path, so a module added to
+`settings.gradle.kts` ships without anyone updating a list here. The four API artifacts keep their bare coordinates
+(`com.tricrotism:common`, `:paper-api`, `:velocity-api`, `:geyser-api`) because feature repos already compile against
+them; the three shaded loaders publish as `cryon-paper`, `cryon-velocity` and `cryon-geyser`, jar only, with no POM
+dependencies, since everything they need is inside the jar.
+
+The remote repository is **env-first with no default**: `CRYON_PUBLISH_URL` (or the `cryonPublishUrl` Gradle property)
+declares it, `CRYON_PUBLISH_USERNAME`/`CRYON_PUBLISH_PASSWORD` authenticate it, and no username set means no credentials
+are sent at all. With the URL unset no remote repository is declared, so `publishAll` succeeds having pushed nowhere and
+`publishAllToMavenLocal` still works. Production points that at `repo.striveservices.org`. There are no unit tests,
 verify on a local server.
 
 A ready-made local stack (Velocity + 2 Paper nodes + Redis + Postgres, many-nodes) lives in

@@ -1,0 +1,2350 @@
+public abstract interface class com/tricrotism/cryon/common/bucket/Bucket : java/util/Set, kotlin/jvm/internal/markers/KMutableSet {
+	public abstract fun cycle ()Lcom/tricrotism/cryon/common/bucket/Cycle;
+	public abstract fun getPartitionCount ()I
+	public abstract fun getPartitions ()Ljava/util/List;
+	public abstract fun partition (I)Lcom/tricrotism/cryon/common/bucket/BucketPartition;
+}
+
+public abstract interface class com/tricrotism/cryon/common/bucket/BucketPartition : java/util/Set, kotlin/jvm/internal/markers/KMappedMarker {
+	public abstract fun getIndex ()I
+}
+
+public final class com/tricrotism/cryon/common/bucket/Buckets {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/bucket/Buckets;
+	public final fun concurrent (ILcom/tricrotism/cryon/common/bucket/PartitioningStrategy;)Lcom/tricrotism/cryon/common/bucket/Bucket;
+	public final fun hashSet (ILcom/tricrotism/cryon/common/bucket/PartitioningStrategy;)Lcom/tricrotism/cryon/common/bucket/Bucket;
+}
+
+public abstract interface class com/tricrotism/cryon/common/bucket/Cycle {
+	public abstract fun getCurrent ()Ljava/lang/Object;
+	public abstract fun next ()Ljava/lang/Object;
+	public abstract fun peekNext ()Ljava/lang/Object;
+	public abstract fun previous ()Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/bucket/PartitioningStrategies {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/bucket/PartitioningStrategies;
+	public final fun lowestSize ()Lcom/tricrotism/cryon/common/bucket/PartitioningStrategy;
+	public final fun random ()Lcom/tricrotism/cryon/common/bucket/PartitioningStrategy;
+}
+
+public abstract interface class com/tricrotism/cryon/common/bucket/PartitioningStrategy {
+	public abstract fun allocate (Ljava/lang/Object;Lcom/tricrotism/cryon/common/bucket/Bucket;)I
+}
+
+public final class com/tricrotism/cryon/common/colony/ClusterService {
+	public fun <init> (Ljava/lang/String;Z)V
+	public synthetic fun <init> (Ljava/lang/String;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun copy (Ljava/lang/String;Z)Lcom/tricrotism/cryon/common/colony/ClusterService;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/colony/ClusterService;Ljava/lang/String;ZILjava/lang/Object;)Lcom/tricrotism/cryon/common/colony/ClusterService;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getId ()Ljava/lang/String;
+	public final fun getOptional ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/tricrotism/cryon/common/colony/Colony {
+	public abstract fun isQueen (Lcom/tricrotism/cryon/common/colony/ClusterService;)Z
+	public abstract fun register (Lcom/tricrotism/cryon/common/colony/ClusterService;Lcom/tricrotism/cryon/common/colony/ColonyListener;)V
+	public static synthetic fun register$default (Lcom/tricrotism/cryon/common/colony/Colony;Lcom/tricrotism/cryon/common/colony/ClusterService;Lcom/tricrotism/cryon/common/colony/ColonyListener;ILjava/lang/Object;)V
+	public abstract fun route (Lcom/tricrotism/cryon/common/colony/ClusterService;Lcom/tricrotism/cryon/common/colony/ShardingStrategy;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun route$default (Lcom/tricrotism/cryon/common/colony/Colony;Lcom/tricrotism/cryon/common/colony/ClusterService;Lcom/tricrotism/cryon/common/colony/ShardingStrategy;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public abstract fun shards (Lcom/tricrotism/cryon/common/colony/ClusterService;)Ljava/util/List;
+	public abstract fun shutdown (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun status (Lcom/tricrotism/cryon/common/colony/ClusterService;)Lcom/tricrotism/cryon/common/colony/QueenStatus;
+	public abstract fun tick (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/colony/Colony$DefaultImpls {
+	public static synthetic fun register$default (Lcom/tricrotism/cryon/common/colony/Colony;Lcom/tricrotism/cryon/common/colony/ClusterService;Lcom/tricrotism/cryon/common/colony/ColonyListener;ILjava/lang/Object;)V
+	public static synthetic fun route$default (Lcom/tricrotism/cryon/common/colony/Colony;Lcom/tricrotism/cryon/common/colony/ClusterService;Lcom/tricrotism/cryon/common/colony/ShardingStrategy;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/colony/ColonyAdvertisement {
+	public static final field Companion Lcom/tricrotism/cryon/common/colony/ColonyAdvertisement$Companion;
+	public fun <init> (Ljava/lang/String;JZLjava/util/Map;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()J
+	public final fun component3 ()Z
+	public final fun component4 ()Ljava/util/Map;
+	public final fun copy (Ljava/lang/String;JZLjava/util/Map;)Lcom/tricrotism/cryon/common/colony/ColonyAdvertisement;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/colony/ColonyAdvertisement;Ljava/lang/String;JZLjava/util/Map;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/colony/ColonyAdvertisement;
+	public final fun encode ()Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getClaims ()Ljava/util/Map;
+	public final fun getHeartbeat ()J
+	public final fun getLeaving ()Z
+	public final fun getNodeId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/colony/ColonyAdvertisement$Companion {
+	public final fun decode (Ljava/lang/String;)Lcom/tricrotism/cryon/common/colony/ColonyAdvertisement;
+}
+
+public final class com/tricrotism/cryon/common/colony/ColonyElector {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun apply (Ljava/util/List;Z)Lcom/tricrotism/cryon/common/colony/ColonyElector$Decisions;
+	public final fun claims ()Ljava/util/Map;
+	public final fun host (Ljava/lang/String;)V
+	public final fun mode (Ljava/lang/String;)Lcom/tricrotism/cryon/common/colony/ColonyMode;
+	public final fun shards (Ljava/lang/String;)Ljava/util/List;
+	public final fun status (Ljava/lang/String;)Lcom/tricrotism/cryon/common/colony/QueenStatus;
+}
+
+public final class com/tricrotism/cryon/common/colony/ColonyElector$Decisions {
+	public fun <init> (Ljava/util/Set;Ljava/util/Set;)V
+	public final fun component1 ()Ljava/util/Set;
+	public final fun component2 ()Ljava/util/Set;
+	public final fun copy (Ljava/util/Set;Ljava/util/Set;)Lcom/tricrotism/cryon/common/colony/ColonyElector$Decisions;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/colony/ColonyElector$Decisions;Ljava/util/Set;Ljava/util/Set;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/colony/ColonyElector$Decisions;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDemoted ()Ljava/util/Set;
+	public final fun getPromoted ()Ljava/util/Set;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/colony/ColonyElector$ServiceView {
+	public fun <init> (Ljava/lang/String;ZLjava/util/List;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun component3 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;ZLjava/util/List;)Lcom/tricrotism/cryon/common/colony/ColonyElector$ServiceView;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/colony/ColonyElector$ServiceView;Ljava/lang/String;ZLjava/util/List;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/colony/ColonyElector$ServiceView;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContested ()Z
+	public final fun getQueen ()Ljava/lang/String;
+	public final fun getShards ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/tricrotism/cryon/common/colony/ColonyListener {
+	public fun onDemote (Lcom/tricrotism/cryon/common/colony/ClusterService;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun onPromote (Lcom/tricrotism/cryon/common/colony/ClusterService;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/colony/ColonyListener$DefaultImpls {
+	public static fun onDemote (Lcom/tricrotism/cryon/common/colony/ColonyListener;Lcom/tricrotism/cryon/common/colony/ClusterService;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun onPromote (Lcom/tricrotism/cryon/common/colony/ColonyListener;Lcom/tricrotism/cryon/common/colony/ClusterService;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/colony/ColonyMode : java/lang/Enum {
+	public static final field Drone Lcom/tricrotism/cryon/common/colony/ColonyMode;
+	public static final field Queen Lcom/tricrotism/cryon/common/colony/ColonyMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/tricrotism/cryon/common/colony/ColonyMode;
+	public static fun values ()[Lcom/tricrotism/cryon/common/colony/ColonyMode;
+}
+
+public abstract interface class com/tricrotism/cryon/common/colony/QueenStatus {
+}
+
+public final class com/tricrotism/cryon/common/colony/QueenStatus$Contested : com/tricrotism/cryon/common/colony/QueenStatus {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/colony/QueenStatus$Contested;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/colony/QueenStatus$Elected : com/tricrotism/cryon/common/colony/QueenStatus {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/tricrotism/cryon/common/colony/QueenStatus$Elected;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/colony/QueenStatus$Elected;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/colony/QueenStatus$Elected;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getNodeId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/colony/QueenStatus$Unclaimed : com/tricrotism/cryon/common/colony/QueenStatus {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/colony/QueenStatus$Unclaimed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/tricrotism/cryon/common/colony/ShardingStrategy {
+	public static final field Companion Lcom/tricrotism/cryon/common/colony/ShardingStrategy$Companion;
+	public abstract fun shard ()I
+}
+
+public final class com/tricrotism/cryon/common/colony/ShardingStrategy$Companion {
+	public final fun byId (Ljava/lang/Object;)Lcom/tricrotism/cryon/common/colony/ShardingStrategy;
+	public final fun getQueen ()Lcom/tricrotism/cryon/common/colony/ShardingStrategy;
+	public final fun roundRobin ()Lcom/tricrotism/cryon/common/colony/ShardingStrategy;
+}
+
+public final class com/tricrotism/cryon/common/colony/SharedColony : com/tricrotism/cryon/common/colony/Colony {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Lcom/tricrotism/cryon/common/net/KeyValueStore;Lorg/slf4j/Logger;Ljava/time/Duration;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lcom/tricrotism/cryon/common/net/KeyValueStore;Lorg/slf4j/Logger;Ljava/time/Duration;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun isQueen (Lcom/tricrotism/cryon/common/colony/ClusterService;)Z
+	public fun register (Lcom/tricrotism/cryon/common/colony/ClusterService;Lcom/tricrotism/cryon/common/colony/ColonyListener;)V
+	public fun route (Lcom/tricrotism/cryon/common/colony/ClusterService;Lcom/tricrotism/cryon/common/colony/ShardingStrategy;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun shards (Lcom/tricrotism/cryon/common/colony/ClusterService;)Ljava/util/List;
+	public fun shutdown (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun status (Lcom/tricrotism/cryon/common/colony/ClusterService;)Lcom/tricrotism/cryon/common/colony/QueenStatus;
+	public fun tick (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/concurrent/CryonIO {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/concurrent/CryonIO;
+	public final fun getDispatcher ()Lkotlinx/coroutines/CoroutineDispatcher;
+	public final fun shutdown ()V
+}
+
+public final class com/tricrotism/cryon/common/concurrent/SingleFlight {
+	public fun <init> ()V
+	public final fun clear ()V
+	public final fun getSize ()I
+	public final fun join (Ljava/lang/Object;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/config/Config {
+	public fun <init> (Lcom/tricrotism/cryon/common/config/ConfigSource;Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Lcom/tricrotism/cryon/common/config/ConfigSource;Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun children (Ljava/lang/String;)Ljava/util/Set;
+	public final fun find (Lcom/tricrotism/cryon/common/config/ConfigKey;)Ljava/lang/Object;
+	public final fun get (Lcom/tricrotism/cryon/common/config/ConfigKey;)Ljava/lang/Object;
+	public final fun getOrigin ()Ljava/lang/String;
+	public final fun isSet (Lcom/tricrotism/cryon/common/config/ConfigKey;)Z
+	public final fun maps (Ljava/lang/String;)Ljava/util/List;
+	public final fun onReload (Lkotlin/jvm/functions/Function0;)Ljava/lang/AutoCloseable;
+	public final fun reload (Lcom/tricrotism/cryon/common/config/ConfigSource;)Ljava/util/List;
+}
+
+public final class com/tricrotism/cryon/common/config/ConfigDrift {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/config/ConfigDrift;
+	public final fun check (Ljava/util/List;Ljava/util/Map;Ljava/util/Set;Ljava/util/Set;)Ljava/util/List;
+	public static synthetic fun check$default (Lcom/tricrotism/cryon/common/config/ConfigDrift;Ljava/util/List;Ljava/util/Map;Ljava/util/Set;Ljava/util/Set;ILjava/lang/Object;)Ljava/util/List;
+}
+
+public final class com/tricrotism/cryon/common/config/ConfigException : java/lang/RuntimeException {
+	public fun <init> (Ljava/lang/String;)V
+}
+
+public final class com/tricrotism/cryon/common/config/ConfigKey {
+	public final fun getDefault ()Ljava/lang/Object;
+	public final fun getDoc ()Ljava/lang/String;
+	public final fun getEnvironmentVariable ()Ljava/lang/String;
+	public final fun getPath ()Ljava/lang/String;
+	public final fun getRequired ()Z
+}
+
+public final class com/tricrotism/cryon/common/config/ConfigKeys {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/config/ConfigKeys;
+	public final fun boolean (Ljava/lang/String;Ljava/lang/Boolean;Ljava/lang/String;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public static synthetic fun boolean$default (Lcom/tricrotism/cryon/common/config/ConfigKeys;Ljava/lang/String;Ljava/lang/Boolean;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun choice (Ljava/lang/String;Ljava/util/Collection;Ljava/lang/Object;Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public static synthetic fun choice$default (Lcom/tricrotism/cryon/common/config/ConfigKeys;Ljava/lang/String;Ljava/util/Collection;Ljava/lang/Object;Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun double (Ljava/lang/String;Ljava/lang/Double;Ljava/lang/String;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public static synthetic fun double$default (Lcom/tricrotism/cryon/common/config/ConfigKeys;Ljava/lang/String;Ljava/lang/Double;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun int (Ljava/lang/String;Ljava/lang/Integer;Lkotlin/ranges/IntRange;Ljava/lang/String;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public static synthetic fun int$default (Lcom/tricrotism/cryon/common/config/ConfigKeys;Ljava/lang/String;Ljava/lang/Integer;Lkotlin/ranges/IntRange;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun long (Ljava/lang/String;Ljava/lang/Long;Lkotlin/ranges/LongRange;Ljava/lang/String;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public static synthetic fun long$default (Lcom/tricrotism/cryon/common/config/ConfigKeys;Ljava/lang/String;Ljava/lang/Long;Lkotlin/ranges/LongRange;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun nonBlankString (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public static synthetic fun nonBlankString$default (Lcom/tricrotism/cryon/common/config/ConfigKeys;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun string (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public static synthetic fun string$default (Lcom/tricrotism/cryon/common/config/ConfigKeys;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun strings (Ljava/lang/String;Ljava/util/List;Ljava/lang/String;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public static synthetic fun strings$default (Lcom/tricrotism/cryon/common/config/ConfigKeys;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+}
+
+public final class com/tricrotism/cryon/common/config/ConfigMigrator {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/config/ConfigMigrator;
+	public final fun migrate (Ljava/lang/String;Ljava/nio/file/Path;Lorg/slf4j/Logger;Ljava/util/Map;)Z
+	public static synthetic fun migrate$default (Lcom/tricrotism/cryon/common/config/ConfigMigrator;Ljava/lang/String;Ljava/nio/file/Path;Lorg/slf4j/Logger;Ljava/util/Map;ILjava/lang/Object;)Z
+}
+
+public abstract class com/tricrotism/cryon/common/config/ConfigSchema {
+	public fun <init> ()V
+	protected final fun boolean (Ljava/lang/String;Ljava/lang/Boolean;Ljava/lang/String;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public static synthetic fun boolean$default (Lcom/tricrotism/cryon/common/config/ConfigSchema;Ljava/lang/String;Ljava/lang/Boolean;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	protected final fun choice (Ljava/lang/String;Ljava/util/Collection;Ljava/lang/Object;Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public static synthetic fun choice$default (Lcom/tricrotism/cryon/common/config/ConfigSchema;Ljava/lang/String;Ljava/util/Collection;Ljava/lang/Object;Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	protected final fun double (Ljava/lang/String;Ljava/lang/Double;Ljava/lang/String;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public static synthetic fun double$default (Lcom/tricrotism/cryon/common/config/ConfigSchema;Ljava/lang/String;Ljava/lang/Double;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	protected fun getCommented ()Ljava/util/Map;
+	protected fun getHeader ()Ljava/lang/String;
+	public final fun getKeys ()Ljava/util/List;
+	protected fun getSections ()Ljava/util/Map;
+	protected final fun hidden (Lcom/tricrotism/cryon/common/config/ConfigKey;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	protected final fun int (Ljava/lang/String;Ljava/lang/Integer;Lkotlin/ranges/IntRange;Ljava/lang/String;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public static synthetic fun int$default (Lcom/tricrotism/cryon/common/config/ConfigSchema;Ljava/lang/String;Ljava/lang/Integer;Lkotlin/ranges/IntRange;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	protected final fun long (Ljava/lang/String;Ljava/lang/Long;Lkotlin/ranges/LongRange;Ljava/lang/String;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public static synthetic fun long$default (Lcom/tricrotism/cryon/common/config/ConfigSchema;Ljava/lang/String;Ljava/lang/Long;Lkotlin/ranges/LongRange;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	protected final fun nonBlankString (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public static synthetic fun nonBlankString$default (Lcom/tricrotism/cryon/common/config/ConfigSchema;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun render ()Ljava/lang/String;
+	protected final fun string (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public static synthetic fun string$default (Lcom/tricrotism/cryon/common/config/ConfigSchema;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	protected final fun strings (Ljava/lang/String;Ljava/util/List;Ljava/lang/String;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public static synthetic fun strings$default (Lcom/tricrotism/cryon/common/config/ConfigSchema;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/config/ConfigKey;
+}
+
+public abstract interface class com/tricrotism/cryon/common/config/ConfigSource {
+	public abstract fun children (Ljava/lang/String;)Ljava/util/Set;
+	public abstract fun getOrigin ()Ljava/lang/String;
+	public abstract fun maps (Ljava/lang/String;)Ljava/util/List;
+	public abstract fun raw (Ljava/lang/String;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/config/ConfigTemplate {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/config/ConfigTemplate;
+	public final fun render (Ljava/util/List;Ljava/util/Map;Ljava/lang/String;Ljava/util/Map;)Ljava/lang/String;
+	public static synthetic fun render$default (Lcom/tricrotism/cryon/common/config/ConfigTemplate;Ljava/util/List;Ljava/util/Map;Ljava/lang/String;Ljava/util/Map;ILjava/lang/Object;)Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/config/CoreKeys : com/tricrotism/cryon/common/config/ConfigSchema {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/config/CoreKeys;
+	public final fun getCOMPUTED_FALLBACK ()Ljava/util/Set;
+	public final fun getDATABASE_ENABLED ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getDATABASE_HOST ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getDATABASE_MAX_POOL_SIZE ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getDATABASE_NAME ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getDATABASE_PASSWORD ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getDATABASE_PORT ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getDATABASE_TYPE ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getDATABASE_USERNAME ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getHEARTBEAT_SECONDS ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getMAINTENANCE_MESSAGE ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getMAINTENANCE_REFRESH_SECONDS ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getMODULES_AUTO_RELOAD ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getMOTD_BOTTOM_CENTER ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getMOTD_BOTTOM_LEFT ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getMOTD_BOTTOM_RIGHT ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getMOTD_ENABLED ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getMOTD_TOP_CENTER ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getMOTD_TOP_LEFT ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getMOTD_TOP_RIGHT ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getPRODUCTION ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getREDIS_ENABLED ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getREDIS_URI ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getREGISTRY_ENABLED ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+}
+
+public final class com/tricrotism/cryon/common/config/YamlConfigSource : com/tricrotism/cryon/common/config/ConfigSource {
+	public static final field Companion Lcom/tricrotism/cryon/common/config/YamlConfigSource$Companion;
+	public fun <init> (Ljava/util/Map;Ljava/lang/String;)V
+	public fun children (Ljava/lang/String;)Ljava/util/Set;
+	public fun getOrigin ()Ljava/lang/String;
+	public fun maps (Ljava/lang/String;)Ljava/util/List;
+	public fun raw (Ljava/lang/String;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/config/YamlConfigSource$Companion {
+	public final fun empty (Ljava/lang/String;)Lcom/tricrotism/cryon/common/config/YamlConfigSource;
+	public static synthetic fun empty$default (Lcom/tricrotism/cryon/common/config/YamlConfigSource$Companion;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/config/YamlConfigSource;
+	public final fun load (Ljava/nio/file/Path;)Lcom/tricrotism/cryon/common/config/YamlConfigSource;
+}
+
+public abstract interface class com/tricrotism/cryon/common/cooldown/CooldownService {
+	public abstract fun clear (Ljava/util/UUID;Ljava/lang/String;)V
+	public abstract fun clearAll (Ljava/util/UUID;)V
+	public fun isActive (Ljava/util/UUID;Ljava/lang/String;)Z
+	public abstract fun remaining-3nIYWDw (Ljava/util/UUID;Ljava/lang/String;)J
+	public abstract fun trigger-SxA4cEA (Ljava/util/UUID;Ljava/lang/String;J)Z
+}
+
+public final class com/tricrotism/cryon/common/cooldown/CooldownService$DefaultImpls {
+	public static fun isActive (Lcom/tricrotism/cryon/common/cooldown/CooldownService;Ljava/util/UUID;Ljava/lang/String;)Z
+}
+
+public final class com/tricrotism/cryon/common/cooldown/MemoryCooldowns : com/tricrotism/cryon/common/cooldown/CooldownService {
+	public fun <init> ()V
+	public fun clear (Ljava/util/UUID;Ljava/lang/String;)V
+	public fun clearAll (Ljava/util/UUID;)V
+	public fun isActive (Ljava/util/UUID;Ljava/lang/String;)Z
+	public fun remaining-3nIYWDw (Ljava/util/UUID;Ljava/lang/String;)J
+	public fun trigger-SxA4cEA (Ljava/util/UUID;Ljava/lang/String;J)Z
+}
+
+public final class com/tricrotism/cryon/common/currency/Currencies : com/tricrotism/cryon/common/currency/CurrencyService {
+	public fun <init> (Ljava/lang/String;Lcom/tricrotism/cryon/common/data/Database;Lcom/tricrotism/cryon/common/net/Messenger;Lorg/slf4j/Logger;Lcom/tricrotism/cryon/common/currency/CurrencyJournal;Lcom/tricrotism/cryon/common/currency/PendingLedger;)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/tricrotism/cryon/common/data/Database;Lcom/tricrotism/cryon/common/net/Messenger;Lorg/slf4j/Logger;Lcom/tricrotism/cryon/common/currency/CurrencyJournal;Lcom/tricrotism/cryon/common/currency/PendingLedger;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun all ()Ljava/util/Collection;
+	public fun balance-zdePK3U (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun balances (Ljava/util/UUID;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun cachedBalance-peHE2es (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;)Lcom/tricrotism/cryon/common/number/PackedDecimal;
+	public final fun close ()V
+	public fun currency (Ljava/lang/String;)Lcom/tricrotism/cryon/common/currency/Currency;
+	public fun deposit-h-kLyK8 (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun drainJournal (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun init (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun leaderboard (Lcom/tricrotism/cryon/common/currency/Currency;)Ljava/util/List;
+	public fun onChange (Lkotlin/jvm/functions/Function1;)Ljava/lang/AutoCloseable;
+	public fun openAccount (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun refreshLeaderboards (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun register (Lcom/tricrotism/cryon/common/currency/Currency;)Lcom/tricrotism/cryon/common/currency/Currency;
+	public fun set-HTLA0Qc (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun transfer-VOsNIoM (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun tryWithdraw-HTLA0Qc (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun withdraw-HTLA0Qc (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/currency/Currency {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lcom/tricrotism/cryon/common/currency/CurrencyScope;JZLjava/lang/String;ZLcom/tricrotism/cryon/common/currency/Leaderboard;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lcom/tricrotism/cryon/common/currency/CurrencyScope;JZLjava/lang/String;ZLcom/tricrotism/cryon/common/currency/Leaderboard;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Lcom/tricrotism/cryon/common/currency/CurrencyScope;
+	public final fun component4-24O2ylQ ()J
+	public final fun component5 ()Z
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Z
+	public final fun component8 ()Lcom/tricrotism/cryon/common/currency/Leaderboard;
+	public final fun copy-YbZRiFk (Ljava/lang/String;Ljava/lang/String;Lcom/tricrotism/cryon/common/currency/CurrencyScope;JZLjava/lang/String;ZLcom/tricrotism/cryon/common/currency/Leaderboard;)Lcom/tricrotism/cryon/common/currency/Currency;
+	public static synthetic fun copy-YbZRiFk$default (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/lang/String;Ljava/lang/String;Lcom/tricrotism/cryon/common/currency/CurrencyScope;JZLjava/lang/String;ZLcom/tricrotism/cryon/common/currency/Leaderboard;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/currency/Currency;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun format-N1X38mM (J)Ljava/lang/String;
+	public final fun getAllowNegative ()Z
+	public final fun getDisplayName ()Ljava/lang/String;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getLeaderboard ()Lcom/tricrotism/cryon/common/currency/Leaderboard;
+	public final fun getLongForm ()Z
+	public final fun getPattern ()Ljava/lang/String;
+	public final fun getScope ()Lcom/tricrotism/cryon/common/currency/CurrencyScope;
+	public final fun getStarting-24O2ylQ ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/currency/CurrencyChange {
+	public synthetic fun <init> (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JJJLjava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lcom/tricrotism/cryon/common/currency/Currency;
+	public final fun component2 ()Ljava/util/UUID;
+	public final fun component3-24O2ylQ ()J
+	public final fun component4-24O2ylQ ()J
+	public final fun component5-24O2ylQ ()J
+	public final fun component6 ()Ljava/lang/String;
+	public final fun copy-e6-PYEg (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JJJLjava/lang/String;)Lcom/tricrotism/cryon/common/currency/CurrencyChange;
+	public static synthetic fun copy-e6-PYEg$default (Lcom/tricrotism/cryon/common/currency/CurrencyChange;Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JJJLjava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/currency/CurrencyChange;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAfter-24O2ylQ ()J
+	public final fun getBefore-24O2ylQ ()J
+	public final fun getCurrency ()Lcom/tricrotism/cryon/common/currency/Currency;
+	public final fun getDelta-24O2ylQ ()J
+	public final fun getPlayer ()Ljava/util/UUID;
+	public final fun getReason ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/currency/CurrencyJournal {
+	public fun <init> (Ljava/nio/file/Path;Lorg/slf4j/Logger;)V
+	public final fun append (Lcom/tricrotism/cryon/common/currency/PendingCredit;)V
+	public final fun clear ()V
+	public final fun contains (Ljava/lang/String;)Z
+	public final fun finish (Ljava/util/List;)V
+	public final fun getHasPending ()Z
+	public final fun read ()Ljava/util/List;
+	public final fun takeAll ()Ljava/util/List;
+}
+
+public final class com/tricrotism/cryon/common/currency/CurrencyScope : java/lang/Enum {
+	public static final field GLOBAL Lcom/tricrotism/cryon/common/currency/CurrencyScope;
+	public static final field SERVER Lcom/tricrotism/cryon/common/currency/CurrencyScope;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/tricrotism/cryon/common/currency/CurrencyScope;
+	public static fun values ()[Lcom/tricrotism/cryon/common/currency/CurrencyScope;
+}
+
+public abstract interface class com/tricrotism/cryon/common/currency/CurrencyService {
+	public abstract fun all ()Ljava/util/Collection;
+	public abstract fun balance-zdePK3U (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun balances (Ljava/util/UUID;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun cachedBalance-peHE2es (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;)Lcom/tricrotism/cryon/common/number/PackedDecimal;
+	public abstract fun currency (Ljava/lang/String;)Lcom/tricrotism/cryon/common/currency/Currency;
+	public abstract fun deposit-h-kLyK8 (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun deposit-h-kLyK8$default (Lcom/tricrotism/cryon/common/currency/CurrencyService;Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public abstract fun leaderboard (Lcom/tricrotism/cryon/common/currency/Currency;)Ljava/util/List;
+	public abstract fun onChange (Lkotlin/jvm/functions/Function1;)Ljava/lang/AutoCloseable;
+	public abstract fun openAccount (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun openAccount$default (Lcom/tricrotism/cryon/common/currency/CurrencyService;Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public abstract fun refreshLeaderboards (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun register (Lcom/tricrotism/cryon/common/currency/Currency;)Lcom/tricrotism/cryon/common/currency/Currency;
+	public abstract fun set-HTLA0Qc (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun set-HTLA0Qc$default (Lcom/tricrotism/cryon/common/currency/CurrencyService;Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public abstract fun transfer-VOsNIoM (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun transfer-VOsNIoM$default (Lcom/tricrotism/cryon/common/currency/CurrencyService;Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public abstract fun tryWithdraw-HTLA0Qc (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun tryWithdraw-HTLA0Qc$default (Lcom/tricrotism/cryon/common/currency/CurrencyService;Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public abstract fun withdraw-HTLA0Qc (Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun withdraw-HTLA0Qc$default (Lcom/tricrotism/cryon/common/currency/CurrencyService;Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/currency/CurrencyService$DefaultImpls {
+	public static synthetic fun deposit-h-kLyK8$default (Lcom/tricrotism/cryon/common/currency/CurrencyService;Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun openAccount$default (Lcom/tricrotism/cryon/common/currency/CurrencyService;Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun set-HTLA0Qc$default (Lcom/tricrotism/cryon/common/currency/CurrencyService;Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun transfer-VOsNIoM$default (Lcom/tricrotism/cryon/common/currency/CurrencyService;Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun tryWithdraw-HTLA0Qc$default (Lcom/tricrotism/cryon/common/currency/CurrencyService;Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun withdraw-HTLA0Qc$default (Lcom/tricrotism/cryon/common/currency/CurrencyService;Lcom/tricrotism/cryon/common/currency/Currency;Ljava/util/UUID;JLjava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/currency/Leaderboard {
+	public fun <init> ()V
+	public fun <init> (I)V
+	public synthetic fun <init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun copy (I)Lcom/tricrotism/cryon/common/currency/Leaderboard;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/currency/Leaderboard;IILjava/lang/Object;)Lcom/tricrotism/cryon/common/currency/Leaderboard;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getSize ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/currency/PendingAccount {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/UUID;)V
+	public final fun getCurrency ()Ljava/lang/String;
+	public final fun getPlayer ()Ljava/util/UUID;
+	public final fun getScope ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/currency/PendingCredit {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/UUID;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Ljava/lang/String;J)V
+	public final fun getAmount ()Ljava/math/BigDecimal;
+	public final fun getAt ()J
+	public final fun getCurrency ()Ljava/lang/String;
+	public final fun getOpId ()Ljava/lang/String;
+	public final fun getPlayer ()Ljava/util/UUID;
+	public final fun getReason ()Ljava/lang/String;
+	public final fun getScope ()Ljava/lang/String;
+	public final fun getStarting ()Ljava/math/BigDecimal;
+}
+
+public final class com/tricrotism/cryon/common/currency/PendingLedger {
+	public fun <init> (Lcom/tricrotism/cryon/common/net/KeyValueStore;Lorg/slf4j/Logger;)V
+	public final fun adjust (Ljava/lang/String;Ljava/lang/String;Ljava/util/UUID;Ljava/math/BigDecimal;Ljava/math/BigDecimal;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun pending (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun rebase (Ljava/lang/String;Ljava/lang/String;Ljava/util/UUID;Ljava/math/BigDecimal;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun restore (Ljava/lang/String;Ljava/lang/String;Ljava/util/UUID;Ljava/math/BigDecimal;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun snapshot (Ljava/lang/String;Ljava/lang/String;Ljava/util/UUID;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun take (Ljava/lang/String;Ljava/lang/String;Ljava/util/UUID;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/currency/Ranking {
+	public synthetic fun <init> (ILjava/util/UUID;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2 ()Ljava/util/UUID;
+	public final fun component3-24O2ylQ ()J
+	public final fun copy--Rv0FPo (ILjava/util/UUID;J)Lcom/tricrotism/cryon/common/currency/Ranking;
+	public static synthetic fun copy--Rv0FPo$default (Lcom/tricrotism/cryon/common/currency/Ranking;ILjava/util/UUID;JILjava/lang/Object;)Lcom/tricrotism/cryon/common/currency/Ranking;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBalance-24O2ylQ ()J
+	public final fun getPlayer ()Ljava/util/UUID;
+	public final fun getPosition ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/currency/Snapshot {
+	public fun <init> (Ljava/math/BigDecimal;Ljava/math/BigDecimal;)V
+	public final fun getBaseline ()Ljava/math/BigDecimal;
+	public final fun getDelta ()Ljava/math/BigDecimal;
+	public final fun getEffective ()Ljava/math/BigDecimal;
+}
+
+public final class com/tricrotism/cryon/common/currency/TransferResult : java/lang/Enum {
+	public static final field COMPLETED Lcom/tricrotism/cryon/common/currency/TransferResult;
+	public static final field FAILED Lcom/tricrotism/cryon/common/currency/TransferResult;
+	public static final field INSUFFICIENT Lcom/tricrotism/cryon/common/currency/TransferResult;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/tricrotism/cryon/common/currency/TransferResult;
+	public static fun values ()[Lcom/tricrotism/cryon/common/currency/TransferResult;
+}
+
+public final class com/tricrotism/cryon/common/currency/WithdrawResult : java/lang/Enum {
+	public static final field COMPLETED Lcom/tricrotism/cryon/common/currency/WithdrawResult;
+	public static final field INSUFFICIENT Lcom/tricrotism/cryon/common/currency/WithdrawResult;
+	public static final field UNAVAILABLE Lcom/tricrotism/cryon/common/currency/WithdrawResult;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/tricrotism/cryon/common/currency/WithdrawResult;
+	public static fun values ()[Lcom/tricrotism/cryon/common/currency/WithdrawResult;
+}
+
+public abstract interface class com/tricrotism/cryon/common/data/Database {
+	public abstract fun close ()V
+	public fun createIndexes (Ljava/lang/String;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getDialect ()Lcom/tricrotism/cryon/common/data/SqlDialect;
+	public fun insertIfAbsent (Ljava/lang/String;Ljava/util/List;Ljava/util/List;[Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun query (Ljava/lang/String;[Ljava/lang/Object;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun transaction (Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun update (Ljava/lang/String;[Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun upsert (Ljava/lang/String;Ljava/util/List;Ljava/util/List;[Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun upsertIfGreater (Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/String;[Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/data/Database$DefaultImpls {
+	public static fun createIndexes (Lcom/tricrotism/cryon/common/data/Database;Ljava/lang/String;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun insertIfAbsent (Lcom/tricrotism/cryon/common/data/Database;Ljava/lang/String;Ljava/util/List;Ljava/util/List;[Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun upsert (Lcom/tricrotism/cryon/common/data/Database;Ljava/lang/String;Ljava/util/List;Ljava/util/List;[Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun upsertIfGreater (Lcom/tricrotism/cryon/common/data/Database;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/String;[Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/data/DatabaseConfig {
+	public fun <init> (Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;ILcom/tricrotism/cryon/common/data/SqlDialect;)V
+	public synthetic fun <init> (Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;ILcom/tricrotism/cryon/common/data/SqlDialect;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()I
+	public final fun component7 ()Lcom/tricrotism/cryon/common/data/SqlDialect;
+	public final fun copy (Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;ILcom/tricrotism/cryon/common/data/SqlDialect;)Lcom/tricrotism/cryon/common/data/DatabaseConfig;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/data/DatabaseConfig;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;Ljava/lang/String;ILcom/tricrotism/cryon/common/data/SqlDialect;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/data/DatabaseConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDatabase ()Ljava/lang/String;
+	public final fun getDialect ()Lcom/tricrotism/cryon/common/data/SqlDialect;
+	public final fun getHost ()Ljava/lang/String;
+	public final fun getMaxPoolSize ()I
+	public final fun getPassword ()Ljava/lang/String;
+	public final fun getPort ()I
+	public final fun getUsername ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/data/Migration {
+	public fun <init> (ILjava/lang/String;Lkotlin/jvm/functions/Function1;)V
+	public final fun getApply ()Lkotlin/jvm/functions/Function1;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getVersion ()I
+}
+
+public abstract interface class com/tricrotism/cryon/common/data/Repository {
+	public static final field BASE_COLUMNS_DDL Ljava/lang/String;
+	public static final field Companion Lcom/tricrotism/cryon/common/data/Repository$Companion;
+	public abstract fun cached (Ljava/lang/String;)Ljava/lang/Object;
+	public abstract fun delete (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun evict (Ljava/lang/String;)V
+	public abstract fun flush (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun get (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun load (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun put (Ljava/lang/String;Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun stage (Ljava/lang/String;Ljava/lang/Object;)V
+}
+
+public final class com/tricrotism/cryon/common/data/Repository$Companion {
+	public static final field BASE_COLUMNS_DDL Ljava/lang/String;
+}
+
+public abstract interface class com/tricrotism/cryon/common/data/RowCodec {
+	public abstract fun getColumns ()Ljava/util/List;
+	public abstract fun read (Ljava/sql/ResultSet;)Ljava/lang/Object;
+	public abstract fun write (Ljava/lang/Object;)[Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/data/SchemaMigratorKt {
+	public static final fun migrate (Lcom/tricrotism/cryon/common/data/Database;Ljava/lang/String;Ljava/util/List;Lorg/slf4j/Logger;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/data/SpillStore {
+	public static final field Companion Lcom/tricrotism/cryon/common/data/SpillStore$Companion;
+	public fun <init> (Ljava/nio/file/Path;Lorg/slf4j/Logger;)V
+	public final fun clear ()V
+	public final fun read ()Ljava/util/List;
+	public final fun summary ()Lcom/tricrotism/cryon/common/data/SpillSummary;
+	public final fun write (Ljava/util/Collection;)V
+}
+
+public final class com/tricrotism/cryon/common/data/SpillStore$Companion {
+	public final fun forTable (Ljava/lang/String;Lorg/slf4j/Logger;)Lcom/tricrotism/cryon/common/data/SpillStore;
+	public final fun install (Ljava/nio/file/Path;)V
+	public final fun pending (Lorg/slf4j/Logger;)Ljava/util/List;
+}
+
+public final class com/tricrotism/cryon/common/data/SpillSummary {
+	public fun <init> (Ljava/lang/String;IJLjava/time/Instant;)V
+	public final fun getBytes ()J
+	public final fun getModified ()Ljava/time/Instant;
+	public final fun getRows ()I
+	public final fun getTable ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/data/SpilledRow {
+	public fun <init> (Ljava/lang/String;[Ljava/lang/Object;J)V
+	public final fun getId ()Ljava/lang/String;
+	public final fun getValues ()[Ljava/lang/Object;
+	public final fun getVersion ()J
+}
+
+public final class com/tricrotism/cryon/common/data/SqlDatabase : com/tricrotism/cryon/common/data/Database {
+	public static final field Companion Lcom/tricrotism/cryon/common/data/SqlDatabase$Companion;
+	public fun <init> (Lcom/tricrotism/cryon/common/data/DatabaseConfig;)V
+	public fun close ()V
+	public fun createIndexes (Ljava/lang/String;Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun getDialect ()Lcom/tricrotism/cryon/common/data/SqlDialect;
+	public fun insertIfAbsent (Ljava/lang/String;Ljava/util/List;Ljava/util/List;[Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun query (Ljava/lang/String;[Ljava/lang/Object;Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun transaction (Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun update (Ljava/lang/String;[Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun upsert (Ljava/lang/String;Ljava/util/List;Ljava/util/List;[Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun upsertIfGreater (Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/String;[Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/data/SqlDatabase$Companion {
+	public final fun connect (Lcom/tricrotism/cryon/common/data/DatabaseConfig;Lorg/slf4j/Logger;)Lcom/tricrotism/cryon/common/data/SqlDatabase;
+}
+
+public abstract class com/tricrotism/cryon/common/data/SqlDialect : java/lang/Enum {
+	public static final field Companion Lcom/tricrotism/cryon/common/data/SqlDialect$Companion;
+	public static final field H2 Lcom/tricrotism/cryon/common/data/SqlDialect;
+	public static final field MYSQL Lcom/tricrotism/cryon/common/data/SqlDialect;
+	public static final field POSTGRESQL Lcom/tricrotism/cryon/common/data/SqlDialect;
+	public fun binary (I)Ljava/lang/String;
+	public fun createDatabaseSql (Lcom/tricrotism/cryon/common/data/DatabaseConfig;)Ljava/lang/String;
+	public final fun getDefaultPort ()I
+	public fun getDoublePrecision ()Ljava/lang/String;
+	public final fun getDriverClass ()Ljava/lang/String;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getId ()Ljava/lang/String;
+	public fun getLargeBinary ()Ljava/lang/String;
+	public fun getLongText ()Ljava/lang/String;
+	public fun getTinyInt ()Ljava/lang/String;
+	public fun indexStatements (Ljava/lang/String;Ljava/util/List;)Ljava/util/List;
+	public fun inlineIndexes (Ljava/util/List;)Ljava/lang/String;
+	public abstract fun insertIfAbsent (Ljava/lang/String;Ljava/util/List;Ljava/util/List;)Ljava/lang/String;
+	public fun isMissingDatabase (Ljava/sql/SQLException;)Z
+	public abstract fun jdbcUrl (Lcom/tricrotism/cryon/common/data/DatabaseConfig;)Ljava/lang/String;
+	public fun maintenanceUrl (Lcom/tricrotism/cryon/common/data/DatabaseConfig;)Ljava/lang/String;
+	public abstract fun upsert (Ljava/lang/String;Ljava/util/List;Ljava/util/List;)Ljava/lang/String;
+	public abstract fun upsertIfGreater (Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/lang/String;)Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Lcom/tricrotism/cryon/common/data/SqlDialect;
+	public static fun values ()[Lcom/tricrotism/cryon/common/data/SqlDialect;
+}
+
+public final class com/tricrotism/cryon/common/data/SqlDialect$Companion {
+	public final fun identifier (Ljava/lang/String;)Ljava/lang/String;
+	public final fun of (Ljava/lang/String;)Lcom/tricrotism/cryon/common/data/SqlDialect;
+}
+
+public final class com/tricrotism/cryon/common/data/SqlIndex {
+	public fun <init> (Ljava/lang/String;Ljava/util/List;Z)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Z
+	public final fun copy (Ljava/lang/String;Ljava/util/List;Z)Lcom/tricrotism/cryon/common/data/SqlIndex;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/data/SqlIndex;Ljava/lang/String;Ljava/util/List;ZILjava/lang/Object;)Lcom/tricrotism/cryon/common/data/SqlIndex;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getColumns ()Ljava/util/List;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getUnique ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/data/SqlRepository : com/tricrotism/cryon/common/data/Repository {
+	public fun <init> (Lcom/tricrotism/cryon/common/data/Database;Ljava/lang/String;Lcom/tricrotism/cryon/common/data/RowCodec;Lorg/slf4j/Logger;)V
+	public fun cached (Ljava/lang/String;)Ljava/lang/Object;
+	public fun delete (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun evict (Ljava/lang/String;)V
+	public fun flush (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun get (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun load (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun put (Ljava/lang/String;Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun stage (Ljava/lang/String;Ljava/lang/Object;)V
+}
+
+public abstract interface class com/tricrotism/cryon/common/data/SqlSession {
+	public abstract fun batch (Ljava/lang/String;Ljava/util/List;)I
+	public abstract fun query (Ljava/lang/String;[Ljava/lang/Object;Lkotlin/jvm/functions/Function1;)Ljava/util/List;
+	public abstract fun update (Ljava/lang/String;[Ljava/lang/Object;)I
+}
+
+public final class com/tricrotism/cryon/common/deploy/Advertisement {
+	public fun <init> (Ljava/util/Map;Ljava/lang/String;)V
+	public final fun commitOf (Ljava/lang/String;)Ljava/lang/String;
+	public final fun getDefaultRef ()Ljava/lang/String;
+	public final fun getRefs ()Ljava/util/Set;
+}
+
+public final class com/tricrotism/cryon/common/deploy/DeployKeys : com/tricrotism/cryon/common/config/ConfigSchema {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/deploy/DeployKeys;
+	public final fun getARCHIVE_URL ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getBRANCH ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getENABLED ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getFOLDER ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getGLOBAL_FOLDER ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getPASSWORD ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getPATH_API ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getPATH_CONFIG ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getPATH_DATA ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getPATH_LANG ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getPATH_MODULES ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getPOLL_SECONDS ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getREFS_URL ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getTIMEOUT_SECONDS ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun getUSERNAME ()Lcom/tricrotism/cryon/common/config/ConfigKey;
+	public final fun refOf (Ljava/lang/String;)Ljava/lang/String;
+	public final fun timeout (J)Ljava/time/Duration;
+}
+
+public abstract interface class com/tricrotism/cryon/common/deploy/DeployResult {
+}
+
+public final class com/tricrotism/cryon/common/deploy/DeployResult$Applied : com/tricrotism/cryon/common/deploy/DeployResult {
+	public fun <init> (Ljava/lang/String;Ljava/util/List;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Ljava/util/List;)Lcom/tricrotism/cryon/common/deploy/DeployResult$Applied;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/deploy/DeployResult$Applied;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/deploy/DeployResult$Applied;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getChanged ()Ljava/util/List;
+	public final fun getCommit ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/deploy/DeployResult$Failed : com/tricrotism/cryon/common/deploy/DeployResult {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/tricrotism/cryon/common/deploy/DeployResult$Failed;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/deploy/DeployResult$Failed;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/deploy/DeployResult$Failed;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getReason ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/deploy/DeployResult$UpToDate : com/tricrotism/cryon/common/deploy/DeployResult {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/tricrotism/cryon/common/deploy/DeployResult$UpToDate;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/deploy/DeployResult$UpToDate;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/deploy/DeployResult$UpToDate;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCommit ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/deploy/DeployTarget {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/nio/file/Path;Lkotlin/jvm/functions/Function0;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/nio/file/Path;Lkotlin/jvm/functions/Function0;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getApply ()Lkotlin/jvm/functions/Function0;
+	public final fun getDestination ()Ljava/nio/file/Path;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getRepositoryPath ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/deploy/GitArchive : com/tricrotism/cryon/common/deploy/RepositorySource {
+	public static final field Companion Lcom/tricrotism/cryon/common/deploy/GitArchive$Companion;
+	public static final field REF_PLACEHOLDER Ljava/lang/String;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;)V
+	public fun advertise ()Lcom/tricrotism/cryon/common/deploy/Advertisement;
+	public fun fetch (Ljava/lang/String;Ljava/nio/file/Path;)Ljava/nio/file/Path;
+}
+
+public final class com/tricrotism/cryon/common/deploy/GitArchive$Companion {
+	public final fun deleteRecursively (Ljava/nio/file/Path;)V
+}
+
+public final class com/tricrotism/cryon/common/deploy/GitDeploy {
+	public static final field Companion Lcom/tricrotism/cryon/common/deploy/GitDeploy$Companion;
+	public static final field SERVER_PLACEHOLDER Ljava/lang/String;
+	public fun <init> (Lcom/tricrotism/cryon/common/deploy/RepositorySource;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/nio/file/Path;Ljava/nio/file/Path;Lorg/slf4j/Logger;)V
+	public final fun applied ()Ljava/lang/String;
+	public final fun folder ()Ljava/lang/String;
+	public final fun following ()Ljava/lang/String;
+	public final fun globalFolder ()Ljava/lang/String;
+	public final fun poll ()Lcom/tricrotism/cryon/common/deploy/DeployResult;
+}
+
+public final class com/tricrotism/cryon/common/deploy/GitDeploy$Companion {
+	public final fun from (Lcom/tricrotism/cryon/common/config/Config;Ljava/lang/String;Ljava/nio/file/Path;Ljava/nio/file/Path;Ljava/nio/file/Path;Ljava/nio/file/Path;Ljava/nio/file/Path;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;Lorg/slf4j/Logger;)Lcom/tricrotism/cryon/common/deploy/GitDeploy;
+}
+
+public abstract interface class com/tricrotism/cryon/common/deploy/RepositorySource {
+	public abstract fun advertise ()Lcom/tricrotism/cryon/common/deploy/Advertisement;
+	public abstract fun fetch (Ljava/lang/String;Ljava/nio/file/Path;)Ljava/nio/file/Path;
+}
+
+public final class com/tricrotism/cryon/common/diagnostic/Retention {
+	public fun <init> ()V
+	public final fun clear ()V
+	public final fun forget (Ljava/lang/String;)V
+	public final fun report ()Ljava/util/Map;
+	public final fun report (Ljava/lang/String;)Lcom/tricrotism/cryon/common/diagnostic/Retention$Retained;
+	public final fun track (Ljava/lang/String;Ljava/lang/Object;)V
+}
+
+public final class com/tricrotism/cryon/common/diagnostic/Retention$Retained {
+	public fun <init> (III)V
+	public final fun component1 ()I
+	public final fun component2 ()I
+	public final fun component3 ()I
+	public final fun copy (III)Lcom/tricrotism/cryon/common/diagnostic/Retention$Retained;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/diagnostic/Retention$Retained;IIIILjava/lang/Object;)Lcom/tricrotism/cryon/common/diagnostic/Retention$Retained;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCollected ()I
+	public final fun getLive ()I
+	public final fun getRegistered ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/experiment/Arm {
+	public fun <init> (Ljava/lang/String;I)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun copy (Ljava/lang/String;I)Lcom/tricrotism/cryon/common/experiment/Arm;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/experiment/Arm;Ljava/lang/String;IILjava/lang/Object;)Lcom/tricrotism/cryon/common/experiment/Arm;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getId ()Ljava/lang/String;
+	public final fun getWeight ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/experiment/Experiment {
+	public static final field BUCKETS I
+	public static final field Companion Lcom/tricrotism/cryon/common/experiment/Experiment$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Z)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/lang/String;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun armAt (I)Lcom/tricrotism/cryon/common/experiment/Arm;
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Z
+	public final fun copy (Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Z)Lcom/tricrotism/cryon/common/experiment/Experiment;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/experiment/Experiment;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;ZILjava/lang/Object;)Lcom/tricrotism/cryon/common/experiment/Experiment;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getArms ()Ljava/util/List;
+	public final fun getEnabled ()Z
+	public final fun getId ()Ljava/lang/String;
+	public final fun getSalt ()Ljava/lang/String;
+	public final fun getTotalWeight ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/experiment/Experiment$Companion {
+	public final fun bucket (JLjava/util/UUID;)I
+	public final fun decodeArms (Ljava/lang/String;)Ljava/util/List;
+	public final fun encodeArms (Ljava/util/List;)Ljava/lang/String;
+	public final fun seed (Ljava/lang/String;)J
+}
+
+public abstract interface class com/tricrotism/cryon/common/experiment/ExperimentObserver {
+	public abstract fun exposed (Ljava/util/UUID;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+}
+
+public final class com/tricrotism/cryon/common/experiment/Experiments {
+	public static final field Companion Lcom/tricrotism/cryon/common/experiment/Experiments$Companion;
+	public static final field GLOBAL_SCOPE Ljava/lang/String;
+	public static final field PLAYER_SCOPE_PREFIX Ljava/lang/String;
+	public fun <init> (Ljava/lang/String;Lcom/tricrotism/cryon/common/data/Database;Lcom/tricrotism/cryon/common/net/Messenger;Lorg/slf4j/Logger;)V
+	public final fun arm (Ljava/lang/String;Ljava/util/UUID;)Ljava/lang/String;
+	public final fun close ()V
+	public final fun delete (Ljava/lang/String;)V
+	public final fun experiment (Ljava/lang/String;)Lcom/tricrotism/cryon/common/experiment/Experiment;
+	public final fun experiments ()Ljava/util/SortedMap;
+	public final fun expose (Ljava/lang/String;Ljava/util/UUID;Ljava/lang/String;)Ljava/lang/String;
+	public final fun force (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z
+	public final fun getServerId ()Ljava/lang/String;
+	public final fun init ()V
+	public final fun observe (Lcom/tricrotism/cryon/common/experiment/ExperimentObserver;)Ljava/lang/AutoCloseable;
+	public final fun overrides ()Ljava/util/SortedMap;
+	public final fun playerScope (Ljava/util/UUID;)Ljava/lang/String;
+	public final fun register (Lcom/tricrotism/cryon/common/experiment/Experiment;)V
+	public final fun reload ()Z
+	public final fun reshuffle (Ljava/lang/String;)Z
+	public final fun setArms (Ljava/lang/String;Ljava/util/List;)Z
+	public final fun setEnabled (Ljava/lang/String;Z)Z
+}
+
+public final class com/tricrotism/cryon/common/experiment/Experiments$Companion {
+}
+
+public final class com/tricrotism/cryon/common/extension/NumberExtensionsKt {
+	public static final fun formatBalance (JZ)Ljava/lang/String;
+	public static final fun formatBalance (Ljava/math/BigDecimal;Z)Ljava/lang/String;
+	public static synthetic fun formatBalance$default (JZILjava/lang/Object;)Ljava/lang/String;
+	public static synthetic fun formatBalance$default (Ljava/math/BigDecimal;ZILjava/lang/Object;)Ljava/lang/String;
+	public static final fun formatBalance-E_a4d2c (JZ)Ljava/lang/String;
+	public static synthetic fun formatBalance-E_a4d2c$default (JZILjava/lang/Object;)Ljava/lang/String;
+	public static final fun formatCommas (D)Ljava/lang/String;
+	public static final fun formatCommas (I)Ljava/lang/String;
+	public static final fun formatCommas (J)Ljava/lang/String;
+	public static final fun formatCommas (Ljava/math/BigDecimal;)Ljava/lang/String;
+	public static final fun formatDuration (J)Ljava/lang/String;
+	public static final fun formatDurationFull (J)Ljava/lang/String;
+	public static final fun getPd (D)J
+	public static final fun getPd (I)J
+	public static final fun getPd (J)J
+	public static final fun getPd (Ljava/math/BigDecimal;)J
+	public static final fun parseBalance (Ljava/lang/String;)Ljava/math/BigDecimal;
+	public static final fun parseLongShorthand (Ljava/lang/String;)Lcom/tricrotism/cryon/common/number/LongUtils$LongParseResult;
+	public static final fun roman (I)Ljava/lang/String;
+	public static final fun toPackedDecimal (D)J
+	public static final fun toPackedDecimal (I)J
+	public static final fun toPackedDecimal (J)J
+	public static final fun toPackedDecimal (Ljava/math/BigDecimal;)J
+}
+
+public final class com/tricrotism/cryon/common/flag/FeatureFlags {
+	public static final field Companion Lcom/tricrotism/cryon/common/flag/FeatureFlags$Companion;
+	public static final field GLOBAL_SCOPE Ljava/lang/String;
+	public static final field PLAYER_SCOPE_PREFIX Ljava/lang/String;
+	public fun <init> (Ljava/lang/String;Lcom/tricrotism/cryon/common/data/Database;Lcom/tricrotism/cryon/common/net/Messenger;Lorg/slf4j/Logger;)V
+	public final fun close ()V
+	public final fun delete (Ljava/lang/String;)V
+	public final fun features ()Ljava/util/SortedSet;
+	public final fun getServerId ()Ljava/lang/String;
+	public final fun init ()V
+	public final fun isEnabled (Ljava/lang/String;Ljava/util/UUID;)Z
+	public static synthetic fun isEnabled$default (Lcom/tricrotism/cryon/common/flag/FeatureFlags;Ljava/lang/String;Ljava/util/UUID;ILjava/lang/Object;)Z
+	public final fun override (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Boolean;
+	public final fun playerScope (Ljava/util/UUID;)Ljava/lang/String;
+	public final fun register (Ljava/lang/String;ZLjava/lang/String;)V
+	public static synthetic fun register$default (Lcom/tricrotism/cryon/common/flag/FeatureFlags;Ljava/lang/String;ZLjava/lang/String;ILjava/lang/Object;)V
+	public final fun reload ()Z
+	public final fun remove (Ljava/lang/String;Ljava/lang/String;)Z
+	public final fun scopes ()Ljava/util/SortedMap;
+	public final fun set (Ljava/lang/String;Ljava/lang/String;Z)V
+}
+
+public final class com/tricrotism/cryon/common/flag/FeatureFlags$Companion {
+}
+
+public final class com/tricrotism/cryon/common/locale/DirectoryMessageSource : com/tricrotism/cryon/common/locale/MessageSource {
+	public fun <init> (Ljava/io/File;)V
+	public fun keys (Ljava/util/Locale;)Ljava/util/Set;
+	public fun reload ()V
+	public fun template (Ljava/util/Locale;Ljava/lang/String;)Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/locale/LangScanner {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/locale/LangScanner;
+	public final fun fromJar (Ljava/io/File;)Lcom/tricrotism/cryon/common/locale/MessageSource;
+	public final fun parseLocale (Ljava/lang/String;)Ljava/util/Locale;
+}
+
+public abstract interface class com/tricrotism/cryon/common/locale/LocaleStore {
+	public abstract fun cached (Ljava/util/UUID;)Ljava/util/Locale;
+	public abstract fun clear (Ljava/util/UUID;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun close ()V
+	public abstract fun set (Ljava/util/UUID;Ljava/util/Locale;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/locale/LocaleStore$DefaultImpls {
+	public static fun close (Lcom/tricrotism/cryon/common/locale/LocaleStore;)V
+}
+
+public final class com/tricrotism/cryon/common/locale/Locales {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/locale/Locales;
+	public final fun getStore ()Lcom/tricrotism/cryon/common/locale/LocaleStore;
+	public final fun install (Lcom/tricrotism/cryon/common/locale/LocaleStore;)V
+}
+
+public final class com/tricrotism/cryon/common/locale/MapMessageSource : com/tricrotism/cryon/common/locale/MessageSource {
+	public fun <init> (Ljava/util/Map;)V
+	public fun keys (Ljava/util/Locale;)Ljava/util/Set;
+	public fun reload ()V
+	public fun template (Ljava/util/Locale;Ljava/lang/String;)Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/locale/MemoryLocaleStore : com/tricrotism/cryon/common/locale/LocaleStore {
+	public fun <init> ()V
+	public fun cached (Ljava/util/UUID;)Ljava/util/Locale;
+	public fun clear (Ljava/util/UUID;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun close ()V
+	public fun set (Ljava/util/UUID;Ljava/util/Locale;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class com/tricrotism/cryon/common/locale/MessageObserver {
+	public abstract fun shown (Ljava/util/UUID;Ljava/lang/String;Ljava/lang/String;Lnet/kyori/adventure/text/Component;)V
+}
+
+public final class com/tricrotism/cryon/common/locale/MessageObservers {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/locale/MessageObservers;
+	public static final field SURFACE_CHAT Ljava/lang/String;
+	public static final field SURFACE_MENU Ljava/lang/String;
+	public final fun getActive ()Z
+	public final fun observe (Lcom/tricrotism/cryon/common/locale/MessageObserver;)Ljava/lang/AutoCloseable;
+	public final fun shown (Ljava/util/UUID;Ljava/lang/String;Ljava/lang/String;Lnet/kyori/adventure/text/Component;)V
+}
+
+public final class com/tricrotism/cryon/common/locale/MessageService {
+	public fun <init> ()V
+	public fun <init> (Ljava/util/Locale;)V
+	public synthetic fun <init> (Ljava/util/Locale;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun addSource (Lcom/tricrotism/cryon/common/locale/MessageSource;)Z
+	public final fun exportMissing (Ljava/util/Locale;Ljava/io/File;)I
+	public final fun getDefaultLocale ()Ljava/util/Locale;
+	public final fun keys (Ljava/util/Locale;)Ljava/util/Set;
+	public final fun reload ()V
+	public final fun removeSource (Lcom/tricrotism/cryon/common/locale/MessageSource;)Z
+	public final fun render (Ljava/util/Locale;Ljava/lang/String;[Lnet/kyori/adventure/text/minimessage/tag/resolver/TagResolver;)Lnet/kyori/adventure/text/Component;
+	public final fun renderPlural (Ljava/util/Locale;Ljava/lang/String;J[Lnet/kyori/adventure/text/minimessage/tag/resolver/TagResolver;)Lnet/kyori/adventure/text/Component;
+	public final fun setDefaultLocale (Ljava/util/Locale;)V
+	public final fun template (Ljava/util/Locale;Ljava/lang/String;)Ljava/lang/String;
+}
+
+public abstract interface class com/tricrotism/cryon/common/locale/MessageSource {
+	public fun keys (Ljava/util/Locale;)Ljava/util/Set;
+	public fun reload ()V
+	public abstract fun template (Ljava/util/Locale;Ljava/lang/String;)Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/locale/MessageSource$DefaultImpls {
+	public static fun keys (Lcom/tricrotism/cryon/common/locale/MessageSource;Ljava/util/Locale;)Ljava/util/Set;
+	public static fun reload (Lcom/tricrotism/cryon/common/locale/MessageSource;)V
+}
+
+public final class com/tricrotism/cryon/common/locale/Messages {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/locale/Messages;
+	public final fun get (Ljava/util/Locale;Ljava/lang/String;[Lnet/kyori/adventure/text/minimessage/tag/resolver/TagResolver;)Lnet/kyori/adventure/text/Component;
+	public final fun getOr (Ljava/util/Locale;Ljava/lang/String;Ljava/lang/String;[Lnet/kyori/adventure/text/minimessage/tag/resolver/TagResolver;)Lnet/kyori/adventure/text/Component;
+	public final fun install (Lcom/tricrotism/cryon/common/locale/MessageService;)V
+	public final fun raw (Ljava/util/Locale;Ljava/lang/String;)Ljava/lang/String;
+	public final fun rawOr (Ljava/util/Locale;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+	public final fun service ()Lcom/tricrotism/cryon/common/locale/MessageService;
+}
+
+public final class com/tricrotism/cryon/common/locale/PlayerLocaleStore : com/tricrotism/cryon/common/locale/LocaleStore {
+	public fun <init> (Lcom/tricrotism/cryon/common/data/Database;Lcom/tricrotism/cryon/common/net/Messenger;Lorg/slf4j/Logger;)V
+	public fun cached (Ljava/util/UUID;)Ljava/util/Locale;
+	public fun clear (Ljava/util/UUID;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun close ()V
+	public final fun init (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun load (Ljava/util/UUID;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun set (Ljava/util/UUID;Ljava/util/Locale;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun unload (Ljava/util/UUID;)V
+}
+
+public final class com/tricrotism/cryon/common/locale/PropertiesMessageSource : com/tricrotism/cryon/common/locale/MessageSource {
+	public fun <init> (Ljava/lang/ClassLoader;Ljava/lang/String;Ljava/util/Collection;)V
+	public fun keys (Ljava/util/Locale;)Ljava/util/Set;
+	public fun reload ()V
+	public fun template (Ljava/util/Locale;Ljava/lang/String;)Ljava/lang/String;
+}
+
+public abstract interface class com/tricrotism/cryon/common/lock/DistributedLock {
+	public static final field Companion Lcom/tricrotism/cryon/common/lock/DistributedLock$Companion;
+	public abstract fun tryWithLock-A1NDRPo (Ljava/lang/String;Ljava/lang/String;JJLkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun tryWithLock-A1NDRPo$default (Lcom/tricrotism/cryon/common/lock/DistributedLock;Ljava/lang/String;Ljava/lang/String;JJLkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public abstract fun withLock-A1NDRPo (Ljava/lang/String;Ljava/lang/String;JJLkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun withLock-A1NDRPo$default (Lcom/tricrotism/cryon/common/lock/DistributedLock;Ljava/lang/String;Ljava/lang/String;JJLkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/lock/DistributedLock$Companion {
+	public final fun getDEFAULT_TTL-UwyO8pc ()J
+	public final fun getDEFAULT_WAIT-UwyO8pc ()J
+}
+
+public final class com/tricrotism/cryon/common/lock/DistributedLock$DefaultImpls {
+	public static synthetic fun tryWithLock-A1NDRPo$default (Lcom/tricrotism/cryon/common/lock/DistributedLock;Ljava/lang/String;Ljava/lang/String;JJLkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun withLock-A1NDRPo$default (Lcom/tricrotism/cryon/common/lock/DistributedLock;Ljava/lang/String;Ljava/lang/String;JJLkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/lock/LockLostException : java/lang/RuntimeException {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+}
+
+public final class com/tricrotism/cryon/common/lock/LockUnavailableException : java/lang/RuntimeException {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
+public final class com/tricrotism/cryon/common/lock/StoreDistributedLock : com/tricrotism/cryon/common/lock/DistributedLock {
+	public fun <init> (Lcom/tricrotism/cryon/common/net/KeyValueStore;Lorg/slf4j/Logger;)V
+	public fun tryWithLock-A1NDRPo (Ljava/lang/String;Ljava/lang/String;JJLkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun withLock-A1NDRPo (Ljava/lang/String;Ljava/lang/String;JJLkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class com/tricrotism/cryon/common/maintenance/MaintenanceService {
+	public abstract fun allow (Ljava/lang/String;)Z
+	public abstract fun allowlist ()Ljava/util/Set;
+	public abstract fun close ()V
+	public abstract fun disallow (Ljava/lang/String;)Z
+	public abstract fun isAllowed (Ljava/lang/String;)Z
+	public abstract fun isEnabled ()Z
+	public abstract fun message ()Ljava/lang/String;
+	public abstract fun onChange (Lkotlin/jvm/functions/Function0;)Ljava/lang/AutoCloseable;
+	public abstract fun set (ZLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun set$default (Lcom/tricrotism/cryon/common/maintenance/MaintenanceService;ZLjava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/maintenance/MaintenanceService$DefaultImpls {
+	public static synthetic fun set$default (Lcom/tricrotism/cryon/common/maintenance/MaintenanceService;ZLjava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/maintenance/SharedMaintenanceService : com/tricrotism/cryon/common/maintenance/MaintenanceService {
+	public fun <init> (Lcom/tricrotism/cryon/common/data/Database;Lcom/tricrotism/cryon/common/net/Messenger;Ljava/lang/String;Lorg/slf4j/Logger;Ljava/time/Duration;)V
+	public synthetic fun <init> (Lcom/tricrotism/cryon/common/data/Database;Lcom/tricrotism/cryon/common/net/Messenger;Ljava/lang/String;Lorg/slf4j/Logger;Ljava/time/Duration;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun allow (Ljava/lang/String;)Z
+	public fun allowlist ()Ljava/util/Set;
+	public fun close ()V
+	public fun disallow (Ljava/lang/String;)Z
+	public final fun init ()V
+	public fun isAllowed (Ljava/lang/String;)Z
+	public fun isEnabled ()Z
+	public fun message ()Ljava/lang/String;
+	public fun onChange (Lkotlin/jvm/functions/Function0;)Ljava/lang/AutoCloseable;
+	public fun set (ZLjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class com/tricrotism/cryon/common/module/Dependency {
+	public static final field Companion Lcom/tricrotism/cryon/common/module/Dependency$Companion;
+	public abstract fun getDescription ()Ljava/lang/String;
+	public abstract fun getHard ()Z
+}
+
+public final class com/tricrotism/cryon/common/module/Dependency$Companion {
+	public final fun module (Ljava/lang/String;Z)Lcom/tricrotism/cryon/common/module/Dependency;
+	public static synthetic fun module$default (Lcom/tricrotism/cryon/common/module/Dependency$Companion;Ljava/lang/String;ZILjava/lang/Object;)Lcom/tricrotism/cryon/common/module/Dependency;
+	public final fun plugin (Ljava/lang/String;Z)Lcom/tricrotism/cryon/common/module/Dependency;
+	public static synthetic fun plugin$default (Lcom/tricrotism/cryon/common/module/Dependency$Companion;Ljava/lang/String;ZILjava/lang/Object;)Lcom/tricrotism/cryon/common/module/Dependency;
+	public final fun service (Ljava/lang/String;Z)Lcom/tricrotism/cryon/common/module/Dependency;
+	public static synthetic fun service$default (Lcom/tricrotism/cryon/common/module/Dependency$Companion;Ljava/lang/String;ZILjava/lang/Object;)Lcom/tricrotism/cryon/common/module/Dependency;
+}
+
+public final class com/tricrotism/cryon/common/module/Dependency$OnModule : com/tricrotism/cryon/common/module/Dependency {
+	public fun <init> (Ljava/lang/String;Z)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun copy (Ljava/lang/String;Z)Lcom/tricrotism/cryon/common/module/Dependency$OnModule;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/module/Dependency$OnModule;Ljava/lang/String;ZILjava/lang/Object;)Lcom/tricrotism/cryon/common/module/Dependency$OnModule;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getDescription ()Ljava/lang/String;
+	public fun getHard ()Z
+	public final fun getId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/module/Dependency$OnPlugin : com/tricrotism/cryon/common/module/Dependency {
+	public fun <init> (Ljava/lang/String;Z)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun copy (Ljava/lang/String;Z)Lcom/tricrotism/cryon/common/module/Dependency$OnPlugin;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/module/Dependency$OnPlugin;Ljava/lang/String;ZILjava/lang/Object;)Lcom/tricrotism/cryon/common/module/Dependency$OnPlugin;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getDescription ()Ljava/lang/String;
+	public fun getHard ()Z
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/module/Dependency$OnService : com/tricrotism/cryon/common/module/Dependency {
+	public fun <init> (Ljava/lang/String;Z)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun copy (Ljava/lang/String;Z)Lcom/tricrotism/cryon/common/module/Dependency$OnService;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/module/Dependency$OnService;Ljava/lang/String;ZILjava/lang/Object;)Lcom/tricrotism/cryon/common/module/Dependency$OnService;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getClassName ()Ljava/lang/String;
+	public fun getDescription ()Ljava/lang/String;
+	public fun getHard ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/module/JarWatcher {
+	public fun <init> (Ljava/io/File;Lorg/slf4j/Logger;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)V
+	public final fun close ()V
+	public final fun start ()V
+}
+
+public abstract interface class com/tricrotism/cryon/common/module/Module {
+	public fun getChildren ()Ljava/util/List;
+	public fun getDependencies ()Ljava/util/List;
+	public abstract fun getId ()Ljava/lang/String;
+	public fun onDisable ()V
+	public fun onEnable ()V
+	public fun onLoad (Lcom/tricrotism/cryon/common/module/ModuleContext;)V
+	public fun postLoad ()V
+	public fun preLoad (Lcom/tricrotism/cryon/common/module/ModuleContext;)V
+}
+
+public final class com/tricrotism/cryon/common/module/Module$DefaultImpls {
+	public static fun getChildren (Lcom/tricrotism/cryon/common/module/Module;)Ljava/util/List;
+	public static fun getDependencies (Lcom/tricrotism/cryon/common/module/Module;)Ljava/util/List;
+	public static fun onDisable (Lcom/tricrotism/cryon/common/module/Module;)V
+	public static fun onEnable (Lcom/tricrotism/cryon/common/module/Module;)V
+	public static fun onLoad (Lcom/tricrotism/cryon/common/module/Module;Lcom/tricrotism/cryon/common/module/ModuleContext;)V
+	public static fun postLoad (Lcom/tricrotism/cryon/common/module/Module;)V
+	public static fun preLoad (Lcom/tricrotism/cryon/common/module/Module;Lcom/tricrotism/cryon/common/module/ModuleContext;)V
+}
+
+public abstract interface class com/tricrotism/cryon/common/module/ModuleContext {
+	public abstract fun getLogger ()Lorg/slf4j/Logger;
+	public abstract fun getServices ()Lcom/tricrotism/cryon/common/module/ServiceRegistry;
+}
+
+public final class com/tricrotism/cryon/common/module/ModuleManager {
+	public fun <init> (Lorg/slf4j/Logger;Lcom/tricrotism/cryon/common/module/PluginPresence;)V
+	public synthetic fun <init> (Lorg/slf4j/Logger;Lcom/tricrotism/cryon/common/module/PluginPresence;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun childrenOf (Ljava/lang/String;)Ljava/util/List;
+	public final fun dependenciesOf (Ljava/lang/String;)Ljava/util/List;
+	public final fun disable (Ljava/lang/String;)Z
+	public final fun disableAll ()V
+	public final fun enable (Ljava/lang/String;)Z
+	public final fun enableAll ()V
+	public final fun has (Ljava/lang/String;)Z
+	public final fun ids ()Ljava/util/List;
+	public final fun load (Ljava/lang/String;Lcom/tricrotism/cryon/common/module/ModuleContext;)Z
+	public final fun loadAll (Lcom/tricrotism/cryon/common/module/ModuleContext;)V
+	public final fun order (Ljava/util/Collection;)Ljava/util/List;
+	public final fun parentOf (Ljava/lang/String;)Ljava/lang/String;
+	public final fun postLoad (Ljava/lang/String;)Z
+	public final fun postLoadAll ()V
+	public final fun preLoadAll (Lcom/tricrotism/cryon/common/module/ModuleContext;)V
+	public final fun register (Lcom/tricrotism/cryon/common/module/Module;)Ljava/util/List;
+	public final fun reload (Ljava/lang/String;)Z
+	public final fun state (Ljava/lang/String;)Lcom/tricrotism/cryon/common/module/ModuleState;
+	public final fun states ()Ljava/util/Map;
+	public final fun unregister (Ljava/lang/String;)Z
+}
+
+public final class com/tricrotism/cryon/common/module/ModuleState : java/lang/Enum {
+	public static final field DISABLED Lcom/tricrotism/cryon/common/module/ModuleState;
+	public static final field ENABLED Lcom/tricrotism/cryon/common/module/ModuleState;
+	public static final field FAILED Lcom/tricrotism/cryon/common/module/ModuleState;
+	public static final field LOADED Lcom/tricrotism/cryon/common/module/ModuleState;
+	public static final field REGISTERED Lcom/tricrotism/cryon/common/module/ModuleState;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/tricrotism/cryon/common/module/ModuleState;
+	public static fun values ()[Lcom/tricrotism/cryon/common/module/ModuleState;
+}
+
+public abstract interface class com/tricrotism/cryon/common/module/PluginPresence {
+	public abstract fun isPresent (Ljava/lang/String;)Z
+}
+
+public final class com/tricrotism/cryon/common/module/ServiceRegistry {
+	public fun <init> (Lorg/slf4j/Logger;)V
+	public final fun clear ()V
+	public final fun find (Lkotlin/reflect/KClass;)Ljava/lang/Object;
+	public final fun get (Lkotlin/reflect/KClass;)Ljava/lang/Object;
+	public final fun has (Ljava/lang/String;)Z
+	public final fun register (Lkotlin/reflect/KClass;Ljava/lang/Object;)V
+	public final fun unregisterByClassLoader (Ljava/lang/ClassLoader;)I
+}
+
+public final class com/tricrotism/cryon/common/module/remote/MavenRepository {
+	public static final field Companion Lcom/tricrotism/cryon/common/module/remote/MavenRepository$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/tricrotism/cryon/common/module/remote/MavenRepository;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/module/remote/MavenRepository;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/module/remote/MavenRepository;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getName ()Ljava/lang/String;
+	public final fun getPassword ()Ljava/lang/String;
+	public final fun getRequiresAuth ()Z
+	public final fun getUrl ()Ljava/lang/String;
+	public final fun getUsername ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun request (Ljava/lang/String;)Ljava/net/http/HttpRequest$Builder;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/module/remote/MavenRepository$Companion {
+	public final fun envKey (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+	public final fun of (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/tricrotism/cryon/common/module/remote/MavenRepository;
+}
+
+public final class com/tricrotism/cryon/common/module/remote/RemoteArtifact {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getArtifact ()Ljava/lang/String;
+	public final fun getBranch ()Ljava/lang/String;
+	public final fun getFileName ()Ljava/lang/String;
+	public final fun getGroup ()Ljava/lang/String;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getMetadataPath ()Ljava/lang/String;
+	public final fun getRepository ()Ljava/lang/String;
+	public final fun getResolvedVersion ()Ljava/lang/String;
+	public final fun getVersion ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isSnapshot ()Z
+	public final fun jarPath (Ljava/lang/String;)Ljava/lang/String;
+	public final fun pinnedJarPath ()Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/module/remote/RemoteModules {
+	public fun <init> (Ljava/util/Map;Ljava/util/List;Ljava/io/File;Ljava/io/File;Lorg/slf4j/Logger;)V
+	public final fun getArtifacts ()Ljava/util/List;
+	public final fun installedRevision (Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;)Ljava/lang/String;
+	public final fun pollAll (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class com/tricrotism/cryon/common/module/remote/UpdateResult {
+	public abstract fun getArtifact ()Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;
+}
+
+public final class com/tricrotism/cryon/common/module/remote/UpdateResult$Failed : com/tricrotism/cryon/common/module/remote/UpdateResult {
+	public fun <init> (Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;Ljava/lang/String;)V
+	public final fun component1 ()Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;Ljava/lang/String;)Lcom/tricrotism/cryon/common/module/remote/UpdateResult$Failed;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/module/remote/UpdateResult$Failed;Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/module/remote/UpdateResult$Failed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getArtifact ()Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;
+	public final fun getReason ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/module/remote/UpdateResult$Installed : com/tricrotism/cryon/common/module/remote/UpdateResult {
+	public fun <init> (Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;Ljava/lang/String;Ljava/lang/String;)Lcom/tricrotism/cryon/common/module/remote/UpdateResult$Installed;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/module/remote/UpdateResult$Installed;Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/module/remote/UpdateResult$Installed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getArtifact ()Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;
+	public final fun getFrom ()Ljava/lang/String;
+	public final fun getTo ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/module/remote/UpdateResult$UpToDate : com/tricrotism/cryon/common/module/remote/UpdateResult {
+	public fun <init> (Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;Ljava/lang/String;)V
+	public final fun component1 ()Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;Ljava/lang/String;)Lcom/tricrotism/cryon/common/module/remote/UpdateResult$UpToDate;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/module/remote/UpdateResult$UpToDate;Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/module/remote/UpdateResult$UpToDate;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getArtifact ()Lcom/tricrotism/cryon/common/module/remote/RemoteArtifact;
+	public final fun getRevision ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/tricrotism/cryon/common/net/KeyValueStore {
+	public abstract fun close ()V
+	public abstract fun compareAndSet (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun compareAndSet$default (Lcom/tricrotism/cryon/common/net/KeyValueStore;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public abstract fun delete (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun deleteIfEqual (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun get (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun hdel (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun hgetAll (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun hset (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun hsetIfAbsent (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun keys (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun mget (Ljava/util/Collection;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun refresh (Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun refreshIfEqual (Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun set (Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setIfAbsent (Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun tryHold (Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;IILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/net/KeyValueStore$DefaultImpls {
+	public static synthetic fun compareAndSet$default (Lcom/tricrotism/cryon/common/net/KeyValueStore;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/net/LocalMessenger : com/tricrotism/cryon/common/net/Messenger {
+	public fun <init> (Lorg/slf4j/Logger;)V
+	public fun close ()V
+	public fun handle (Ljava/lang/String;Lkotlin/jvm/functions/Function2;)Lcom/tricrotism/cryon/common/net/MessengerSubscription;
+	public fun publish (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun request (Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun subscribe (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Lcom/tricrotism/cryon/common/net/MessengerSubscription;
+}
+
+public final class com/tricrotism/cryon/common/net/MemoryKeyValueStore : com/tricrotism/cryon/common/net/KeyValueStore {
+	public fun <init> ()V
+	public fun close ()V
+	public fun compareAndSet (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun delete (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun deleteIfEqual (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun get (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun hdel (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun hgetAll (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun hset (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun hsetIfAbsent (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun keys (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun mget (Ljava/util/Collection;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun refresh (Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun refreshIfEqual (Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun set (Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun setIfAbsent (Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun tryHold (Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;IILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class com/tricrotism/cryon/common/net/Messenger {
+	public abstract fun close ()V
+	public abstract fun handle (Ljava/lang/String;Lkotlin/jvm/functions/Function2;)Lcom/tricrotism/cryon/common/net/MessengerSubscription;
+	public abstract fun publish (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun request (Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun subscribe (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Lcom/tricrotism/cryon/common/net/MessengerSubscription;
+}
+
+public abstract interface class com/tricrotism/cryon/common/net/MessengerSubscription {
+	public abstract fun unsubscribe ()V
+}
+
+public final class com/tricrotism/cryon/common/net/RedisConfig {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/tricrotism/cryon/common/net/RedisConfig;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/net/RedisConfig;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/net/RedisConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getUri ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/net/RedisKeyValueStore : com/tricrotism/cryon/common/net/KeyValueStore {
+	public fun <init> (Lcom/tricrotism/cryon/common/net/RedisConfig;)V
+	public fun close ()V
+	public fun compareAndSet (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun delete (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun deleteIfEqual (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun get (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun hdel (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun hgetAll (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun hset (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun hsetIfAbsent (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun keys (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun mget (Ljava/util/Collection;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun refresh (Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun refreshIfEqual (Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun set (Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun setIfAbsent (Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun tryHold (Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;IILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/net/RedisMessenger : com/tricrotism/cryon/common/net/Messenger {
+	public fun <init> (Lcom/tricrotism/cryon/common/net/RedisConfig;Lorg/slf4j/Logger;)V
+	public fun close ()V
+	public fun handle (Ljava/lang/String;Lkotlin/jvm/functions/Function2;)Lcom/tricrotism/cryon/common/net/MessengerSubscription;
+	public fun publish (Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun request (Ljava/lang/String;Ljava/lang/String;Ljava/time/Duration;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun subscribe (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Lcom/tricrotism/cryon/common/net/MessengerSubscription;
+}
+
+public final class com/tricrotism/cryon/common/number/BigDecimalUtils {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/number/BigDecimalUtils;
+	public final fun log10 (Ljava/math/BigDecimal;Ljava/math/MathContext;)Ljava/math/BigDecimal;
+	public static synthetic fun log10$default (Lcom/tricrotism/cryon/common/number/BigDecimalUtils;Ljava/math/BigDecimal;Ljava/math/MathContext;ILjava/lang/Object;)Ljava/math/BigDecimal;
+	public final fun magnitude (Ljava/math/BigDecimal;)I
+}
+
+public final class com/tricrotism/cryon/common/number/LongUtils {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/number/LongUtils;
+	public final fun getFAILURE ()Lcom/tricrotism/cryon/common/number/LongUtils$LongParseResult;
+	public final fun parseLong (Ljava/lang/String;)Lcom/tricrotism/cryon/common/number/LongUtils$LongParseResult;
+	public final fun parseLongShorthand (Ljava/lang/String;)Lcom/tricrotism/cryon/common/number/LongUtils$LongParseResult;
+	public final fun unsafelyParseLong (Ljava/lang/String;)J
+}
+
+public final class com/tricrotism/cryon/common/number/LongUtils$LongParseResult {
+	public fun <init> (ZJ)V
+	public final fun component1 ()Z
+	public final fun component2 ()J
+	public final fun copy (ZJ)Lcom/tricrotism/cryon/common/number/LongUtils$LongParseResult;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/number/LongUtils$LongParseResult;ZJILjava/lang/Object;)Lcom/tricrotism/cryon/common/number/LongUtils$LongParseResult;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getSuccessful ()Z
+	public final fun getValue ()J
+	public fun hashCode ()I
+	public final fun isPositive ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/number/NumberUtils {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/number/NumberUtils;
+	public final fun format (D)Ljava/lang/String;
+	public final fun format (I)Ljava/lang/String;
+	public final fun format (J)Ljava/lang/String;
+	public final fun format (Ljava/math/BigDecimal;)Ljava/lang/String;
+	public final fun formatBalance (JZ)Ljava/lang/String;
+	public final fun formatBalance (Ljava/math/BigDecimal;Z)Ljava/lang/String;
+	public static synthetic fun formatBalance$default (Lcom/tricrotism/cryon/common/number/NumberUtils;JZILjava/lang/Object;)Ljava/lang/String;
+	public static synthetic fun formatBalance$default (Lcom/tricrotism/cryon/common/number/NumberUtils;Ljava/math/BigDecimal;ZILjava/lang/Object;)Ljava/lang/String;
+	public final fun formatBalance-E_a4d2c (JZ)Ljava/lang/String;
+	public static synthetic fun formatBalance-E_a4d2c$default (Lcom/tricrotism/cryon/common/number/NumberUtils;JZILjava/lang/Object;)Ljava/lang/String;
+	public final fun formatBalanceCompact (Ljava/math/BigDecimal;)Ljava/lang/String;
+	public final fun formatCommas (D)Ljava/lang/String;
+	public final fun formatCommas (I)Ljava/lang/String;
+	public final fun formatCommas (J)Ljava/lang/String;
+	public final fun formatCommas (Ljava/math/BigDecimal;)Ljava/lang/String;
+	public final fun formatDouble (D)Ljava/lang/String;
+	public final fun formatDouble (Ljava/math/BigDecimal;)Ljava/lang/String;
+	public final fun parseBalance (Ljava/lang/String;)Ljava/math/BigDecimal;
+	public final fun roman (I)Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/number/PackedDecimal : java/lang/Comparable {
+	public static final field Companion Lcom/tricrotism/cryon/common/number/PackedDecimal$Companion;
+	public static final fun abs-24O2ylQ (J)J
+	public static final synthetic fun box-impl (J)Lcom/tricrotism/cryon/common/number/PackedDecimal;
+	public static final fun cbrt-24O2ylQ (J)J
+	public synthetic fun compareTo (Ljava/lang/Object;)I
+	public fun compareTo-N1X38mM (J)I
+	public static fun compareTo-N1X38mM (JJ)I
+	public static final fun compareTo-impl (JLjava/lang/Number;)I
+	public static final fun div-_GTft58 (JJ)J
+	public static final fun div-nHfAnao (JLjava/lang/Number;)J
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (JLjava/lang/Object;)Z
+	public static final fun equals-impl0 (JJ)Z
+	public static final fun getExponent-impl (J)I
+	public static final fun getMagnitude-impl (J)I
+	public fun hashCode ()I
+	public static fun hashCode-impl (J)I
+	public static final fun isZero-impl (J)Z
+	public static final fun ln-impl (J)D
+	public static final fun log-impl (JD)D
+	public static final fun log10-impl (J)D
+	public static final fun log2-impl (J)D
+	public static final fun max-_GTft58 (JJ)J
+	public static final fun min-_GTft58 (JJ)J
+	public static final fun minus-_GTft58 (JJ)J
+	public static final fun minus-nHfAnao (JLjava/lang/Number;)J
+	public static final fun plus-_GTft58 (JJ)J
+	public static final fun plus-nHfAnao (JLjava/lang/Number;)J
+	public static final fun pow-nHfAnao (JD)J
+	public static final fun pow-nHfAnao (JI)J
+	public static final fun raw-impl (J)J
+	public static final fun reciprocal-24O2ylQ (J)J
+	public static final fun signum-impl (J)I
+	public static final fun sqrt-24O2ylQ (J)J
+	public static final fun times-_GTft58 (JJ)J
+	public static final fun times-nHfAnao (JLjava/lang/Number;)J
+	public static final fun toBigDecimal-impl (J)Ljava/math/BigDecimal;
+	public static final fun toDouble-impl (J)D
+	public static final fun toInt-impl (J)I
+	public static final fun toLong-impl (J)J
+	public static final fun toScientificString-impl (J)Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (J)Ljava/lang/String;
+	public static final fun unaryMinus-24O2ylQ (J)J
+	public final synthetic fun unbox-impl ()J
+}
+
+public final class com/tricrotism/cryon/common/number/PackedDecimal$Companion {
+	public final fun fromRaw-nHfAnao (J)J
+	public final fun getMAX_VALUE-24O2ylQ ()J
+	public final fun getMIN_VALUE-24O2ylQ ()J
+	public final fun getONE-24O2ylQ ()J
+	public final fun getZERO-24O2ylQ ()J
+	public final fun of-nHfAnao (D)J
+	public final fun of-nHfAnao (I)J
+	public final fun of-nHfAnao (J)J
+	public final fun of-nHfAnao (Ljava/lang/Number;)J
+	public final fun of-nHfAnao (Ljava/math/BigDecimal;)J
+	public final fun parse-nHfAnao (Ljava/lang/String;)J
+	public final fun tenPow-nHfAnao (I)J
+}
+
+public abstract interface class com/tricrotism/cryon/common/random/RandomSelector {
+	public static final field Companion Lcom/tricrotism/cryon/common/random/RandomSelector$Companion;
+	public fun pick ()Ljava/lang/Object;
+	public abstract fun pick (Ljava/util/Random;)Ljava/lang/Object;
+	public fun stream ()Lkotlin/sequences/Sequence;
+	public abstract fun stream (Ljava/util/Random;)Lkotlin/sequences/Sequence;
+}
+
+public final class com/tricrotism/cryon/common/random/RandomSelector$Companion {
+	public final fun uniform (Ljava/util/Collection;)Lcom/tricrotism/cryon/common/random/RandomSelector;
+	public final fun weighted (Ljava/util/Collection;)Lcom/tricrotism/cryon/common/random/RandomSelector;
+	public final fun weighted (Ljava/util/Collection;Lcom/tricrotism/cryon/common/random/Weigher;)Lcom/tricrotism/cryon/common/random/RandomSelector;
+}
+
+public final class com/tricrotism/cryon/common/random/RandomSelector$DefaultImpls {
+	public static fun pick (Lcom/tricrotism/cryon/common/random/RandomSelector;)Ljava/lang/Object;
+	public static fun stream (Lcom/tricrotism/cryon/common/random/RandomSelector;)Lkotlin/sequences/Sequence;
+}
+
+public abstract interface class com/tricrotism/cryon/common/random/Weigher {
+	public abstract fun weigh (Ljava/lang/Object;)D
+}
+
+public abstract interface class com/tricrotism/cryon/common/random/Weighted {
+	public abstract fun getWeight ()D
+}
+
+public final class com/tricrotism/cryon/common/random/WeightedObject : com/tricrotism/cryon/common/random/Weighted {
+	public fun <init> (Ljava/lang/Object;D)V
+	public final fun component1 ()Ljava/lang/Object;
+	public final fun component2 ()D
+	public final fun copy (Ljava/lang/Object;D)Lcom/tricrotism/cryon/common/random/WeightedObject;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/random/WeightedObject;Ljava/lang/Object;DILjava/lang/Object;)Lcom/tricrotism/cryon/common/random/WeightedObject;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getValue ()Ljava/lang/Object;
+	public fun getWeight ()D
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/tricrotism/cryon/common/requirement/Requirement {
+	public static final field Companion Lcom/tricrotism/cryon/common/requirement/Requirement$Companion;
+	public abstract fun test (Ljava/lang/Object;)Z
+}
+
+public final class com/tricrotism/cryon/common/requirement/Requirement$Companion {
+	public final fun all (Ljava/util/List;)Lcom/tricrotism/cryon/common/requirement/Requirement;
+	public final fun any (Ljava/util/List;)Lcom/tricrotism/cryon/common/requirement/Requirement;
+	public final fun getALWAYS ()Lcom/tricrotism/cryon/common/requirement/Requirement;
+	public final fun getNEVER ()Lcom/tricrotism/cryon/common/requirement/Requirement;
+}
+
+public final class com/tricrotism/cryon/common/requirement/RequirementKt {
+	public static final fun and (Lcom/tricrotism/cryon/common/requirement/Requirement;Lcom/tricrotism/cryon/common/requirement/Requirement;)Lcom/tricrotism/cryon/common/requirement/Requirement;
+	public static final fun not (Lcom/tricrotism/cryon/common/requirement/Requirement;)Lcom/tricrotism/cryon/common/requirement/Requirement;
+	public static final fun or (Lcom/tricrotism/cryon/common/requirement/Requirement;Lcom/tricrotism/cryon/common/requirement/Requirement;)Lcom/tricrotism/cryon/common/requirement/Requirement;
+}
+
+public final class com/tricrotism/cryon/common/server/DefaultPlayerRouter : com/tricrotism/cryon/common/server/PlayerRouter {
+	public fun <init> (Lcom/tricrotism/cryon/common/server/ServerRegistry;Lcom/tricrotism/cryon/common/net/Messenger;Lkotlin/jvm/functions/Function0;)V
+	public synthetic fun <init> (Lcom/tricrotism/cryon/common/server/ServerRegistry;Lcom/tricrotism/cryon/common/net/Messenger;Lkotlin/jvm/functions/Function0;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun route (Ljava/util/UUID;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun routeToInstance (Ljava/util/UUID;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/server/HandoffCoordinator : com/tricrotism/cryon/common/server/PlayerHandoff {
+	public static final field Companion Lcom/tricrotism/cryon/common/server/HandoffCoordinator$Companion;
+	public static final field REPLY Ljava/lang/String;
+	public fun <init> (Ljava/lang/String;Lcom/tricrotism/cryon/common/net/Messenger;Lorg/slf4j/Logger;)V
+	public final fun close ()V
+	public final fun flush (Ljava/util/UUID;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun flushOnQuit (Ljava/util/UUID;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun init ()V
+	public fun onFlush (Ljava/lang/String;ILkotlin/jvm/functions/Function2;)Ljava/lang/AutoCloseable;
+}
+
+public final class com/tricrotism/cryon/common/server/HandoffCoordinator$Companion {
+	public final fun channel (Ljava/lang/String;)Ljava/lang/String;
+}
+
+public abstract interface class com/tricrotism/cryon/common/server/Matchmaker {
+	public abstract fun claim (Ljava/lang/String;Ljava/util/Set;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/server/Node {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IIILcom/tricrotism/cryon/common/server/NodeState;JLjava/util/Map;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IIILcom/tricrotism/cryon/common/server/NodeState;JLjava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()I
+	public final fun component5 ()I
+	public final fun component6 ()I
+	public final fun component7 ()Lcom/tricrotism/cryon/common/server/NodeState;
+	public final fun component8 ()J
+	public final fun component9 ()Ljava/util/Map;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IIILcom/tricrotism/cryon/common/server/NodeState;JLjava/util/Map;)Lcom/tricrotism/cryon/common/server/Node;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/server/Node;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IIILcom/tricrotism/cryon/common/server/NodeState;JLjava/util/Map;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/server/Node;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAddress ()Ljava/lang/String;
+	public final fun getLastHeartbeat ()J
+	public final fun getMaxPlayers ()I
+	public final fun getMetadata ()Ljava/util/Map;
+	public final fun getNodeId ()Ljava/lang/String;
+	public final fun getPlayerCount ()I
+	public final fun getPort ()I
+	public final fun getServerId ()Ljava/lang/String;
+	public final fun getState ()Lcom/tricrotism/cryon/common/server/NodeState;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/tricrotism/cryon/common/server/NodeAllocator {
+	public abstract fun allocate (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/server/NodeCodec {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/server/NodeCodec;
+	public final fun decode (Ljava/lang/String;)Lcom/tricrotism/cryon/common/server/Node;
+	public final fun encode (Lcom/tricrotism/cryon/common/server/Node;)Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/server/NodeExpectation : java/lang/Enum {
+	public static final field Companion Lcom/tricrotism/cryon/common/server/NodeExpectation$Companion;
+	public static final field MANY_NODES Lcom/tricrotism/cryon/common/server/NodeExpectation;
+	public static final field ONE_NODE Lcom/tricrotism/cryon/common/server/NodeExpectation;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/tricrotism/cryon/common/server/NodeExpectation;
+	public static fun values ()[Lcom/tricrotism/cryon/common/server/NodeExpectation;
+}
+
+public final class com/tricrotism/cryon/common/server/NodeExpectation$Companion {
+	public final fun parse (Ljava/lang/String;)Lcom/tricrotism/cryon/common/server/NodeExpectation;
+}
+
+public final class com/tricrotism/cryon/common/server/NodeIdentity {
+	public static final field Companion Lcom/tricrotism/cryon/common/server/NodeIdentity$Companion;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IILcom/tricrotism/cryon/common/server/NodeExpectation;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()I
+	public final fun component5 ()I
+	public final fun component6 ()Lcom/tricrotism/cryon/common/server/NodeExpectation;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IILcom/tricrotism/cryon/common/server/NodeExpectation;)Lcom/tricrotism/cryon/common/server/NodeIdentity;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/server/NodeIdentity;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IILcom/tricrotism/cryon/common/server/NodeExpectation;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/server/NodeIdentity;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAddress ()Ljava/lang/String;
+	public final fun getExpectation ()Lcom/tricrotism/cryon/common/server/NodeExpectation;
+	public final fun getMaxPlayers ()I
+	public final fun getNodeId ()Ljava/lang/String;
+	public final fun getPort ()I
+	public final fun getServerId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/server/NodeIdentity$Companion {
+	public final fun resolve (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IIIILjava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)Lcom/tricrotism/cryon/common/server/NodeIdentity;
+	public static synthetic fun resolve$default (Lcom/tricrotism/cryon/common/server/NodeIdentity$Companion;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IIIILjava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/server/NodeIdentity;
+}
+
+public abstract interface class com/tricrotism/cryon/common/server/NodeSelector {
+	public static final field Companion Lcom/tricrotism/cryon/common/server/NodeSelector$Companion;
+	public abstract fun matches (Lcom/tricrotism/cryon/common/server/Node;)Z
+}
+
+public final class com/tricrotism/cryon/common/server/NodeSelector$Companion {
+	public final fun getAvailable ()Lcom/tricrotism/cryon/common/server/NodeSelector;
+	public final fun getEmpty ()Lcom/tricrotism/cryon/common/server/NodeSelector;
+	public final fun tagged (Ljava/lang/String;Ljava/lang/String;)Lcom/tricrotism/cryon/common/server/NodeSelector;
+}
+
+public final class com/tricrotism/cryon/common/server/NodeState : java/lang/Enum {
+	public static final field DRAINING Lcom/tricrotism/cryon/common/server/NodeState;
+	public static final field READY Lcom/tricrotism/cryon/common/server/NodeState;
+	public static final field STARTING Lcom/tricrotism/cryon/common/server/NodeState;
+	public static final field STOPPING Lcom/tricrotism/cryon/common/server/NodeState;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/tricrotism/cryon/common/server/NodeState;
+	public static fun values ()[Lcom/tricrotism/cryon/common/server/NodeState;
+}
+
+public abstract interface class com/tricrotism/cryon/common/server/PlayerHandoff {
+	public static final field BEFORE_OWNERS I
+	public static final field Companion Lcom/tricrotism/cryon/common/server/PlayerHandoff$Companion;
+	public static final field DEFAULT_STAGE I
+	public abstract fun onFlush (Ljava/lang/String;ILkotlin/jvm/functions/Function2;)Ljava/lang/AutoCloseable;
+	public static synthetic fun onFlush$default (Lcom/tricrotism/cryon/common/server/PlayerHandoff;Ljava/lang/String;ILkotlin/jvm/functions/Function2;ILjava/lang/Object;)Ljava/lang/AutoCloseable;
+}
+
+public final class com/tricrotism/cryon/common/server/PlayerHandoff$Companion {
+	public static final field BEFORE_OWNERS I
+	public static final field DEFAULT_STAGE I
+}
+
+public final class com/tricrotism/cryon/common/server/PlayerHandoff$DefaultImpls {
+	public static synthetic fun onFlush$default (Lcom/tricrotism/cryon/common/server/PlayerHandoff;Ljava/lang/String;ILkotlin/jvm/functions/Function2;ILjava/lang/Object;)Ljava/lang/AutoCloseable;
+}
+
+public abstract interface class com/tricrotism/cryon/common/server/PlayerRouter {
+	public abstract fun route (Ljava/util/UUID;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun routeToInstance (Ljava/util/UUID;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/server/Presence {
+	public static final field Companion Lcom/tricrotism/cryon/common/server/Presence$Companion;
+	public static final field HASH_TTL_MULTIPLIER J
+	public fun <init> (Lcom/tricrotism/cryon/common/net/KeyValueStore;Lorg/slf4j/Logger;Ljava/time/Duration;)V
+	public synthetic fun <init> (Lcom/tricrotism/cryon/common/net/KeyValueStore;Lorg/slf4j/Logger;Ljava/time/Duration;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun all (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun announce (Lcom/tricrotism/cryon/common/server/PresenceKind;Ljava/lang/String;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/server/Presence$Companion {
+	public final fun getDEFAULT_TIMEOUT ()Ljava/time/Duration;
+}
+
+public final class com/tricrotism/cryon/common/server/PresenceEntry {
+	public static final field Companion Lcom/tricrotism/cryon/common/server/PresenceEntry$Companion;
+	public fun <init> (Lcom/tricrotism/cryon/common/server/PresenceKind;Ljava/lang/String;Ljava/lang/String;J)V
+	public final fun component1 ()Lcom/tricrotism/cryon/common/server/PresenceKind;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()J
+	public final fun copy (Lcom/tricrotism/cryon/common/server/PresenceKind;Ljava/lang/String;Ljava/lang/String;J)Lcom/tricrotism/cryon/common/server/PresenceEntry;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/server/PresenceEntry;Lcom/tricrotism/cryon/common/server/PresenceKind;Ljava/lang/String;Ljava/lang/String;JILjava/lang/Object;)Lcom/tricrotism/cryon/common/server/PresenceEntry;
+	public final fun encode ()Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDetail ()Ljava/lang/String;
+	public final fun getHeartbeat ()J
+	public final fun getId ()Ljava/lang/String;
+	public final fun getKind ()Lcom/tricrotism/cryon/common/server/PresenceKind;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/server/PresenceEntry$Companion {
+	public final fun decode (Ljava/lang/String;)Lcom/tricrotism/cryon/common/server/PresenceEntry;
+}
+
+public final class com/tricrotism/cryon/common/server/PresenceKind : java/lang/Enum {
+	public static final field GEYSER Lcom/tricrotism/cryon/common/server/PresenceKind;
+	public static final field PROXY Lcom/tricrotism/cryon/common/server/PresenceKind;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/tricrotism/cryon/common/server/PresenceKind;
+	public static fun values ()[Lcom/tricrotism/cryon/common/server/PresenceKind;
+}
+
+public final class com/tricrotism/cryon/common/server/ProvisionRequest {
+	public static final field Companion Lcom/tricrotism/cryon/common/server/ProvisionRequest$Companion;
+	public static final field DEFAULT_WAIT_MILLIS J
+	public fun <init> (Ljava/lang/String;Lcom/tricrotism/cryon/common/server/NodeSelector;ZJ)V
+	public synthetic fun <init> (Ljava/lang/String;Lcom/tricrotism/cryon/common/server/NodeSelector;ZJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lcom/tricrotism/cryon/common/server/NodeSelector;
+	public final fun component3 ()Z
+	public final fun component4 ()J
+	public final fun copy (Ljava/lang/String;Lcom/tricrotism/cryon/common/server/NodeSelector;ZJ)Lcom/tricrotism/cryon/common/server/ProvisionRequest;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/server/ProvisionRequest;Ljava/lang/String;Lcom/tricrotism/cryon/common/server/NodeSelector;ZJILjava/lang/Object;)Lcom/tricrotism/cryon/common/server/ProvisionRequest;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCreateIfMissing ()Z
+	public final fun getSelector ()Lcom/tricrotism/cryon/common/server/NodeSelector;
+	public final fun getServerId ()Ljava/lang/String;
+	public final fun getWaitMillis ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/server/ProvisionRequest$Companion {
+}
+
+public abstract interface class com/tricrotism/cryon/common/server/ProvisionResult {
+}
+
+public final class com/tricrotism/cryon/common/server/ProvisionResult$Failed : com/tricrotism/cryon/common/server/ProvisionResult {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/tricrotism/cryon/common/server/ProvisionResult$Failed;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/server/ProvisionResult$Failed;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/server/ProvisionResult$Failed;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getReason ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/server/ProvisionResult$Pending : com/tricrotism/cryon/common/server/ProvisionResult {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/server/ProvisionResult$Pending;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/server/ProvisionResult$Ready : com/tricrotism/cryon/common/server/ProvisionResult {
+	public fun <init> (Lcom/tricrotism/cryon/common/server/Node;)V
+	public final fun component1 ()Lcom/tricrotism/cryon/common/server/Node;
+	public final fun copy (Lcom/tricrotism/cryon/common/server/Node;)Lcom/tricrotism/cryon/common/server/ProvisionResult$Ready;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/server/ProvisionResult$Ready;Lcom/tricrotism/cryon/common/server/Node;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/server/ProvisionResult$Ready;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getNode ()Lcom/tricrotism/cryon/common/server/Node;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/server/ProvisionResult$Unavailable : com/tricrotism/cryon/common/server/ProvisionResult {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/server/ProvisionResult$Unavailable;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/tricrotism/cryon/common/server/Provisioner {
+	public fun find (Ljava/lang/String;Lcom/tricrotism/cryon/common/server/NodeSelector;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun find$default (Lcom/tricrotism/cryon/common/server/Provisioner;Ljava/lang/String;Lcom/tricrotism/cryon/common/server/NodeSelector;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public abstract fun provision (Lcom/tricrotism/cryon/common/server/ProvisionRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/server/Provisioner$DefaultImpls {
+	public static fun find (Lcom/tricrotism/cryon/common/server/Provisioner;Ljava/lang/String;Lcom/tricrotism/cryon/common/server/NodeSelector;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun find$default (Lcom/tricrotism/cryon/common/server/Provisioner;Ljava/lang/String;Lcom/tricrotism/cryon/common/server/NodeSelector;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/server/RegistryProvisioner : com/tricrotism/cryon/common/server/Provisioner {
+	public fun <init> (Lcom/tricrotism/cryon/common/server/ServerRegistry;Lkotlin/jvm/functions/Function0;Lorg/slf4j/Logger;)V
+	public fun find (Ljava/lang/String;Lcom/tricrotism/cryon/common/server/NodeSelector;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun provision (Lcom/tricrotism/cryon/common/server/ProvisionRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class com/tricrotism/cryon/common/server/RouteResult {
+}
+
+public final class com/tricrotism/cryon/common/server/RouteResult$Failed : com/tricrotism/cryon/common/server/RouteResult {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/tricrotism/cryon/common/server/RouteResult$Failed;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/server/RouteResult$Failed;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/server/RouteResult$Failed;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getReason ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/server/RouteResult$NoInstance : com/tricrotism/cryon/common/server/RouteResult {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/server/RouteResult$NoInstance;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/server/RouteResult$Sent : com/tricrotism/cryon/common/server/RouteResult {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/tricrotism/cryon/common/server/RouteResult$Sent;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/server/RouteResult$Sent;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/server/RouteResult$Sent;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getNodeId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/tricrotism/cryon/common/server/ServerRegistry {
+	public abstract fun bestNode (Ljava/lang/String;)Lcom/tricrotism/cryon/common/server/Node;
+	public abstract fun close ()V
+	public abstract fun deregister (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun heartbeat (Ljava/lang/String;ILcom/tricrotism/cryon/common/server/NodeState;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun node (Ljava/lang/String;)Lcom/tricrotism/cryon/common/server/Node;
+	public abstract fun nodes ()Ljava/util/Collection;
+	public abstract fun nodesOf (Ljava/lang/String;)Ljava/util/List;
+	public abstract fun onChange (Lkotlin/jvm/functions/Function1;)Ljava/lang/AutoCloseable;
+	public abstract fun register (Lcom/tricrotism/cryon/common/server/Node;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun tryReserve (Ljava/lang/String;Ljava/util/UUID;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class com/tricrotism/cryon/common/server/ServerRegistryEvent {
+}
+
+public final class com/tricrotism/cryon/common/server/ServerRegistryEvent$Added : com/tricrotism/cryon/common/server/ServerRegistryEvent {
+	public fun <init> (Lcom/tricrotism/cryon/common/server/Node;)V
+	public final fun component1 ()Lcom/tricrotism/cryon/common/server/Node;
+	public final fun copy (Lcom/tricrotism/cryon/common/server/Node;)Lcom/tricrotism/cryon/common/server/ServerRegistryEvent$Added;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/server/ServerRegistryEvent$Added;Lcom/tricrotism/cryon/common/server/Node;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/server/ServerRegistryEvent$Added;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInstance ()Lcom/tricrotism/cryon/common/server/Node;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/server/ServerRegistryEvent$Removed : com/tricrotism/cryon/common/server/ServerRegistryEvent {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Lcom/tricrotism/cryon/common/server/ServerRegistryEvent$Removed;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/server/ServerRegistryEvent$Removed;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/server/ServerRegistryEvent$Removed;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getNodeId ()Ljava/lang/String;
+	public final fun getServerId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/server/ServerRegistryEvent$Updated : com/tricrotism/cryon/common/server/ServerRegistryEvent {
+	public fun <init> (Lcom/tricrotism/cryon/common/server/Node;)V
+	public final fun component1 ()Lcom/tricrotism/cryon/common/server/Node;
+	public final fun copy (Lcom/tricrotism/cryon/common/server/Node;)Lcom/tricrotism/cryon/common/server/ServerRegistryEvent$Updated;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/common/server/ServerRegistryEvent$Updated;Lcom/tricrotism/cryon/common/server/Node;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/server/ServerRegistryEvent$Updated;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInstance ()Lcom/tricrotism/cryon/common/server/Node;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/server/SharedServerRegistry : com/tricrotism/cryon/common/server/ServerRegistry {
+	public fun <init> (Lcom/tricrotism/cryon/common/net/KeyValueStore;Lcom/tricrotism/cryon/common/net/Messenger;Lcom/tricrotism/cryon/common/data/Database;Ljava/time/Duration;Lorg/slf4j/Logger;)V
+	public fun bestNode (Ljava/lang/String;)Lcom/tricrotism/cryon/common/server/Node;
+	public fun close ()V
+	public fun deregister (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun heartbeat (Ljava/lang/String;ILcom/tricrotism/cryon/common/server/NodeState;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun init ()V
+	public fun node (Ljava/lang/String;)Lcom/tricrotism/cryon/common/server/Node;
+	public fun nodes ()Ljava/util/Collection;
+	public fun nodesOf (Ljava/lang/String;)Ljava/util/List;
+	public fun onChange (Lkotlin/jvm/functions/Function1;)Ljava/lang/AutoCloseable;
+	public fun register (Lcom/tricrotism/cryon/common/server/Node;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun tryReserve (Ljava/lang/String;Ljava/util/UUID;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/server/TransferRequest {
+	public static final field CHANNEL Ljava/lang/String;
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/server/TransferRequest;
+	public final fun decode (Ljava/lang/String;)Lkotlin/Pair;
+	public final fun encode (Ljava/util/UUID;Ljava/lang/String;)Ljava/lang/String;
+}
+
+public abstract interface class com/tricrotism/cryon/common/signal/Cancellable : com/tricrotism/cryon/common/signal/Signal {
+	public abstract fun getCancelled ()Z
+	public abstract fun setCancelled (Z)V
+}
+
+public final class com/tricrotism/cryon/common/signal/LocalSignals : com/tricrotism/cryon/common/signal/Signals {
+	public fun <init> (Lorg/slf4j/Logger;)V
+	public fun dispatch (Lcom/tricrotism/cryon/common/signal/Signal;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun on (Ljava/lang/Class;ILkotlin/jvm/functions/Function2;)Lcom/tricrotism/cryon/common/signal/Signals$SignalSubscription;
+}
+
+public abstract interface class com/tricrotism/cryon/common/signal/Signal {
+}
+
+public abstract interface class com/tricrotism/cryon/common/signal/Signals {
+	public abstract fun dispatch (Lcom/tricrotism/cryon/common/signal/Signal;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun on (Ljava/lang/Class;ILkotlin/jvm/functions/Function2;)Lcom/tricrotism/cryon/common/signal/Signals$SignalSubscription;
+	public static synthetic fun on$default (Lcom/tricrotism/cryon/common/signal/Signals;Ljava/lang/Class;ILkotlin/jvm/functions/Function2;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/signal/Signals$SignalSubscription;
+}
+
+public final class com/tricrotism/cryon/common/signal/Signals$DefaultImpls {
+	public static synthetic fun on$default (Lcom/tricrotism/cryon/common/signal/Signals;Ljava/lang/Class;ILkotlin/jvm/functions/Function2;ILjava/lang/Object;)Lcom/tricrotism/cryon/common/signal/Signals$SignalSubscription;
+}
+
+public abstract interface class com/tricrotism/cryon/common/signal/Signals$SignalSubscription : java/lang/AutoCloseable {
+}
+
+public final class com/tricrotism/cryon/common/signal/SignalsKt {
+	public static final fun allows (Lcom/tricrotism/cryon/common/signal/Signals;Lcom/tricrotism/cryon/common/signal/Cancellable;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/common/text/CommonMessages {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/text/CommonMessages;
+	public static final field KEY_FEATURE_DISABLED Ljava/lang/String;
+	public static final field KEY_INVALID_AMOUNT Ljava/lang/String;
+	public static final field KEY_NEVER_JOINED Ljava/lang/String;
+	public static final field KEY_NOT_ENOUGH Ljava/lang/String;
+	public static final field KEY_NOT_ONLINE Ljava/lang/String;
+	public static final field KEY_NO_PERMISSION Ljava/lang/String;
+	public static final field KEY_PREFIX Ljava/lang/String;
+	public final fun alert (Ljava/lang/String;)Lnet/kyori/adventure/text/Component;
+	public final fun alert (Lnet/kyori/adventure/text/Component;)Lnet/kyori/adventure/text/Component;
+	public final fun basic (Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;)Lnet/kyori/adventure/text/Component;
+	public final fun error (Ljava/lang/String;)Lnet/kyori/adventure/text/Component;
+	public final fun error (Lnet/kyori/adventure/text/Component;)Lnet/kyori/adventure/text/Component;
+	public final fun errorAmount (Ljava/lang/String;Ljava/util/Locale;)Lnet/kyori/adventure/text/Component;
+	public static synthetic fun errorAmount$default (Lcom/tricrotism/cryon/common/text/CommonMessages;Ljava/lang/String;Ljava/util/Locale;ILjava/lang/Object;)Lnet/kyori/adventure/text/Component;
+	public final fun errorPlayer (Ljava/lang/String;Ljava/util/Locale;)Lnet/kyori/adventure/text/Component;
+	public static synthetic fun errorPlayer$default (Lcom/tricrotism/cryon/common/text/CommonMessages;Ljava/lang/String;Ljava/util/Locale;ILjava/lang/Object;)Lnet/kyori/adventure/text/Component;
+	public final fun errorWithId (Ljava/lang/String;Ljava/lang/String;)Lnet/kyori/adventure/text/Component;
+	public final fun errorWithId (Lnet/kyori/adventure/text/Component;Ljava/lang/String;)Lnet/kyori/adventure/text/Component;
+	public final fun featureDisabled (Ljava/lang/String;Ljava/util/Locale;)Lnet/kyori/adventure/text/Component;
+	public static synthetic fun featureDisabled$default (Lcom/tricrotism/cryon/common/text/CommonMessages;Ljava/lang/String;Ljava/util/Locale;ILjava/lang/Object;)Lnet/kyori/adventure/text/Component;
+	public final fun getARROWS ()Lnet/kyori/adventure/text/Component;
+	public final fun getDefaultLocale ()Ljava/util/Locale;
+	public final fun info (Ljava/lang/String;)Lnet/kyori/adventure/text/Component;
+	public final fun info (Lnet/kyori/adventure/text/Component;)Lnet/kyori/adventure/text/Component;
+	public final fun message (Ljava/lang/String;)Lnet/kyori/adventure/text/Component;
+	public final fun message (Lnet/kyori/adventure/text/Component;)Lnet/kyori/adventure/text/Component;
+	public final fun noPermission (Ljava/util/Locale;)Lnet/kyori/adventure/text/Component;
+	public static synthetic fun noPermission$default (Lcom/tricrotism/cryon/common/text/CommonMessages;Ljava/util/Locale;ILjava/lang/Object;)Lnet/kyori/adventure/text/Component;
+	public final fun notEnoughCurrency (Ljava/lang/String;Ljava/util/Locale;)Lnet/kyori/adventure/text/Component;
+	public final fun notEnoughCurrency (Lnet/kyori/adventure/text/Component;Ljava/util/Locale;)Lnet/kyori/adventure/text/Component;
+	public static synthetic fun notEnoughCurrency$default (Lcom/tricrotism/cryon/common/text/CommonMessages;Ljava/lang/String;Ljava/util/Locale;ILjava/lang/Object;)Lnet/kyori/adventure/text/Component;
+	public static synthetic fun notEnoughCurrency$default (Lcom/tricrotism/cryon/common/text/CommonMessages;Lnet/kyori/adventure/text/Component;Ljava/util/Locale;ILjava/lang/Object;)Lnet/kyori/adventure/text/Component;
+	public final fun notOnline (Ljava/lang/String;Ljava/util/Locale;)Lnet/kyori/adventure/text/Component;
+	public static synthetic fun notOnline$default (Lcom/tricrotism/cryon/common/text/CommonMessages;Ljava/lang/String;Ljava/util/Locale;ILjava/lang/Object;)Lnet/kyori/adventure/text/Component;
+	public final fun setDefaultLocale (Ljava/util/Locale;)V
+	public final fun success (Ljava/lang/String;)Lnet/kyori/adventure/text/Component;
+	public final fun success (Lnet/kyori/adventure/text/Component;)Lnet/kyori/adventure/text/Component;
+	public final fun warn (Ljava/lang/String;)Lnet/kyori/adventure/text/Component;
+	public final fun warn (Lnet/kyori/adventure/text/Component;)Lnet/kyori/adventure/text/Component;
+}
+
+public final class com/tricrotism/cryon/common/text/CryonPalette {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/text/CryonPalette;
+	public final fun getALABASTER ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getAMBER ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getAMETHYST ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getAPRICOT ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getAQUAMARINE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getAQUA_GLOW ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getARCTIC ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getAZURE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getBLACK ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getBLUE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getBLURPLE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getBLUSH ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getBRASS ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getBRIGHT_BLUE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getBRIGHT_LIME ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getBRONZE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getBUBBLEGUM ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getBURGUNDY ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getCANDY_PINK ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getCARAMEL ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getCERISE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getCERULEAN ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getCHARCOAL ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getCHARTREUSE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getCOPPER ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getCORAL ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getCORNFLOWER ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getCRIMSON ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getCRIMSON_PINK ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getDARKISH_PURPLE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getDARK_BLUE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getDARK_CHERRY ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getDARK_GOLD ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getDARK_GRAY ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getDARK_GREEN ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getDARK_OFF_WHITE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getDARK_PLUM ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getDARK_RED ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getDEEP_MAGENTA ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getDEEP_PURPLE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getELECTRIC_BLUE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getELECTRIC_LIME ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getELECTRIC_TEAL ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getELECTRIC_VIOLET ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getEMERALD ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getERROR ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getFIRE_ORANGE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getFLAMINGO ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getFOREST_GREEN ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getGARNET ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getGOLD ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getGOLDEN_YELLOW ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getGRAPE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getGRAPHITE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getGREEN ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getHIGHLIGHT ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getHIGHLIGHT_BLUE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getHONEY_GOLD ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getHOT_PINK ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getICE_BLUE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getINDIGO ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getINFO ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getIOS_BLUE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getIRIS ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getIVORY ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getJET_BLACK ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getJUNGLE_GREEN ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getLASER_LEMON ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getLAVENDER ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getLIGHT_CORAL ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getLIGHT_GRAY ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getLIGHT_GREEN ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getLIGHT_PURPLE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getLIGHT_RED ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getLIME ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getMALACHITE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getMAROON ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getMAUVE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getMEDIUM_GRAY ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getMIDNIGHT_BLUE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getMIDNIGHT_INDIGO ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getMINT ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getMOSS ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getMUSTARD ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getNAVY ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getNEON_BLUE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getNEON_CYAN ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getNEON_FUCHSIA ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getNEON_GREEN ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getNEON_LIME ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getNEON_MAGENTA ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getNEON_MINT ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getNEON_ORANGE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getNEON_PINK ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getNEON_PURPLE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getNEON_RED ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getNEON_YELLOW ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getNEUTRAL ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getOBSIDIAN ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getOFF_WHITE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getONYX ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getORANGE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getORCHID ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getPAPAYA ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getPEACH ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getPERIWINKLE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getPLASMA ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getPLUM ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getRED ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getRESOLVER ()Lnet/kyori/adventure/text/minimessage/tag/resolver/TagResolver;
+	public final fun getRICH_BLACK ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getROSE_PINK ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getROYAL_VIOLET ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getRUBY ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getRUST ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getSALMON ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getSAND ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getSAPPHIRE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getSCARLET ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getSEA_GREEN ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getSHAMROCK ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getSILVER ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getSKY_BLUE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getSLATE_GRAY ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getSOFT_GRAY ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getSPRING_GREEN ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getSUCCESS ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getSUN_GLOW ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getTAGS ()Ljava/util/Map;
+	public final fun getTANGERINE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getTEAL ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getTEAL_GREEN ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getTERRACOTTA ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getTOPAZ ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getTURQUOISE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getULTRAVIOLET ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getVIBRANT_CYAN ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getWARM_ORANGE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getWARM_YELLOW ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getWARNING ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getWATERMELON ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getWHITE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getWINE_ROSE ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun getYELLOW ()Lnet/kyori/adventure/text/format/TextColor;
+	public final fun tag (Lnet/kyori/adventure/text/format/TextColor;)Ljava/lang/String;
+	public final fun tags (Lnet/kyori/adventure/text/Component;)Ljava/util/Set;
+}
+
+public final class com/tricrotism/cryon/common/text/FontWidth {
+	public static final field BOLD_EXTRA I
+	public static final field DEFAULT I
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/text/FontWidth;
+	public static final field LEGACY_CHAR C
+	public static final field SPACE I
+	public final fun advance (CZ)I
+	public static synthetic fun advance$default (Lcom/tricrotism/cryon/common/text/FontWidth;CZILjava/lang/Object;)I
+	public final fun of (Ljava/lang/String;Z)I
+	public static synthetic fun of$default (Lcom/tricrotism/cryon/common/text/FontWidth;Ljava/lang/String;ZILjava/lang/Object;)I
+	public final fun ofLegacy (Ljava/lang/String;)I
+}
+
+public final class com/tricrotism/cryon/common/text/Mini {
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/text/Mini;
+	public final fun format (Ljava/lang/String;)Lnet/kyori/adventure/text/Component;
+	public final fun format (Ljava/lang/String;[Lnet/kyori/adventure/text/minimessage/tag/resolver/TagResolver;)Lnet/kyori/adventure/text/Component;
+	public final fun getMm ()Lnet/kyori/adventure/text/minimessage/MiniMessage;
+	public final fun stripFormatting (Ljava/lang/String;)Ljava/lang/String;
+	public final fun toComponent (Ljava/lang/String;)Lnet/kyori/adventure/text/Component;
+	public final fun toLegacy (Lnet/kyori/adventure/text/Component;)Ljava/lang/String;
+	public final fun toMiniMessage (Ljava/lang/String;)Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/common/text/TextWrapper {
+	public static final field DEFAULT_MAX_WIDTH I
+	public static final field INSTANCE Lcom/tricrotism/cryon/common/text/TextWrapper;
+	public final fun flatten (Lnet/kyori/adventure/text/TextComponent;)Ljava/util/List;
+	public final fun width (Lnet/kyori/adventure/text/Component;)I
+	public final fun wrap (Lnet/kyori/adventure/text/Component;I)Ljava/util/List;
+	public static synthetic fun wrap$default (Lcom/tricrotism/cryon/common/text/TextWrapper;Lnet/kyori/adventure/text/Component;IILjava/lang/Object;)Ljava/util/List;
+	public final fun wrapPrefixed (Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;I)Ljava/util/List;
+	public static synthetic fun wrapPrefixed$default (Lcom/tricrotism/cryon/common/text/TextWrapper;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;IILjava/lang/Object;)Ljava/util/List;
+}
+

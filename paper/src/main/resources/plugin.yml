@@ -14,7 +14,7 @@ website: https://tricrotism.com/
 # PlaceholderAPI (PapiBridge registers expansions), floodgate (BedrockService sends Cumulus forms) and
 # WorldGuard (a module's preLoad can reach its flag registry, which seals itself on enable).
 # Any of them absent → that bridge installs nothing and features never branch on it.
-softdepend: [ PlaceholderAPI, floodgate, WorldGuard ]
+softdepend: [ PlaceholderAPI, floodgate, WorldGuard, packetevents ]
 
 # Resolved by Paper's runtime library loader into the plugin classloader (visible to feature jars).
 # Commands use Paper's native Brigadier API (no extra library).

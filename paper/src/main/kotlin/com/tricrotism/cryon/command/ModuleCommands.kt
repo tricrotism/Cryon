@@ -14,11 +14,13 @@ import com.tricrotism.cryon.common.module.remote.RemoteModules
 import com.tricrotism.cryon.common.module.remote.UpdateResult
 import com.tricrotism.cryon.common.server.PresenceEntry
 import com.tricrotism.cryon.common.text.CommonMessages
+import com.tricrotism.cryon.common.text.CryonPalette
 import com.tricrotism.cryon.common.text.Mini
 import com.tricrotism.cryon.menu.AdminMenu
 import com.tricrotism.cryon.module.ModuleLoader
 import com.tricrotism.cryon.network.NetworkStatus
 import com.tricrotism.cryon.paper.api.command.*
+import com.tricrotism.cryon.paper.api.diagnostic.TaskCensus
 import com.tricrotism.cryon.paper.api.placeholder.PlaceholderService
 import com.tricrotism.cryon.paper.api.scheduler.CryonDispatchers
 import com.tricrotism.cryon.paper.api.scheduler.Schedulers
@@ -727,12 +729,14 @@ class ModuleCommands(
         }
         sender.sendMessage(CommonMessages.info(Mini.format("<off_white>Classloader retention since boot:")))
         for ((key, retained) in report.entries.sortedByDescending { it.value.live }) {
-            val colour = if (retained.live > 0) "<scarlet>" else "<emerald>"
+            // The count is coloured as a component rather than by splicing a tag into the template.
+            // `</>` is not a MiniMessage closing tag, so the old form rendered it literally.
+            val colour = if (retained.live > 0) CryonPalette.SCARLET else CryonPalette.EMERALD
             sender.sendMessage(
                 Mini.format(
-                    "  <slate_gray><key></slate_gray> $colour<live></> live, <off_white><collected></off_white> collected of <off_white><total></off_white>",
+                    "  <slate_gray><key></slate_gray> <live> live, <off_white><collected></off_white> collected of <off_white><total></off_white>",
                     Placeholder.unparsed("key", key.removePrefix("module-jar:")),
-                    Placeholder.unparsed("live", retained.live.toString()),
+                    Placeholder.component("live", Component.text(retained.live).color(colour)),
                     Placeholder.unparsed("collected", retained.collected.toString()),
                     Placeholder.unparsed("total", retained.registered.toString()),
                 )
@@ -743,6 +747,46 @@ class ModuleCommands(
                 Mini.format(
                     "<slate_gray>A live count right after an unload is normal. No collection has run yet. " +
                             "One that climbs across reloads of the same jar is a leak."
+                )
+            )
+        }
+    }
+
+    /**
+     * What each module still has running. `retention`'s other half: that one says a classloader was
+     * not collected, this one usually says why.
+     */
+    @Subcommand("tasks")
+    fun tasks(sender: CommandSender) {
+        val census = TaskCensus.snapshot()
+        if (census.isEmpty()) {
+            sender.sendMessage(
+                CommonMessages.info(Mini.format("<off_white>No repeating tasks or listeners registered."))
+            )
+            return
+        }
+        sender.sendMessage(CommonMessages.info(Mini.format("<off_white>Repeating tasks and listeners by owner:")))
+        val live = modules.ids().toSet()
+        for ((owner, counts) in census) {
+            // An owner the manager no longer knows is the interesting row: its jar is gone and this
+            // is still running.
+            val stale = owner != TaskCensus.UNKNOWN && owner.split(", ").none { it in live }
+            sender.sendMessage(
+                Mini.format(
+                    "  <slate_gray><owner></slate_gray> <off_white><timers></off_white> timer(s), " +
+                            "<off_white><listeners></off_white> listener(s)<note>",
+                    Placeholder.unparsed("owner", owner),
+                    Placeholder.unparsed("timers", (counts[TaskCensus.Kind.TIMER] ?: 0).toString()),
+                    Placeholder.unparsed("listeners", (counts[TaskCensus.Kind.LISTENER] ?: 0).toString()),
+                    Placeholder.parsed("note", if (stale) " <scarlet>(not loaded)</scarlet>" else ""),
+                )
+            )
+        }
+        if (census.keys.any { it != TaskCensus.UNKNOWN && it.split(", ").none { id -> id in live } }) {
+            sender.sendMessage(
+                Mini.format(
+                    "<slate_gray>An owner marked (not loaded) is still running work after its module went away. " +
+                            "That is what keeps its classloader alive; cross-check with /cryon retention."
                 )
             )
         }
@@ -1239,6 +1283,7 @@ class ModuleCommands(
             HelpEntry("Flags", "cryon flag reload", "Re-read the flags from the database"),
             HelpEntry("Server", "cryon network", "This server's deployment shape"),
             HelpEntry("Server", "cryon retention", "Whether unloaded module jars were actually collected"),
+            HelpEntry("Server", "cryon tasks", "Repeating tasks and listeners still running, by module"),
             HelpEntry("Server", "cryon menu", "The same actions as a menu"),
             HelpEntry("Server", "cryon lang reload", "Re-read the language files from disk"),
         )

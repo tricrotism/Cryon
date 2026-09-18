@@ -63,6 +63,19 @@ class CurrencyJournal(private val file: Path, private val logger: Logger) {
      */
     fun read(): List<PendingCredit> = readFrom(file)
 
+    /**
+     * Whether a credit with [opId] is already queued.
+     *
+     * For the caller of a failed [append], which cannot otherwise tell "nothing was written" from
+     * "the record is durable and the close failed": the write is `DSYNC`, so the bytes are on the
+     * device before the stream is closed, and a close that throws surfaces as an append failure with
+     * the record already there. Putting the amount back somewhere else on that assumption is how one
+     * credit becomes two.
+     *
+     * Cold path only. It re-reads the journal, which is bounded by what has not drained yet.
+     */
+    fun contains(opId: String): Boolean = read().any { it.opId == opId }
+
     private fun readFrom(source: Path): List<PendingCredit> {
         if (!Files.isRegularFile(source)) return emptyList()
 

@@ -29,9 +29,14 @@ import kotlin.coroutines.CoroutineContext
  * check-then-act race the core's currency layer exists to avoid. Here the common case costs nothing
  * and the ordering is the caller's own.
  *
- * **They also implement [Delay]**, so `delay(…)` and `withTimeout(…)` schedule on the owning region
- * rather than parking on the coroutines default executor and hopping back afterwards. One scheduled
- * task instead of a thread plus a dispatch, and the timeout is cancelled with the task.
+ * **Every one of them implements [Delay]**, so `delay(…)` and `withTimeout(…)` schedule on the owning
+ * region rather than parking on the coroutines default executor and hopping back afterwards. One
+ * scheduled task instead of a thread plus a dispatch, and the timeout is cancelled with the task.
+ *
+ * [Async] reaches that differently, since it has no region to schedule on: it carries its own timer
+ * thread, in `CryonIO`. Read the note there before changing it. The default executor belongs to the
+ * coroutines library, so on a server that reloads plugins it outlives the unload still holding the
+ * classloader, and the only fix is a timer this codebase can shut down.
  */
 object CryonDispatchers {
 

@@ -14,6 +14,7 @@ import kotlin.reflect.KClass
 /**
  * Start an [ItemBuilder] from a material, `Material.DIAMOND.toItem().name("…")`.
  */
+@JvmOverloads
 fun Material.toItem(amount: Int = 1): ItemBuilder = ItemBuilder(this, amount)
 
 /**

@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends gettext-base &&
 # Provide your Paper 26.2 server jar at deploy/paper.jar (your dev-bundle build).
 COPY deploy/paper.jar ./paper.jar
 # The Cryon core loader (shaded).
-COPY --from=build /src/paper/build/libs/*-all.jar plugins/Cryon.jar
+COPY --from=build /src/paper/build/libs/Cryon-Paper-*.jar plugins/Cryon.jar
 # Baked per-family feature jars: shared contracts in api/, features in modules/.
 COPY deploy/families/${FAMILY}/api/ plugins/Cryon/api/
 COPY deploy/families/${FAMILY}/modules/ plugins/Cryon/modules/

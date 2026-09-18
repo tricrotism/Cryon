@@ -17,6 +17,7 @@ import org.bukkit.event.EventPriority
  * logged, never propagated to the caller.
  */
 object Events {
+    @JvmOverloads
     fun <T : Event> subscribe(type: Class<T>, priority: EventPriority = EventPriority.NORMAL): SubscriptionBuilder<T> =
         SubscriptionBuilder(type, priority)
 

@@ -193,8 +193,10 @@ database:
     # its path, host/port ignored), zero-setup but local to this process, not shared across servers.
     type: postgresql
     host: localhost
-    # Leave the port at the backend default (postgresql 5432, mysql 3306) or set your own.
-    port: 5432
+    # 0 follows the backend default (postgresql 5432, mysql 3306). Set a real port only to override
+    # it. A config that pins 5432 and later switches type to mysql dials 5432 at MySQL and fails
+    # obscurely, which is what the sentinel avoids.
+    port: 0
     database: cryon
     username: cryon
     password: ""
@@ -239,3 +241,18 @@ currency:
     #
     # Costs nothing when the queue is empty; the check is a file-size read.
     drain-seconds: 30
+    # Let players SPEND while the database is unreachable, not just earn.
+    #
+    # Off, a withdraw during an outage is refused (WithdrawResult.UNAVAILABLE) and takes nothing,
+    # because deciding a spend needs an authoritative balance read and guessing is how an outage turns
+    # into duplicated money. Deposits are queued and replayed either way; only spending is gated here.
+    #
+    # On, the pending ledger holds that state in Redis instead: a cached baseline of what SQL last
+    # confirmed, plus a delta of what has happened since, and a spend is one atomic conditional change
+    # to the delta, so two nodes cannot both authorise the same money. Recovery is then arithmetic,
+    # add the delta to SQL and clear it.
+    #
+    # REQUIRES REDIS, and is ignored with a warning without it: a pending ledger on one node's disk is
+    # invisible to the others, which is the dupe it exists to prevent. Redis is also not durable by
+    # default, and a lost delta is money that moved and was never written down, so turn AOF on.
+    offline-spending: false

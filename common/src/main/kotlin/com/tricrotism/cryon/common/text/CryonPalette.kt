@@ -1,5 +1,6 @@
 package com.tricrotism.cryon.common.text
 
+import net.kyori.adventure.text.Component
 import net.kyori.adventure.text.format.TextColor
 import net.kyori.adventure.text.minimessage.tag.Tag
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver
@@ -110,50 +111,228 @@ object CryonPalette {
     val RICH_BLACK: TextColor = TextColor.color(28, 28, 30)
     val JET_BLACK: TextColor = TextColor.color(20, 20, 20)
     val MIDNIGHT_INDIGO: TextColor = TextColor.color(44, 44, 84)
+    val ONYX: TextColor = TextColor.color(53, 56, 57)
+    val OBSIDIAN: TextColor = TextColor.color(26, 26, 36)
+
+    // Neons. Fully saturated and meant to be used sparingly: a rarity announcement, a jackpot, the one
+    // word in a line that has to be read first. A menu built out of these is unreadable
+    val NEON_RED: TextColor = TextColor.color(255, 49, 49)
+    val NEON_ORANGE: TextColor = TextColor.color(255, 95, 31)
+    val NEON_YELLOW: TextColor = TextColor.color(255, 255, 51)
+    val NEON_LIME: TextColor = TextColor.color(174, 255, 0)
+    val NEON_MINT: TextColor = TextColor.color(0, 255, 178)
+    val NEON_CYAN: TextColor = TextColor.color(0, 255, 255)
+    val NEON_BLUE: TextColor = TextColor.color(31, 81, 255)
+    val NEON_PINK: TextColor = TextColor.color(255, 16, 240)
+    val NEON_MAGENTA: TextColor = TextColor.color(255, 0, 255)
+    val ELECTRIC_LIME: TextColor = TextColor.color(204, 255, 0)
+    val ELECTRIC_BLUE: TextColor = TextColor.color(125, 249, 255)
+    val ELECTRIC_TEAL: TextColor = TextColor.color(0, 245, 212)
+    val LASER_LEMON: TextColor = TextColor.color(255, 255, 102)
+    val PLASMA: TextColor = TextColor.color(255, 0, 127)
+
+    // Corals, peaches and salmons. Warm mid-tones that read well on dark backgrounds where a pure red
+    // is aggressive
+    val CORAL: TextColor = TextColor.color(255, 127, 80)
+    val LIGHT_CORAL: TextColor = TextColor.color(240, 128, 128)
+    val SALMON: TextColor = TextColor.color(250, 128, 114)
+    val PEACH: TextColor = TextColor.color(255, 203, 164)
+    val APRICOT: TextColor = TextColor.color(255, 180, 128)
+    val PAPAYA: TextColor = TextColor.color(255, 145, 77)
+    val BLUSH: TextColor = TextColor.color(255, 145, 164)
+    val WATERMELON: TextColor = TextColor.color(252, 108, 133)
+
+    // Limes and spring greens
+    val LIME: TextColor = TextColor.color(50, 205, 50)
+    val BRIGHT_LIME: TextColor = TextColor.color(128, 255, 0)
+    val CHARTREUSE: TextColor = TextColor.color(127, 255, 0)
+    val SPRING_GREEN: TextColor = TextColor.color(0, 255, 127)
+    val SEA_GREEN: TextColor = TextColor.color(46, 139, 87)
+    val MALACHITE: TextColor = TextColor.color(11, 218, 81)
+    val SHAMROCK: TextColor = TextColor.color(0, 222, 129)
+
+    // Teals, aquas and the cool pales
+    val TEAL: TextColor = TextColor.color(0, 128, 128)
+    val TURQUOISE: TextColor = TextColor.color(64, 224, 208)
+    val AQUAMARINE: TextColor = TextColor.color(127, 255, 212)
+    val CERULEAN: TextColor = TextColor.color(0, 123, 167)
+    val AZURE: TextColor = TextColor.color(0, 127, 255)
+    val CORNFLOWER: TextColor = TextColor.color(100, 149, 237)
+    val PERIWINKLE: TextColor = TextColor.color(156, 166, 255)
+    val ICE_BLUE: TextColor = TextColor.color(173, 232, 244)
+    val ARCTIC: TextColor = TextColor.color(190, 240, 255)
+
+    // More violets
+    val ORCHID: TextColor = TextColor.color(218, 112, 214)
+    val AMETHYST: TextColor = TextColor.color(153, 102, 204)
+    val MAUVE: TextColor = TextColor.color(224, 176, 255)
+    val IRIS: TextColor = TextColor.color(90, 74, 222)
+    val ULTRAVIOLET: TextColor = TextColor.color(139, 0, 255)
+    val GRAPE: TextColor = TextColor.color(111, 45, 168)
+
+    // More pinks
+    val FLAMINGO: TextColor = TextColor.color(252, 142, 172)
+    val CANDY_PINK: TextColor = TextColor.color(255, 102, 178)
+    val RUBY: TextColor = TextColor.color(224, 17, 95)
+    val CERISE: TextColor = TextColor.color(222, 49, 99)
+
+    // Metallics and earths. What a tier, a rank or a material wants when a flat hue would read as a
+    // status colour instead
+    val BRONZE: TextColor = TextColor.color(205, 127, 50)
+    val COPPER: TextColor = TextColor.color(184, 115, 51)
+    val BRASS: TextColor = TextColor.color(225, 193, 110)
+    val RUST: TextColor = TextColor.color(183, 65, 14)
+    val TERRACOTTA: TextColor = TextColor.color(204, 102, 68)
+    val SAND: TextColor = TextColor.color(226, 202, 146)
+    val CARAMEL: TextColor = TextColor.color(200, 132, 58)
+
+    // Jewel tones, for the deep end of a gradient
+    val SAPPHIRE: TextColor = TextColor.color(15, 82, 186)
+    val TOPAZ: TextColor = TextColor.color(255, 200, 124)
+    val GARNET: TextColor = TextColor.color(115, 54, 53)
+    val PLUM: TextColor = TextColor.color(142, 69, 133)
+    val BURGUNDY: TextColor = TextColor.color(128, 0, 32)
+    val MAROON: TextColor = TextColor.color(128, 0, 0)
+
+    /**
+     * Tag name to colour, in declaration order. **Both directions are built from this one map.**
+     *
+     * [RESOLVER] turns it into MiniMessage styling tags; [tag] inverts it, so a colour on a rendered
+     * component can be named again. Deriving both from one list rather than writing the pairs out
+     * twice is the whole point: a colour added to one hand-written copy and missed in the other fails
+     * nowhere, it simply stops being attributable, and whatever compares colours quietly loses a
+     * series.
+     *
+     * **Order is meaningful.** Five names are aliases of another colour, and [tag] answers with the
+     * *first* one declared for a value, so `<error>` and `<red>` - the same decision by whoever wrote
+     * the message - land in one bucket rather than two when they are counted:
+     *
+     * | colour | names | [tag] answers |
+     * |---|---|---|
+     * | 220,53,69 | `error`, `red` | `error` |
+     * | 40,167,69 | `success`, `green` | `success` |
+     * | 23,162,184 | `info`, `blue` | `info` |
+     * | 0,191,255 | `highlight_blue`, `highlight` | `highlight_blue` |
+     * | 224,224,224 | `white`, `off_white` | **`white`** |
+     *
+     * The last one is the odd one out - the alias is declared before the colour it aliases, so the
+     * literal name wins where the other four give the semantic one. That is how the tag list has
+     * always been ordered and it is left alone deliberately: reordering would be a cosmetic
+     * preference that silently renames a bucket everything already counted sits in.
+     */
+    val TAGS: Map<String, TextColor> = linkedMapOf(
+        "success" to SUCCESS, "warning" to WARNING, "error" to ERROR,
+        "info" to INFO, "neutral" to NEUTRAL,
+
+        "dark_red" to DARK_RED, "red" to RED, "light_red" to LIGHT_RED,
+        "crimson" to CRIMSON, "scarlet" to SCARLET, "orange" to ORANGE,
+        "tangerine" to TANGERINE, "warm_orange" to WARM_ORANGE, "fire_orange" to FIRE_ORANGE,
+        "dark_cherry" to DARK_CHERRY,
+
+        "gold" to GOLD, "yellow" to YELLOW, "golden_yellow" to GOLDEN_YELLOW,
+        "sun_glow" to SUN_GLOW, "honey_gold" to HONEY_GOLD, "warm_yellow" to WARM_YELLOW,
+        "amber" to AMBER, "mustard" to MUSTARD, "dark_gold" to DARK_GOLD,
+
+        "dark_green" to DARK_GREEN, "green" to GREEN, "light_green" to LIGHT_GREEN,
+        "neon_green" to NEON_GREEN, "emerald" to EMERALD, "forest_green" to FOREST_GREEN,
+        "mint" to MINT, "teal_green" to TEAL_GREEN, "jungle_green" to JUNGLE_GREEN,
+        "moss" to MOSS,
+
+        "dark_blue" to DARK_BLUE, "blue" to BLUE, "highlight_blue" to HIGHLIGHT_BLUE,
+        "highlight" to HIGHLIGHT, "bright_blue" to BRIGHT_BLUE, "sky_blue" to SKY_BLUE,
+        "ios_blue" to IOS_BLUE, "vibrant_cyan" to VIBRANT_CYAN, "aqua_glow" to AQUA_GLOW,
+        "navy" to NAVY, "midnight_blue" to MIDNIGHT_BLUE,
+
+        "darkish_purple" to DARKISH_PURPLE, "light_purple" to LIGHT_PURPLE, "blurple" to BLURPLE,
+        "neon_purple" to NEON_PURPLE, "royal_violet" to ROYAL_VIOLET, "deep_purple" to DEEP_PURPLE,
+        "indigo" to INDIGO, "lavender" to LAVENDER, "electric_violet" to ELECTRIC_VIOLET,
+        "dark_plum" to DARK_PLUM,
+
+        "hot_pink" to HOT_PINK, "rose_pink" to ROSE_PINK, "bubblegum" to BUBBLEGUM,
+        "deep_magenta" to DEEP_MAGENTA, "crimson_pink" to CRIMSON_PINK, "neon_fuchsia" to NEON_FUCHSIA,
+        "wine_rose" to WINE_ROSE,
+
+        "white" to WHITE, "off_white" to OFF_WHITE, "dark_off_white" to DARK_OFF_WHITE,
+        "alabaster" to ALABASTER, "ivory" to IVORY,
+
+        "light_gray" to LIGHT_GRAY, "soft_gray" to SOFT_GRAY, "silver" to SILVER,
+        "medium_gray" to MEDIUM_GRAY, "slate_gray" to SLATE_GRAY, "charcoal" to CHARCOAL,
+        "dark_gray" to DARK_GRAY, "graphite" to GRAPHITE,
+
+        "black" to BLACK, "rich_black" to RICH_BLACK, "jet_black" to JET_BLACK,
+        "midnight_indigo" to MIDNIGHT_INDIGO, "onyx" to ONYX, "obsidian" to OBSIDIAN,
+
+        "neon_red" to NEON_RED, "neon_orange" to NEON_ORANGE, "neon_yellow" to NEON_YELLOW,
+        "neon_lime" to NEON_LIME, "neon_mint" to NEON_MINT, "neon_cyan" to NEON_CYAN,
+        "neon_blue" to NEON_BLUE, "neon_pink" to NEON_PINK, "neon_magenta" to NEON_MAGENTA,
+        "electric_lime" to ELECTRIC_LIME, "electric_blue" to ELECTRIC_BLUE,
+        "electric_teal" to ELECTRIC_TEAL, "laser_lemon" to LASER_LEMON, "plasma" to PLASMA,
+
+        "coral" to CORAL, "light_coral" to LIGHT_CORAL, "salmon" to SALMON,
+        "peach" to PEACH, "apricot" to APRICOT, "papaya" to PAPAYA,
+        "blush" to BLUSH, "watermelon" to WATERMELON,
+
+        "lime" to LIME, "bright_lime" to BRIGHT_LIME, "chartreuse" to CHARTREUSE,
+        "spring_green" to SPRING_GREEN, "sea_green" to SEA_GREEN, "malachite" to MALACHITE,
+        "shamrock" to SHAMROCK,
+
+        "teal" to TEAL, "turquoise" to TURQUOISE, "aquamarine" to AQUAMARINE,
+        "cerulean" to CERULEAN, "azure" to AZURE, "cornflower" to CORNFLOWER,
+        "periwinkle" to PERIWINKLE, "ice_blue" to ICE_BLUE, "arctic" to ARCTIC,
+
+        "orchid" to ORCHID, "amethyst" to AMETHYST, "mauve" to MAUVE,
+        "iris" to IRIS, "ultraviolet" to ULTRAVIOLET, "grape" to GRAPE,
+
+        "flamingo" to FLAMINGO, "candy_pink" to CANDY_PINK, "ruby" to RUBY, "cerise" to CERISE,
+
+        "bronze" to BRONZE, "copper" to COPPER, "brass" to BRASS,
+        "rust" to RUST, "terracotta" to TERRACOTTA, "sand" to SAND, "caramel" to CARAMEL,
+
+        "sapphire" to SAPPHIRE, "topaz" to TOPAZ, "garnet" to GARNET,
+        "plum" to PLUM, "burgundy" to BURGUNDY, "maroon" to MAROON,
+    )
 
     // Every palette colour as a MiniMessage styling tag
     val RESOLVER: TagResolver = TagResolver.builder().apply {
-        fun add(name: String, color: TextColor) = resolver(TagResolver.resolver(name, Tag.styling(color)))
-
-        add("success", SUCCESS); add("warning", WARNING); add("error", ERROR)
-        add("info", INFO); add("neutral", NEUTRAL)
-
-        add("dark_red", DARK_RED); add("red", RED); add("light_red", LIGHT_RED)
-        add("crimson", CRIMSON); add("scarlet", SCARLET); add("orange", ORANGE)
-        add("tangerine", TANGERINE); add("warm_orange", WARM_ORANGE); add("fire_orange", FIRE_ORANGE)
-        add("dark_cherry", DARK_CHERRY)
-
-        add("gold", GOLD); add("yellow", YELLOW); add("golden_yellow", GOLDEN_YELLOW)
-        add("sun_glow", SUN_GLOW); add("honey_gold", HONEY_GOLD); add("warm_yellow", WARM_YELLOW)
-        add("amber", AMBER); add("mustard", MUSTARD); add("dark_gold", DARK_GOLD)
-
-        add("dark_green", DARK_GREEN); add("green", GREEN); add("light_green", LIGHT_GREEN)
-        add("neon_green", NEON_GREEN); add("emerald", EMERALD); add("forest_green", FOREST_GREEN)
-        add("mint", MINT); add("teal_green", TEAL_GREEN); add("jungle_green", JUNGLE_GREEN)
-        add("moss", MOSS)
-
-        add("dark_blue", DARK_BLUE); add("blue", BLUE); add("highlight_blue", HIGHLIGHT_BLUE)
-        add("highlight", HIGHLIGHT); add("bright_blue", BRIGHT_BLUE); add("sky_blue", SKY_BLUE)
-        add("ios_blue", IOS_BLUE); add("vibrant_cyan", VIBRANT_CYAN); add("aqua_glow", AQUA_GLOW)
-        add("navy", NAVY); add("midnight_blue", MIDNIGHT_BLUE)
-
-        add("darkish_purple", DARKISH_PURPLE); add("light_purple", LIGHT_PURPLE); add("blurple", BLURPLE)
-        add("neon_purple", NEON_PURPLE); add("royal_violet", ROYAL_VIOLET); add("deep_purple", DEEP_PURPLE)
-        add("indigo", INDIGO); add("lavender", LAVENDER); add("electric_violet", ELECTRIC_VIOLET)
-        add("dark_plum", DARK_PLUM)
-
-        add("hot_pink", HOT_PINK); add("rose_pink", ROSE_PINK); add("bubblegum", BUBBLEGUM)
-        add("deep_magenta", DEEP_MAGENTA); add("crimson_pink", CRIMSON_PINK); add("neon_fuchsia", NEON_FUCHSIA)
-        add("wine_rose", WINE_ROSE)
-
-        add("white", WHITE); add("off_white", OFF_WHITE); add("dark_off_white", DARK_OFF_WHITE)
-        add("alabaster", ALABASTER); add("ivory", IVORY)
-
-        add("light_gray", LIGHT_GRAY); add("soft_gray", SOFT_GRAY); add("silver", SILVER)
-        add("medium_gray", MEDIUM_GRAY); add("slate_gray", SLATE_GRAY); add("charcoal", CHARCOAL)
-        add("dark_gray", DARK_GRAY); add("graphite", GRAPHITE)
-
-        add("black", BLACK); add("rich_black", RICH_BLACK); add("jet_black", JET_BLACK)
-        add("midnight_indigo", MIDNIGHT_INDIGO)
+        TAGS.forEach { (name, color) -> resolver(TagResolver.resolver(name, Tag.styling(color))) }
     }.build()
+
+    // Colour value to its canonical tag name. See [TAGS] for why the first declaration wins
+    private val NAMES_BY_VALUE: Map<Int, String> = HashMap<Int, String>(TAGS.size * 2).apply {
+        TAGS.forEach { (name, color) -> putIfAbsent(color.value(), name) }
+    }
+
+    /**
+     * MiniMessage compiles a tag away at parse time - a rendered `Component` carries a resolved RGB
+     * value and no memory of which tag produced it - so this is the only route back from what a player
+     * was shown to the decision that coloured it.
+     *
+     * @return the palette name for [color], or null when it is not one of ours
+     */
+    fun tag(color: TextColor): String? = NAMES_BY_VALUE[color.value()]
+
+    /**
+     * What this is for: telling whether text performs differently depending on how it was coloured.
+     * That question is only askable because the palette is a fixed, named set - a codebase writing raw
+     * hex everywhere could not ask it at all.
+     *
+     * **Colours outside the palette are ignored rather than reported as hex.** An unbounded set of
+     * colour values is the cardinality mistake every label rule exists to prevent, and a one-off hex
+     * is not a design decision worth comparing anything against.
+     *
+     * @return every palette name used anywhere in [component], parents before children
+     */
+    fun tags(component: Component): Set<String> {
+        val found = LinkedHashSet<String>(4)
+        collect(component, found)
+
+        return found
+    }
+
+    private fun collect(component: Component, into: MutableSet<String>) {
+        component.color()?.let { color -> tag(color)?.let(into::add) }
+
+        val children = component.children()
+        for (index in children.indices) collect(children[index], into)
+    }
 }

@@ -1,6 +1,6 @@
 package com.tricrotism.cryon.common.deploy
 
-import com.tricrotism.cryon.common.config.ConfigKeys
+import com.tricrotism.cryon.common.config.ConfigSchema
 import java.time.Duration
 
 /**
@@ -11,11 +11,11 @@ import java.time.Duration
  * password. The empty defaults allow a token in `config.yml`, but that file is the one an operator is
  * most likely to paste into a support channel.
  */
-object DeployKeys {
+object DeployKeys : ConfigSchema() {
 
-    val ENABLED = ConfigKeys.boolean("deploy.enabled", false)
-    val REFS_URL = ConfigKeys.string("deploy.refs-url", "")
-    val ARCHIVE_URL = ConfigKeys.string("deploy.archive-url", "")
+    val ENABLED = boolean("deploy.enabled", false)
+    val REFS_URL = string("deploy.refs-url", "")
+    val ARCHIVE_URL = string("deploy.archive-url", "")
 
     /**
      * The branch to deploy from, as a bare name.
@@ -25,7 +25,7 @@ object DeployKeys {
      * how a server pins to a tag. A branch the repository does not have falls back rather than
      * failing; see [GitDeploy].
      */
-    val BRANCH = ConfigKeys.nonBlankString("deploy.branch", "main")
+    val BRANCH = nonBlankString("deploy.branch", "main")
 
     /**
      * The directory in the repository holding this server's files.
@@ -35,7 +35,7 @@ object DeployKeys {
      * name, which is the right default: a pool of interchangeable nodes wants one folder between
      * them. Name it explicitly when the folder is not called after the pool.
      */
-    val FOLDER = ConfigKeys.nonBlankString("deploy.folder", "{server}")
+    val FOLDER = nonBlankString("deploy.folder", "{server}")
 
     /**
      * The directory every server takes files from, laid down under [FOLDER].
@@ -49,15 +49,15 @@ object DeployKeys {
      * misconfiguration and says nothing, unlike [FOLDER], whose absence means this server gets
      * nothing at all.
      */
-    val GLOBAL_FOLDER = ConfigKeys.string("deploy.global-folder", "global")
+    val GLOBAL_FOLDER = string("deploy.global-folder", "global")
 
-    val POLL_SECONDS = ConfigKeys.long("deploy.poll-seconds", 60L, 15L..86400L)
-    val TIMEOUT_SECONDS = ConfigKeys.long("deploy.timeout-seconds", 30L, 5L..600L)
-    val USERNAME = ConfigKeys.string("deploy.username", "")
-    val PASSWORD = ConfigKeys.string("deploy.password", "")
-    val PATH_CONFIG = ConfigKeys.string("deploy.paths.config", "config.yml")
-    val PATH_LANG = ConfigKeys.string("deploy.paths.lang", "lang")
-    val PATH_MODULES = ConfigKeys.string("deploy.paths.modules", "modules")
+    val POLL_SECONDS = long("deploy.poll-seconds", 60L, 15L..86400L)
+    val TIMEOUT_SECONDS = long("deploy.timeout-seconds", 30L, 5L..600L)
+    val USERNAME = string("deploy.username", "")
+    val PASSWORD = string("deploy.password", "")
+    val PATH_CONFIG = string("deploy.paths.config", "config.yml")
+    val PATH_LANG = string("deploy.paths.lang", "lang")
+    val PATH_MODULES = string("deploy.paths.modules", "modules")
 
     /**
      * Contract jars, mirroring `plugins/Cryon/api/`.
@@ -67,7 +67,7 @@ object DeployKeys {
      * interface. A repository carrying a feature whose API another repository compiles against has
      * nowhere else to put it.
      */
-    val PATH_API = ConfigKeys.string("deploy.paths.api", "api")
+    val PATH_API = string("deploy.paths.api", "api")
 
     /**
      * Per-module config directories, mirroring `plugins/Cryon/data/<module-id>/`.
@@ -76,7 +76,7 @@ object DeployKeys {
      * default bundled in its own jar on first run, exactly as it does with no deploy configured. So a
      * server folder only has to hold what it actually changes.
      */
-    val PATH_DATA = ConfigKeys.string("deploy.paths.data", "data")
+    val PATH_DATA = string("deploy.paths.data", "data")
 
     /**
      * @return [BRANCH] as a full ref

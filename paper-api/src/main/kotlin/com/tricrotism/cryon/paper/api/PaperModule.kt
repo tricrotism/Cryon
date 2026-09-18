@@ -12,6 +12,7 @@ import io.papermc.paper.threadedregions.scheduler.ScheduledTask
 import kotlinx.coroutines.*
 import org.bukkit.Location
 import org.bukkit.Server
+import org.bukkit.configuration.InvalidConfigurationException
 import org.bukkit.configuration.file.YamlConfiguration
 import org.bukkit.entity.Entity
 import org.bukkit.event.HandlerList
@@ -19,6 +20,7 @@ import org.bukkit.event.Listener
 import org.bukkit.plugin.Plugin
 import org.slf4j.Logger
 import java.io.File
+import java.io.IOException
 import java.lang.Runnable
 import java.util.*
 import java.util.concurrent.TimeUnit
@@ -42,6 +44,16 @@ abstract class PaperModule : Module {
     @Volatile
     private var scopeStarted = false
     private val flushes = ArrayList<AutoCloseable>()
+
+    /**
+     * The same callbacks [flushes] unregisters, kept so teardown can *run* them one last time.
+     *
+     * Held here rather than asked of `PlayerHandoff`, which would mean widening a published interface
+     * to answer a question this module already knows the answer to.
+     */
+    private val ownFlushes = ArrayList<OwnFlush>()
+
+    private class OwnFlush(val name: String, val stage: Int, val flush: suspend (UUID) -> Unit)
     private val placeholders = ArrayList<AutoCloseable>()
     private val tasks = ArrayList<ScheduledTask>()
     private val closeables = ArrayList<AutoCloseable>()
@@ -70,7 +82,19 @@ abstract class PaperModule : Module {
     }
 
     /**
-     * Load [name] from [dataFolder], writing the copy bundled in this module's jar the first time.
+     * Load [name] from [dataFolder], writing the copy bundled in this module's jar the first time and
+     * folding in every option added since.
+     *
+     * The fold is the half that used to be missing. Writing the default only when the file is absent
+     * means a release that adds a key ships it to nobody: the key is never written, the operator never
+     * learns the option exists, and the module runs on the compiled-in default while its own config
+     * file says nothing about it. The only way to see a new option was to delete the file, losing
+     * every setting with it.
+     *
+     * A key you delete stays deleted. A record of every default already offered is kept beside the
+     * file, so removing a shipped category or option is a thing an operator can actually do, and the
+     * next release still reaches them with whatever it genuinely added. Delete that record to be
+     * offered everything again.
      *
      * Reads the resource through *this module's* classloader, so each jar ships its own defaults and
      * they cannot collide. Returns a fresh read each call, which is also how you reload: hold the
@@ -84,8 +108,108 @@ abstract class PaperModule : Module {
      */
     protected fun config(name: String = "config.yml"): YamlConfiguration {
         val file = File(dataFolder, name)
-        if (!file.exists()) extractDefault(name, file)
-        return YamlConfiguration.loadConfiguration(file)
+
+        if (!file.exists()) {
+            extractDefault(name, file)
+            bundledConfig(name)?.let { remember(name, ConfigDefaults.leaves(it)) }
+            return YamlConfiguration.loadConfiguration(file)
+        }
+
+        val existing = YamlConfiguration.loadConfiguration(file)
+
+        return bundledConfig(name)?.let { merge(name, file, existing, it) } ?: existing
+    }
+
+    /**
+     * This jar's bundled [name] parsed, or null when it ships none or ships one that does not parse.
+     *
+     * A default that does not parse is this module's bug rather than the operator's, so it is logged
+     * and the file on disk is left exactly as it was. Refusing to start over a broken default would
+     * take a working server down for a mistake in a resource nobody had edited.
+     */
+    private fun bundledConfig(name: String): YamlConfiguration? {
+        val text = bundledResource(name)?.toString(Charsets.UTF_8) ?: return null
+
+        return try {
+            YamlConfiguration().apply { loadFromString(text) }
+        } catch (e: InvalidConfigurationException) {
+            logger.error("The $name bundled in module '$id' does not parse, leaving the file on disk alone", e)
+            null
+        }
+    }
+
+    /**
+     * [existing] plus every option the bundled default has and it does not.
+     *
+     * The bundled copy is the base rather than the file on disk, so comments and key order are the
+     * ones shipped in this release. Improving the guidance above a key reaches every server on the
+     * next boot, and the trade is that an operator's own comments do not survive.
+     *
+     * Values are copied leaf by leaf, never a section at a time. Copying a whole section would take
+     * the sub-keys the release just added out with it, which is the failure this exists to prevent. A
+     * list counts as a leaf, so a list somebody customised wins whole rather than being merged into.
+     * Anything they wrote that the default has never heard of, an extra category or a key from a newer
+     * release running on an older jar, is copied back so the rewrite cannot lose it.
+     *
+     * **A key the operator deleted stays deleted.** The record beside the file names every default
+     * this module has already offered, so a key missing from the file is either one they removed, and
+     * is left out, or one this release added, and is written in. Without that record the two cases are
+     * identical on disk and a deleted category comes back on every boot, which is worse than useless:
+     * there is no way to say no to a shipped default.
+     *
+     * Only rewritten when something is genuinely new, so a config already current is left alone and
+     * its modification time keeps meaning something.
+     */
+    private fun merge(
+        name: String,
+        file: File,
+        existing: YamlConfiguration,
+        bundled: YamlConfiguration,
+    ): YamlConfiguration {
+        val folded = ConfigDefaults.fold(existing, bundled, offered(name))
+
+        if (folded.added.isEmpty()) {
+            remember(name, folded.offered)
+            return folded.result
+        }
+
+        return try {
+            folded.result.save(file)
+            remember(name, folded.offered)
+            logger.info(
+                "Added ${folded.added.size} new option(s) to $name for module '$id': ${folded.added.joinToString()}"
+            )
+            folded.result
+        } catch (e: IOException) {
+            logger.error("Could not write the updated $name for module '$id', running on what is on disk", e)
+            existing
+        }
+    }
+
+    /**
+     * Every default key this module has already written into [name], or null the first time, before
+     * any record existed.
+     */
+    private fun offered(name: String): Set<String>? {
+        val record = File(dataFolder, "$name$OFFERED_SUFFIX")
+        if (!record.exists()) return null
+
+        return try {
+            record.readLines().map(String::trim).filterTo(HashSet()) { it.isNotEmpty() && !it.startsWith("#") }
+        } catch (e: IOException) {
+            logger.error("Could not read the record beside $name for module '$id', treating its defaults as new", e)
+            null
+        }
+    }
+
+    private fun remember(name: String, keys: Collection<String>) {
+        val record = File(dataFolder, "$name$OFFERED_SUFFIX")
+
+        try {
+            record.writeText(OFFERED_HEADER + keys.sorted().joinToString("\n"))
+        } catch (e: IOException) {
+            logger.error("Could not write the record beside $name for module '$id', a deleted option may return", e)
+        }
     }
 
     /**
@@ -309,6 +433,65 @@ abstract class PaperModule : Module {
             return
         }
         flushes += handoff.onFlush("$id/$name", stage, flush)
+        ownFlushes += OwnFlush(name, stage, flush)
+    }
+
+    /**
+     * Write this module's player state down before anything else is released.
+     *
+     * **Without this a hot-swap with players online loses data silently.** Teardown cancels the save
+     * timer, cancels the scope, and unregisters these callbacks, so whatever was dirty in memory is
+     * dropped with no exception and no log line. `Cryon.flushOnlinePlayers` covers a server stop and
+     * nothing covered `/cryon reload|unload` or a watcher swap, which is exactly when an admin is
+     * least expecting to lose anything.
+     *
+     * Runs on **every** disable, not only an unload. A reload is precisely the moment state must
+     * survive, and a flush the module has already performed itself simply writes the same bytes
+     * again.
+     *
+     * Blocking here is deliberate and is the fourth `runBlocking` in the project. There is no later
+     * tick to resume on: the caller is about to cancel the scope and close the classloader, so work
+     * left suspended is work that never happens, and a flush launched asynchronously would run its
+     * lambda against a loader that has since closed. It is bounded, and it is an admin path, never a
+     * tick or event one.
+     */
+    private fun flushBeforeTeardown() {
+        if (ownFlushes.isEmpty()) return
+        val online = server.onlinePlayers.map { it.uniqueId }
+        if (online.isEmpty()) return
+
+        // Stage ordering is the same contract PlayerHandoff documents: a flush that hands state back
+        // to another feature has to land before the feature that owns it writes.
+        val stages = ownFlushes.groupBy { it.stage }.toSortedMap()
+
+        val flushed = runCatching {
+            runBlocking {
+                withTimeout(FLUSH_TIMEOUT_MILLIS) {
+                    for ((_, group) in stages) {
+                        online.map { player ->
+                            async(CryonDispatchers.Async) {
+                                for (entry in group) {
+                                    try {
+                                        entry.flush(player)
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        logger.error("Final flush '{}' failed for {}", entry.name, player, e)
+                                    }
+                                }
+                            }
+                        }.awaitAll()
+                    }
+                }
+            }
+        }
+
+        flushed.onFailure {
+            logger.error(
+                "Timed out flushing state for module '{}' after {}ms; {} player(s) may have lost unsaved changes",
+                id, FLUSH_TIMEOUT_MILLIS, online.size,
+            )
+        }
     }
 
     /**
@@ -336,6 +519,12 @@ abstract class PaperModule : Module {
      * Every step is guarded, because one throwing release must not strand the ones behind it.
      */
     override fun onDisable() {
+        // First, while the module's state is still whole. Everything below this line is release, and
+        // a flush after the scope is cancelled is a flush that silently does nothing.
+        //
+        // It runs when `super.onDisable()` runs, so **do not discard state before calling super**: a
+        // subclass that clears its cache first hands this an empty one to write down.
+        runCatching { flushBeforeTeardown() }
         tasks.forEach { runCatching { it.cancel() } }
         tasks.clear()
         listeners.forEach { runCatching { HandlerList.unregisterAll(it) } }
@@ -345,7 +534,34 @@ abstract class PaperModule : Module {
         closeables.clear()
         flushes.forEach { runCatching { it.close() } }
         flushes.clear()
+        ownFlushes.clear()
         placeholders.forEach { runCatching { it.close() } }
         placeholders.clear()
+    }
+
+    private companion object {
+
+        /**
+         * How long teardown waits for this module's final flush.
+         *
+         * Bounded because the caller is usually the global region thread, which on Paper is the main
+         * thread: an admin reloading a module expects a pause, not a hang behind one wedged write.
+         * Past it the reload proceeds and the log names how many players were affected, which is
+         * worth more than stalling the server on a database that is not answering.
+         */
+        const val FLUSH_TIMEOUT_MILLIS = 5_000L
+
+        const val OFFERED_SUFFIX = ".defaults"
+
+        val OFFERED_HEADER = """
+            # Every default this module has already written into the file beside this one.
+            #
+            # It exists so a key you delete stays deleted. A key the bundled default has and your file
+            # does not is left out when it is listed here, and written in when it is not, which is how
+            # a new release still reaches you without undoing your edits.
+            #
+            # Delete this file to be offered every default again on the next boot.
+
+        """.trimIndent() + "\n"
     }
 }

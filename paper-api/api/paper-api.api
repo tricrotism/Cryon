@@ -1,0 +1,773 @@
+public final class com/tricrotism/cryon/paper/api/CryonPaper {
+	public static final field INSTANCE Lcom/tricrotism/cryon/paper/api/CryonPaper;
+	public final fun getPlugin ()Lorg/bukkit/plugin/Plugin;
+	public final fun init (Lorg/bukkit/plugin/Plugin;)V
+}
+
+public abstract class com/tricrotism/cryon/paper/api/PaperModule : com/tricrotism/cryon/common/module/Module {
+	public fun <init> ()V
+	protected final fun asyncTimer (JJLjava/util/concurrent/TimeUnit;Lkotlin/jvm/functions/Function1;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	protected final fun config (Ljava/lang/String;)Lorg/bukkit/configuration/file/YamlConfiguration;
+	public static synthetic fun config$default (Lcom/tricrotism/cryon/paper/api/PaperModule;Ljava/lang/String;ILjava/lang/Object;)Lorg/bukkit/configuration/file/YamlConfiguration;
+	protected final fun entityTimer (Lorg/bukkit/entity/Entity;JJLjava/lang/Runnable;Lkotlin/jvm/functions/Function1;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	public static synthetic fun entityTimer$default (Lcom/tricrotism/cryon/paper/api/PaperModule;Lorg/bukkit/entity/Entity;JJLjava/lang/Runnable;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	protected final fun getBedrock ()Lcom/tricrotism/cryon/paper/api/bedrock/BedrockService;
+	public fun getChildren ()Ljava/util/List;
+	protected final fun getContext ()Lcom/tricrotism/cryon/paper/api/PaperModuleContext;
+	protected final fun getDataFolder ()Ljava/io/File;
+	public fun getDependencies ()Ljava/util/List;
+	protected final fun getLogger ()Lorg/slf4j/Logger;
+	protected final fun getPlugin ()Lorg/bukkit/plugin/Plugin;
+	protected final fun getScope ()Lkotlinx/coroutines/CoroutineScope;
+	protected final fun getServer ()Lorg/bukkit/Server;
+	protected final fun getServices ()Lcom/tricrotism/cryon/common/module/ServiceRegistry;
+	protected final fun globalTimer (JJLkotlin/jvm/functions/Function1;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	protected final fun isEnabled ()Z
+	protected final fun listen (Lorg/bukkit/event/Listener;)V
+	public fun onDisable ()V
+	public fun onEnable ()V
+	protected final fun onFlush (Ljava/lang/String;ILkotlin/jvm/functions/Function2;)V
+	public static synthetic fun onFlush$default (Lcom/tricrotism/cryon/paper/api/PaperModule;Ljava/lang/String;ILkotlin/jvm/functions/Function2;ILjava/lang/Object;)V
+	public fun onLoad (Lcom/tricrotism/cryon/common/module/ModuleContext;)V
+	public fun postLoad ()V
+	public fun preLoad (Lcom/tricrotism/cryon/common/module/ModuleContext;)V
+	protected final fun regionTimer (Lorg/bukkit/Location;JJLkotlin/jvm/functions/Function1;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	protected final fun registerBranchCommands ([Ljava/lang/Object;)V
+	protected final fun registerCommands ([Ljava/lang/Object;)V
+	protected final fun registerPlaceholders (Lcom/tricrotism/cryon/paper/api/placeholder/PlaceholderProvider;)V
+	protected final fun track (Ljava/lang/AutoCloseable;)Ljava/lang/AutoCloseable;
+}
+
+public abstract interface class com/tricrotism/cryon/paper/api/PaperModuleContext : com/tricrotism/cryon/common/module/ModuleContext {
+	public abstract fun getPlugin ()Lorg/bukkit/plugin/Plugin;
+	public abstract fun getServer ()Lorg/bukkit/Server;
+}
+
+public final class com/tricrotism/cryon/paper/api/bar/ActionBars {
+	public static final field INSTANCE Lcom/tricrotism/cryon/paper/api/bar/ActionBars;
+	public final fun clear (Lorg/bukkit/entity/Player;)V
+	public final fun clear (Lorg/bukkit/entity/Player;Ljava/lang/String;)V
+	public static synthetic fun clear$default (Lcom/tricrotism/cryon/paper/api/bar/ActionBars;Lorg/bukkit/entity/Player;Ljava/lang/String;ILjava/lang/Object;)V
+	public final fun clearAll (Lorg/bukkit/entity/Player;)V
+	public final fun install ()V
+	public final fun send (Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;JILjava/lang/String;)V
+	public static synthetic fun send$default (Lcom/tricrotism/cryon/paper/api/bar/ActionBars;Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;JILjava/lang/String;ILjava/lang/Object;)V
+	public final fun uninstall ()V
+}
+
+public final class com/tricrotism/cryon/paper/api/bar/BossBars {
+	public static final field INSTANCE Lcom/tricrotism/cryon/paper/api/bar/BossBars;
+	public final fun create (Lnet/kyori/adventure/text/Component;FLnet/kyori/adventure/bossbar/BossBar$Color;Lnet/kyori/adventure/bossbar/BossBar$Overlay;)Lcom/tricrotism/cryon/paper/api/bar/CryonBossBar;
+	public static synthetic fun create$default (Lcom/tricrotism/cryon/paper/api/bar/BossBars;Lnet/kyori/adventure/text/Component;FLnet/kyori/adventure/bossbar/BossBar$Color;Lnet/kyori/adventure/bossbar/BossBar$Overlay;ILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/bar/CryonBossBar;
+	public final fun install ()V
+	public final fun uninstall ()V
+}
+
+public final class com/tricrotism/cryon/paper/api/bar/CryonBossBar : java/lang/AutoCloseable {
+	public fun close ()V
+	public final fun color (Lnet/kyori/adventure/bossbar/BossBar$Color;)Lcom/tricrotism/cryon/paper/api/bar/CryonBossBar;
+	public final fun getName ()Lnet/kyori/adventure/text/Component;
+	public final fun getProgress ()F
+	public final fun hide (Lorg/bukkit/entity/Player;)Lcom/tricrotism/cryon/paper/api/bar/CryonBossBar;
+	public final fun isShownTo (Lorg/bukkit/entity/Player;)Z
+	public final fun name (Lnet/kyori/adventure/text/Component;)Lcom/tricrotism/cryon/paper/api/bar/CryonBossBar;
+	public final fun overlay (Lnet/kyori/adventure/bossbar/BossBar$Overlay;)Lcom/tricrotism/cryon/paper/api/bar/CryonBossBar;
+	public final fun progress (F)Lcom/tricrotism/cryon/paper/api/bar/CryonBossBar;
+	public final fun show (Lorg/bukkit/entity/Player;)Lcom/tricrotism/cryon/paper/api/bar/CryonBossBar;
+	public final fun viewerCount ()I
+}
+
+public final class com/tricrotism/cryon/paper/api/bedrock/BedrockInput : java/lang/Enum {
+	public static final field CONTROLLER Lcom/tricrotism/cryon/paper/api/bedrock/BedrockInput;
+	public static final field KEYBOARD_MOUSE Lcom/tricrotism/cryon/paper/api/bedrock/BedrockInput;
+	public static final field TOUCH Lcom/tricrotism/cryon/paper/api/bedrock/BedrockInput;
+	public static final field UNKNOWN Lcom/tricrotism/cryon/paper/api/bedrock/BedrockInput;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun isTouchLike ()Z
+	public static fun valueOf (Ljava/lang/String;)Lcom/tricrotism/cryon/paper/api/bedrock/BedrockInput;
+	public static fun values ()[Lcom/tricrotism/cryon/paper/api/bedrock/BedrockInput;
+}
+
+public abstract interface class com/tricrotism/cryon/paper/api/bedrock/BedrockService {
+	public abstract fun closeForm (Lorg/bukkit/entity/Player;)Z
+	public abstract fun inputMode (Lorg/bukkit/entity/Player;)Lcom/tricrotism/cryon/paper/api/bedrock/BedrockInput;
+	public abstract fun isBedrock (Lorg/bukkit/entity/Player;)Z
+	public abstract fun sendCustomForm (Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;)Z
+	public static synthetic fun sendCustomForm$default (Lcom/tricrotism/cryon/paper/api/bedrock/BedrockService;Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)Z
+	public abstract fun sendModalForm (Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lkotlin/jvm/functions/Function1;)Z
+	public abstract fun sendSimpleForm (Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Ljava/util/List;Lkotlin/jvm/functions/Function0;)Z
+	public static synthetic fun sendSimpleForm$default (Lcom/tricrotism/cryon/paper/api/bedrock/BedrockService;Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Ljava/util/List;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)Z
+}
+
+public final class com/tricrotism/cryon/paper/api/bedrock/BedrockService$DefaultImpls {
+	public static synthetic fun sendCustomForm$default (Lcom/tricrotism/cryon/paper/api/bedrock/BedrockService;Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;Ljava/util/List;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)Z
+	public static synthetic fun sendSimpleForm$default (Lcom/tricrotism/cryon/paper/api/bedrock/BedrockService;Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Ljava/util/List;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)Z
+}
+
+public final class com/tricrotism/cryon/paper/api/bedrock/FormButton {
+	public fun <init> (Lnet/kyori/adventure/text/Component;Lcom/tricrotism/cryon/paper/api/bedrock/FormImage;Lkotlin/jvm/functions/Function0;)V
+	public synthetic fun <init> (Lnet/kyori/adventure/text/Component;Lcom/tricrotism/cryon/paper/api/bedrock/FormImage;Lkotlin/jvm/functions/Function0;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lnet/kyori/adventure/text/Component;Lkotlin/jvm/functions/Function0;)V
+	public final fun component1 ()Lnet/kyori/adventure/text/Component;
+	public final fun component2 ()Lcom/tricrotism/cryon/paper/api/bedrock/FormImage;
+	public final fun component3 ()Lkotlin/jvm/functions/Function0;
+	public final fun copy (Lnet/kyori/adventure/text/Component;Lcom/tricrotism/cryon/paper/api/bedrock/FormImage;Lkotlin/jvm/functions/Function0;)Lcom/tricrotism/cryon/paper/api/bedrock/FormButton;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/paper/api/bedrock/FormButton;Lnet/kyori/adventure/text/Component;Lcom/tricrotism/cryon/paper/api/bedrock/FormImage;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/bedrock/FormButton;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getImage ()Lcom/tricrotism/cryon/paper/api/bedrock/FormImage;
+	public final fun getLabel ()Lnet/kyori/adventure/text/Component;
+	public final fun getOnTap ()Lkotlin/jvm/functions/Function0;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/tricrotism/cryon/paper/api/bedrock/FormField {
+	public abstract fun getId ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/paper/api/bedrock/FormField$Dropdown : com/tricrotism/cryon/paper/api/bedrock/FormField {
+	public fun <init> (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Ljava/util/List;I)V
+	public synthetic fun <init> (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Ljava/util/List;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lnet/kyori/adventure/text/Component;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()I
+	public final fun copy (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Ljava/util/List;I)Lcom/tricrotism/cryon/paper/api/bedrock/FormField$Dropdown;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/paper/api/bedrock/FormField$Dropdown;Ljava/lang/String;Lnet/kyori/adventure/text/Component;Ljava/util/List;IILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/bedrock/FormField$Dropdown;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDefaultIndex ()I
+	public fun getId ()Ljava/lang/String;
+	public final fun getLabel ()Lnet/kyori/adventure/text/Component;
+	public final fun getOptions ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/paper/api/bedrock/FormField$Input : com/tricrotism/cryon/paper/api/bedrock/FormField {
+	public fun <init> (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lnet/kyori/adventure/text/Component;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Ljava/lang/String;Ljava/lang/String;)Lcom/tricrotism/cryon/paper/api/bedrock/FormField$Input;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/paper/api/bedrock/FormField$Input;Ljava/lang/String;Lnet/kyori/adventure/text/Component;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/bedrock/FormField$Input;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDefault ()Ljava/lang/String;
+	public fun getId ()Ljava/lang/String;
+	public final fun getLabel ()Lnet/kyori/adventure/text/Component;
+	public final fun getPlaceholder ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/paper/api/bedrock/FormField$Slider : com/tricrotism/cryon/paper/api/bedrock/FormField {
+	public fun <init> (Ljava/lang/String;Lnet/kyori/adventure/text/Component;FFIF)V
+	public synthetic fun <init> (Ljava/lang/String;Lnet/kyori/adventure/text/Component;FFIFILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lnet/kyori/adventure/text/Component;
+	public final fun component3 ()F
+	public final fun component4 ()F
+	public final fun component5 ()I
+	public final fun component6 ()F
+	public final fun copy (Ljava/lang/String;Lnet/kyori/adventure/text/Component;FFIF)Lcom/tricrotism/cryon/paper/api/bedrock/FormField$Slider;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/paper/api/bedrock/FormField$Slider;Ljava/lang/String;Lnet/kyori/adventure/text/Component;FFIFILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/bedrock/FormField$Slider;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDefault ()F
+	public fun getId ()Ljava/lang/String;
+	public final fun getLabel ()Lnet/kyori/adventure/text/Component;
+	public final fun getMax ()F
+	public final fun getMin ()F
+	public final fun getStep ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/paper/api/bedrock/FormField$Toggle : com/tricrotism/cryon/paper/api/bedrock/FormField {
+	public fun <init> (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Z)V
+	public synthetic fun <init> (Ljava/lang/String;Lnet/kyori/adventure/text/Component;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lnet/kyori/adventure/text/Component;
+	public final fun component3 ()Z
+	public final fun copy (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Z)Lcom/tricrotism/cryon/paper/api/bedrock/FormField$Toggle;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/paper/api/bedrock/FormField$Toggle;Ljava/lang/String;Lnet/kyori/adventure/text/Component;ZILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/bedrock/FormField$Toggle;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDefault ()Z
+	public fun getId ()Ljava/lang/String;
+	public final fun getLabel ()Lnet/kyori/adventure/text/Component;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/tricrotism/cryon/paper/api/bedrock/FormImage {
+}
+
+public final class com/tricrotism/cryon/paper/api/bedrock/FormImage$Path : com/tricrotism/cryon/paper/api/bedrock/FormImage {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/tricrotism/cryon/paper/api/bedrock/FormImage$Path;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/paper/api/bedrock/FormImage$Path;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/bedrock/FormImage$Path;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPath ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/paper/api/bedrock/FormImage$Url : com/tricrotism/cryon/paper/api/bedrock/FormImage {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lcom/tricrotism/cryon/paper/api/bedrock/FormImage$Url;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/paper/api/bedrock/FormImage$Url;Ljava/lang/String;ILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/bedrock/FormImage$Url;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getUrl ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/paper/api/bedrock/FormResponse {
+	public fun <init> (Ljava/util/Map;)V
+	public final fun choice (Ljava/lang/String;)Ljava/lang/String;
+	public final fun number (Ljava/lang/String;)Ljava/lang/Float;
+	public final fun raw ()Ljava/util/Map;
+	public final fun text (Ljava/lang/String;)Ljava/lang/String;
+	public final fun toggle (Ljava/lang/String;)Ljava/lang/Boolean;
+}
+
+public final class com/tricrotism/cryon/paper/api/command/AnnotationCommands {
+	public static final field INSTANCE Lcom/tricrotism/cryon/paper/api/command/AnnotationCommands;
+	public final fun build (Ljava/lang/Object;Lkotlin/jvm/functions/Function0;)Lcom/tricrotism/cryon/paper/api/command/BuiltCommand;
+	public static synthetic fun build$default (Lcom/tricrotism/cryon/paper/api/command/AnnotationCommands;Ljava/lang/Object;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/command/BuiltCommand;
+	public final fun describe (Ljava/lang/Object;)Lcom/tricrotism/cryon/paper/api/command/CommandDescriptor;
+	public final fun register (Lio/papermc/paper/command/brigadier/Commands;Ljava/lang/Object;)V
+	public final fun register (Lio/papermc/paper/command/brigadier/Commands;Ljava/lang/Object;Lkotlin/jvm/functions/Function0;)V
+	public final fun register (Lio/papermc/paper/command/brigadier/Commands;[Ljava/lang/Object;)V
+	public static synthetic fun register$default (Lcom/tricrotism/cryon/paper/api/command/AnnotationCommands;Lio/papermc/paper/command/brigadier/Commands;Ljava/lang/Object;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)V
+}
+
+public abstract interface annotation class com/tricrotism/cryon/paper/api/command/Arg : java/lang/annotation/Annotation {
+	public abstract fun suggests ()Ljava/lang/String;
+	public abstract fun value ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/paper/api/command/BuiltCommand {
+	public fun <init> (Ljava/lang/String;Lcom/mojang/brigadier/tree/LiteralCommandNode;Ljava/lang/String;Ljava/util/List;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lcom/mojang/brigadier/tree/LiteralCommandNode;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Lcom/mojang/brigadier/tree/LiteralCommandNode;Ljava/lang/String;Ljava/util/List;)Lcom/tricrotism/cryon/paper/api/command/BuiltCommand;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/paper/api/command/BuiltCommand;Ljava/lang/String;Lcom/mojang/brigadier/tree/LiteralCommandNode;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/command/BuiltCommand;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAliases ()Ljava/util/List;
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getNode ()Lcom/mojang/brigadier/tree/LiteralCommandNode;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface annotation class com/tricrotism/cryon/paper/api/command/Command : java/lang/annotation/Annotation {
+	public abstract fun aliases ()[Ljava/lang/String;
+	public abstract fun description ()Ljava/lang/String;
+	public abstract fun name ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/paper/api/command/CommandDescriptor {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ljava/util/List;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ljava/util/List;)Lcom/tricrotism/cryon/paper/api/command/CommandDescriptor;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/paper/api/command/CommandDescriptor;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/command/CommandDescriptor;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAliases ()Ljava/util/List;
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getPermission ()Ljava/lang/String;
+	public final fun getUsages ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class com/tricrotism/cryon/paper/api/command/CommandService {
+	public abstract fun describe (Ljava/lang/String;)Ljava/util/List;
+	public abstract fun refresh ()V
+	public abstract fun register (Ljava/lang/String;Lkotlin/jvm/functions/Function0;Ljava/util/List;)V
+	public abstract fun registerBranch (Ljava/lang/String;Lkotlin/jvm/functions/Function0;Ljava/util/List;)V
+	public abstract fun unregister (Ljava/lang/String;)V
+}
+
+public abstract interface annotation class com/tricrotism/cryon/paper/api/command/Greedy : java/lang/annotation/Annotation {
+}
+
+public abstract interface annotation class com/tricrotism/cryon/paper/api/command/Permission : java/lang/annotation/Annotation {
+	public abstract fun value ()Ljava/lang/String;
+}
+
+public abstract interface annotation class com/tricrotism/cryon/paper/api/command/Subcommand : java/lang/annotation/Annotation {
+	public abstract fun value ()[Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/paper/api/diagnostic/TaskCensus {
+	public static final field INSTANCE Lcom/tricrotism/cryon/paper/api/diagnostic/TaskCensus;
+	public static final field UNKNOWN Ljava/lang/String;
+	public final fun install (Lkotlin/jvm/functions/Function1;)V
+	public final fun recordListener (Ljava/lang/Object;Lkotlin/jvm/functions/Function0;)V
+	public final fun recordTimer (Ljava/lang/Object;Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;)V
+	public final fun snapshot ()Ljava/util/Map;
+}
+
+public final class com/tricrotism/cryon/paper/api/diagnostic/TaskCensus$Kind : java/lang/Enum {
+	public static final field LISTENER Lcom/tricrotism/cryon/paper/api/diagnostic/TaskCensus$Kind;
+	public static final field TIMER Lcom/tricrotism/cryon/paper/api/diagnostic/TaskCensus$Kind;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/tricrotism/cryon/paper/api/diagnostic/TaskCensus$Kind;
+	public static fun values ()[Lcom/tricrotism/cryon/paper/api/diagnostic/TaskCensus$Kind;
+}
+
+public final class com/tricrotism/cryon/paper/api/dialog/Dialogs {
+	public static final field INSTANCE Lcom/tricrotism/cryon/paper/api/dialog/Dialogs;
+	public final fun boolInput (Ljava/lang/String;Lnet/kyori/adventure/text/Component;)Lio/papermc/paper/registry/data/dialog/input/DialogInput;
+	public final fun boolInput (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Z)Lio/papermc/paper/registry/data/dialog/input/DialogInput;
+	public static synthetic fun boolInput$default (Lcom/tricrotism/cryon/paper/api/dialog/Dialogs;Ljava/lang/String;Lnet/kyori/adventure/text/Component;ZILjava/lang/Object;)Lio/papermc/paper/registry/data/dialog/input/DialogInput;
+	public final fun choose (Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;Ljava/util/List;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun choose$default (Lcom/tricrotism/cryon/paper/api/dialog/Dialogs;Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;Ljava/util/List;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun confirm (Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun confirm$default (Lcom/tricrotism/cryon/paper/api/dialog/Dialogs;Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun form (Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;Ljava/util/List;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun form$default (Lcom/tricrotism/cryon/paper/api/dialog/Dialogs;Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;Ljava/util/List;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun notice (Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun notice$default (Lcom/tricrotism/cryon/paper/api/dialog/Dialogs;Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun numberInput (Ljava/lang/String;Lnet/kyori/adventure/text/Component;FFLjava/lang/Float;Ljava/lang/Float;)Lio/papermc/paper/registry/data/dialog/input/DialogInput;
+	public static synthetic fun numberInput$default (Lcom/tricrotism/cryon/paper/api/dialog/Dialogs;Ljava/lang/String;Lnet/kyori/adventure/text/Component;FFLjava/lang/Float;Ljava/lang/Float;ILjava/lang/Object;)Lio/papermc/paper/registry/data/dialog/input/DialogInput;
+	public final fun optionInput (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Ljava/util/List;)Lio/papermc/paper/registry/data/dialog/input/DialogInput;
+	public final fun text (Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Ljava/lang/String;ILnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun text$default (Lcom/tricrotism/cryon/paper/api/dialog/Dialogs;Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Ljava/lang/String;ILnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun textInput (Ljava/lang/String;Lnet/kyori/adventure/text/Component;)Lio/papermc/paper/registry/data/dialog/input/DialogInput;
+	public final fun textInput (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Ljava/lang/String;)Lio/papermc/paper/registry/data/dialog/input/DialogInput;
+	public final fun textInput (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Ljava/lang/String;I)Lio/papermc/paper/registry/data/dialog/input/DialogInput;
+	public static synthetic fun textInput$default (Lcom/tricrotism/cryon/paper/api/dialog/Dialogs;Ljava/lang/String;Lnet/kyori/adventure/text/Component;Ljava/lang/String;IILjava/lang/Object;)Lio/papermc/paper/registry/data/dialog/input/DialogInput;
+}
+
+public final class com/tricrotism/cryon/paper/api/dialog/Dialogs$Choice {
+	public fun <init> (Lnet/kyori/adventure/text/Component;Ljava/lang/Object;)V
+	public fun <init> (Lnet/kyori/adventure/text/Component;Ljava/lang/Object;Lnet/kyori/adventure/text/Component;)V
+	public synthetic fun <init> (Lnet/kyori/adventure/text/Component;Ljava/lang/Object;Lnet/kyori/adventure/text/Component;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Lnet/kyori/adventure/text/Component;
+	public final fun component2 ()Ljava/lang/Object;
+	public final fun component3 ()Lnet/kyori/adventure/text/Component;
+	public final fun copy (Lnet/kyori/adventure/text/Component;Ljava/lang/Object;Lnet/kyori/adventure/text/Component;)Lcom/tricrotism/cryon/paper/api/dialog/Dialogs$Choice;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/paper/api/dialog/Dialogs$Choice;Lnet/kyori/adventure/text/Component;Ljava/lang/Object;Lnet/kyori/adventure/text/Component;ILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/dialog/Dialogs$Choice;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLabel ()Lnet/kyori/adventure/text/Component;
+	public final fun getTooltip ()Lnet/kyori/adventure/text/Component;
+	public final fun getValue ()Ljava/lang/Object;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/paper/api/dialog/Dialogs$Option {
+	public fun <init> (Ljava/lang/String;Lnet/kyori/adventure/text/Component;)V
+	public fun <init> (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Z)V
+	public synthetic fun <init> (Ljava/lang/String;Lnet/kyori/adventure/text/Component;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lnet/kyori/adventure/text/Component;
+	public final fun component3 ()Z
+	public final fun copy (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Z)Lcom/tricrotism/cryon/paper/api/dialog/Dialogs$Option;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/paper/api/dialog/Dialogs$Option;Ljava/lang/String;Lnet/kyori/adventure/text/Component;ZILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/dialog/Dialogs$Option;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDisplay ()Lnet/kyori/adventure/text/Component;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getSelected ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/paper/api/event/Events {
+	public static final field INSTANCE Lcom/tricrotism/cryon/paper/api/event/Events;
+	public final fun subscribe (Ljava/lang/Class;)Lcom/tricrotism/cryon/paper/api/event/SubscriptionBuilder;
+	public final fun subscribe (Ljava/lang/Class;Lorg/bukkit/event/EventPriority;)Lcom/tricrotism/cryon/paper/api/event/SubscriptionBuilder;
+	public static synthetic fun subscribe$default (Lcom/tricrotism/cryon/paper/api/event/Events;Ljava/lang/Class;Lorg/bukkit/event/EventPriority;ILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/event/SubscriptionBuilder;
+}
+
+public final class com/tricrotism/cryon/paper/api/event/Subscription : java/lang/AutoCloseable {
+	public fun close ()V
+	public final fun isActive ()Z
+	public final fun unregister ()V
+}
+
+public final class com/tricrotism/cryon/paper/api/event/SubscriptionBuilder {
+	public final fun expireAfter (J)Lcom/tricrotism/cryon/paper/api/event/SubscriptionBuilder;
+	public final fun filter (Lkotlin/jvm/functions/Function1;)Lcom/tricrotism/cryon/paper/api/event/SubscriptionBuilder;
+	public final fun handler (Lkotlin/jvm/functions/Function1;)Lcom/tricrotism/cryon/paper/api/event/Subscription;
+	public final fun ignoreCancelled ()Lcom/tricrotism/cryon/paper/api/event/SubscriptionBuilder;
+	public final fun ignoreCancelled (Z)Lcom/tricrotism/cryon/paper/api/event/SubscriptionBuilder;
+	public static synthetic fun ignoreCancelled$default (Lcom/tricrotism/cryon/paper/api/event/SubscriptionBuilder;ZILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/event/SubscriptionBuilder;
+	public final fun priority (Lorg/bukkit/event/EventPriority;)Lcom/tricrotism/cryon/paper/api/event/SubscriptionBuilder;
+}
+
+public final class com/tricrotism/cryon/paper/api/extension/CooldownExtensionsKt {
+	public static final fun guard-zkXUZaI (Lcom/tricrotism/cryon/common/cooldown/CooldownService;Lorg/bukkit/entity/Player;Ljava/lang/String;JLjava/lang/String;)Z
+	public static synthetic fun guard-zkXUZaI$default (Lcom/tricrotism/cryon/common/cooldown/CooldownService;Lorg/bukkit/entity/Player;Ljava/lang/String;JLjava/lang/String;ILjava/lang/Object;)Z
+	public static final fun remaining (Lcom/tricrotism/cryon/common/cooldown/CooldownService;Lorg/bukkit/entity/Player;Ljava/lang/String;)J
+	public static final fun trigger-Wn2Vu4Y (Lcom/tricrotism/cryon/common/cooldown/CooldownService;Lorg/bukkit/entity/Player;Ljava/lang/String;J)Z
+}
+
+public final class com/tricrotism/cryon/paper/api/extension/FlagExtensionsKt {
+	public static final fun guard (Lcom/tricrotism/cryon/common/flag/FeatureFlags;Lorg/bukkit/entity/Player;Ljava/lang/String;)Z
+}
+
+public final class com/tricrotism/cryon/paper/api/extension/ItemExtensionsKt {
+	public static final fun getTag (Lorg/bukkit/inventory/ItemStack;Lorg/bukkit/NamespacedKey;Lorg/bukkit/persistence/PersistentDataType;)Ljava/lang/Object;
+	public static final fun hasTag (Lorg/bukkit/inventory/ItemStack;Lorg/bukkit/NamespacedKey;)Z
+	public static final fun isEmpty (Lorg/bukkit/inventory/ItemStack;)Z
+	public static final fun modify (Lorg/bukkit/inventory/ItemStack;Lkotlin/jvm/functions/Function1;)Lorg/bukkit/inventory/ItemStack;
+	public static final fun pdcType (Lkotlin/reflect/KClass;)Lorg/bukkit/persistence/PersistentDataType;
+	public static final fun removeTag (Lorg/bukkit/inventory/ItemStack;Lorg/bukkit/NamespacedKey;)V
+	public static final fun setTag (Lorg/bukkit/inventory/ItemStack;Lorg/bukkit/NamespacedKey;Lorg/bukkit/persistence/PersistentDataType;Ljava/lang/Object;)V
+	public static final fun toBuilder (Lorg/bukkit/inventory/ItemStack;)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public static final fun toItem (Lorg/bukkit/Material;)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public static final fun toItem (Lorg/bukkit/Material;I)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public static synthetic fun toItem$default (Lorg/bukkit/Material;IILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public static final fun withAmount (Lorg/bukkit/inventory/ItemStack;I)Lorg/bukkit/inventory/ItemStack;
+}
+
+public final class com/tricrotism/cryon/paper/api/extension/LocaleExtensionsKt {
+	public static final fun render (Lcom/tricrotism/cryon/common/locale/MessageService;Lorg/bukkit/entity/Player;Ljava/lang/String;[Lnet/kyori/adventure/text/minimessage/tag/resolver/TagResolver;)Lnet/kyori/adventure/text/Component;
+	public static final fun send (Lcom/tricrotism/cryon/common/locale/MessageService;Lorg/bukkit/entity/Player;Ljava/lang/String;[Lnet/kyori/adventure/text/minimessage/tag/resolver/TagResolver;)V
+}
+
+public final class com/tricrotism/cryon/paper/api/extension/PlayerLocaleExtensionsKt {
+	public static final fun clearLanguage (Lorg/bukkit/entity/Player;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun resolvedLocale (Lorg/bukkit/entity/Player;)Ljava/util/Locale;
+	public static final fun setLanguage (Lorg/bukkit/entity/Player;Ljava/util/Locale;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/paper/api/extension/TextExtensionsKt {
+	public static final fun mm (Ljava/lang/String;[Lnet/kyori/adventure/text/minimessage/tag/resolver/TagResolver;)Lnet/kyori/adventure/text/Component;
+	public static final fun sendError (Lnet/kyori/adventure/audience/Audience;Ljava/lang/String;)V
+	public static final fun sendError (Lnet/kyori/adventure/audience/Audience;Lnet/kyori/adventure/text/Component;)V
+	public static final fun sendFeatureDisabled (Lorg/bukkit/entity/Player;Ljava/lang/String;)V
+	public static final fun sendInfo (Lnet/kyori/adventure/audience/Audience;Ljava/lang/String;)V
+	public static final fun sendInfo (Lnet/kyori/adventure/audience/Audience;Lnet/kyori/adventure/text/Component;)V
+	public static final fun sendInvalidAmount (Lorg/bukkit/entity/Player;Ljava/lang/String;)V
+	public static final fun sendNoPermission (Lorg/bukkit/entity/Player;)V
+	public static final fun sendNotEnough (Lorg/bukkit/entity/Player;Lnet/kyori/adventure/text/Component;)V
+	public static final fun sendNotOnline (Lorg/bukkit/entity/Player;Ljava/lang/String;)V
+	public static final fun sendSuccess (Lnet/kyori/adventure/audience/Audience;Ljava/lang/String;)V
+	public static final fun sendSuccess (Lnet/kyori/adventure/audience/Audience;Lnet/kyori/adventure/text/Component;)V
+	public static final fun sendUnknownPlayer (Lorg/bukkit/entity/Player;Ljava/lang/String;)V
+	public static final fun sendWarn (Lnet/kyori/adventure/audience/Audience;Ljava/lang/String;)V
+	public static final fun sendWarn (Lnet/kyori/adventure/audience/Audience;Lnet/kyori/adventure/text/Component;)V
+}
+
+public final class com/tricrotism/cryon/paper/api/hud/Glyph {
+	public fun <init> (II)V
+	public final fun component1 ()I
+	public final fun component2 ()I
+	public final fun copy (II)Lcom/tricrotism/cryon/paper/api/hud/Glyph;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/paper/api/hud/Glyph;IIILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/hud/Glyph;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAdvance ()I
+	public final fun getCodepoint ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/paper/api/hud/GlyphFont {
+	public static final field Companion Lcom/tricrotism/cryon/paper/api/hud/GlyphFont$Companion;
+	public static final field DEFAULT_MAX_SPACE I
+	public fun <init> (Lnet/kyori/adventure/key/Key;III)V
+	public synthetic fun <init> (Lnet/kyori/adventure/key/Key;IIIILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getKey ()Lnet/kyori/adventure/key/Key;
+	public final fun getMaxSpace ()I
+	public final fun getNegativeBase ()I
+	public final fun getPositiveBase ()I
+	public final fun space (I)I
+}
+
+public final class com/tricrotism/cryon/paper/api/hud/GlyphFont$Companion {
+}
+
+public final class com/tricrotism/cryon/paper/api/hud/HudAnchor : java/lang/Enum {
+	public static final field CENTRE Lcom/tricrotism/cryon/paper/api/hud/HudAnchor;
+	public static final field LEFT Lcom/tricrotism/cryon/paper/api/hud/HudAnchor;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/tricrotism/cryon/paper/api/hud/HudAnchor;
+	public static fun values ()[Lcom/tricrotism/cryon/paper/api/hud/HudAnchor;
+}
+
+public final class com/tricrotism/cryon/paper/api/hud/HudCompositor {
+	public static final field Companion Lcom/tricrotism/cryon/paper/api/hud/HudCompositor$Companion;
+	public static final field DEFAULT_CAPACITY I
+	public fun <init> (Lcom/tricrotism/cryon/paper/api/hud/GlyphFont;Lcom/tricrotism/cryon/paper/api/hud/HudLayout;I)V
+	public synthetic fun <init> (Lcom/tricrotism/cryon/paper/api/hud/GlyphFont;Lcom/tricrotism/cryon/paper/api/hud/HudLayout;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun at (I)Lcom/tricrotism/cryon/paper/api/hud/HudCompositor;
+	public final fun begin ()Lcom/tricrotism/cryon/paper/api/hud/HudCompositor;
+	public final fun build (Lcom/tricrotism/cryon/paper/api/hud/HudAnchor;)Lnet/kyori/adventure/text/Component;
+	public final fun component (Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/key/Key;Z)Lcom/tricrotism/cryon/paper/api/hud/HudCompositor;
+	public static synthetic fun component$default (Lcom/tricrotism/cryon/paper/api/hud/HudCompositor;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/key/Key;ZILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/hud/HudCompositor;
+	public final fun getCursor ()I
+	public final fun glyph (Lcom/tricrotism/cryon/paper/api/hud/Glyph;)Lcom/tricrotism/cryon/paper/api/hud/HudCompositor;
+	public final fun glyph (Lcom/tricrotism/cryon/paper/api/hud/Glyph;Lnet/kyori/adventure/text/format/TextColor;)Lcom/tricrotism/cryon/paper/api/hud/HudCompositor;
+	public static synthetic fun glyph$default (Lcom/tricrotism/cryon/paper/api/hud/HudCompositor;Lcom/tricrotism/cryon/paper/api/hud/Glyph;Lnet/kyori/adventure/text/format/TextColor;ILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/hud/HudCompositor;
+	public final fun raw (Lnet/kyori/adventure/text/Component;)Lcom/tricrotism/cryon/paper/api/hud/HudCompositor;
+	public final fun space (I)Lcom/tricrotism/cryon/paper/api/hud/HudCompositor;
+	public final fun text (Ljava/lang/String;Lnet/kyori/adventure/key/Key;Lnet/kyori/adventure/text/format/TextColor;)Lcom/tricrotism/cryon/paper/api/hud/HudCompositor;
+	public final fun text (Ljava/lang/String;Lnet/kyori/adventure/key/Key;Lnet/kyori/adventure/text/format/TextColor;Z)Lcom/tricrotism/cryon/paper/api/hud/HudCompositor;
+	public final fun text (Ljava/lang/String;Lnet/kyori/adventure/key/Key;Lnet/kyori/adventure/text/format/TextColor;ZZ)Lcom/tricrotism/cryon/paper/api/hud/HudCompositor;
+	public static synthetic fun text$default (Lcom/tricrotism/cryon/paper/api/hud/HudCompositor;Ljava/lang/String;Lnet/kyori/adventure/key/Key;Lnet/kyori/adventure/text/format/TextColor;ZZILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/hud/HudCompositor;
+}
+
+public final class com/tricrotism/cryon/paper/api/hud/HudCompositor$Companion {
+	public final fun halfWidth (Ljava/lang/String;Z)I
+	public static synthetic fun halfWidth$default (Lcom/tricrotism/cryon/paper/api/hud/HudCompositor$Companion;Ljava/lang/String;ZILjava/lang/Object;)I
+}
+
+public final class com/tricrotism/cryon/paper/api/hud/HudLayout : java/lang/Enum {
+	public static final field LAYERED Lcom/tricrotism/cryon/paper/api/hud/HudLayout;
+	public static final field LINEAR Lcom/tricrotism/cryon/paper/api/hud/HudLayout;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lcom/tricrotism/cryon/paper/api/hud/HudLayout;
+	public static fun values ()[Lcom/tricrotism/cryon/paper/api/hud/HudLayout;
+}
+
+public abstract interface class com/tricrotism/cryon/paper/api/inventory/InventorySearch {
+	public fun byTag (Lorg/bukkit/NamespacedKey;Lkotlin/jvm/functions/Function1;)V
+	public fun byTag (Lorg/bukkit/NamespacedKey;Lorg/bukkit/persistence/PersistentDataType;Ljava/lang/Object;Lkotlin/jvm/functions/Function1;)V
+	public abstract fun search (Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)V
+}
+
+public final class com/tricrotism/cryon/paper/api/inventory/InventorySearch$DefaultImpls {
+	public static fun byTag (Lcom/tricrotism/cryon/paper/api/inventory/InventorySearch;Lorg/bukkit/NamespacedKey;Lkotlin/jvm/functions/Function1;)V
+	public static fun byTag (Lcom/tricrotism/cryon/paper/api/inventory/InventorySearch;Lorg/bukkit/NamespacedKey;Lorg/bukkit/persistence/PersistentDataType;Ljava/lang/Object;Lkotlin/jvm/functions/Function1;)V
+}
+
+public final class com/tricrotism/cryon/paper/api/inventory/InventorySearch$Match {
+	public fun <init> (Ljava/util/UUID;Ljava/lang/String;II)V
+	public final fun component1 ()Ljava/util/UUID;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()I
+	public final fun component4 ()I
+	public final fun copy (Ljava/util/UUID;Ljava/lang/String;II)Lcom/tricrotism/cryon/paper/api/inventory/InventorySearch$Match;
+	public static synthetic fun copy$default (Lcom/tricrotism/cryon/paper/api/inventory/InventorySearch$Match;Ljava/util/UUID;Ljava/lang/String;IIILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/inventory/InventorySearch$Match;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAmount ()I
+	public final fun getPlayerId ()Ljava/util/UUID;
+	public final fun getPlayerName ()Ljava/lang/String;
+	public final fun getSlot ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/paper/api/item/ItemBuilder {
+	public fun <init> (Lorg/bukkit/Material;I)V
+	public synthetic fun <init> (Lorg/bukkit/Material;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lorg/bukkit/inventory/ItemStack;)V
+	public final fun addLore (Lnet/kyori/adventure/text/Component;)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public final fun amount (I)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public final fun attribute (Lorg/bukkit/attribute/Attribute;Lorg/bukkit/attribute/AttributeModifier;)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public final fun build ()Lorg/bukkit/inventory/ItemStack;
+	public final fun customModelData (I)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public final fun customModelData ([F)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public final fun enchant (Lorg/bukkit/enchantments/Enchantment;I)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public final fun flags ([Lorg/bukkit/inventory/ItemFlag;)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public final fun glow (Z)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public static synthetic fun glow$default (Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;ZILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public final fun lore (Ljava/util/List;)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public final fun lore ([Ljava/lang/String;)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public final fun lore ([Lnet/kyori/adventure/text/Component;)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public final fun meta (Lkotlin/jvm/functions/Function1;)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public final fun name (Ljava/lang/String;[Lnet/kyori/adventure/text/minimessage/tag/resolver/TagResolver;)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public final fun name (Lnet/kyori/adventure/text/Component;)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public final fun tag (Lorg/bukkit/NamespacedKey;Lorg/bukkit/persistence/PersistentDataType;Ljava/lang/Object;)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public final fun unbreakable (Z)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+	public static synthetic fun unbreakable$default (Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;ZILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/item/ItemBuilder;
+}
+
+public final class com/tricrotism/cryon/paper/api/menu/ConfirmMenu {
+	public static final field INSTANCE Lcom/tricrotism/cryon/paper/api/menu/ConfirmMenu;
+	public final fun open (Lorg/bukkit/entity/Player;Lcom/tricrotism/cryon/paper/api/bedrock/BedrockService;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lkotlin/jvm/functions/Function1;)Lcom/tricrotism/cryon/paper/api/menu/ConfirmMenu$Dialog;
+	public static synthetic fun open$default (Lcom/tricrotism/cryon/paper/api/menu/ConfirmMenu;Lorg/bukkit/entity/Player;Lcom/tricrotism/cryon/paper/api/bedrock/BedrockService;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lnet/kyori/adventure/text/Component;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/menu/ConfirmMenu$Dialog;
+}
+
+public final class com/tricrotism/cryon/paper/api/menu/ConfirmMenu$Dialog : java/lang/AutoCloseable {
+	public fun close ()V
+}
+
+public final class com/tricrotism/cryon/paper/api/menu/MenuBranch : com/tricrotism/cryon/paper/api/menu/MenuNode {
+	public fun <init> (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Lkotlin/jvm/functions/Function1;Lcom/tricrotism/cryon/paper/api/menu/MenuContent;Lkotlin/jvm/functions/Function1;Ljava/util/Map;)V
+	public synthetic fun <init> (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Lkotlin/jvm/functions/Function1;Lcom/tricrotism/cryon/paper/api/menu/MenuContent;Lkotlin/jvm/functions/Function1;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Lkotlin/jvm/functions/Function1;Ljava/util/List;Lkotlin/jvm/functions/Function1;Ljava/util/Map;)V
+	public synthetic fun <init> (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Lkotlin/jvm/functions/Function1;Ljava/util/List;Lkotlin/jvm/functions/Function1;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getContent ()Lcom/tricrotism/cryon/paper/api/menu/MenuContent;
+	public fun getId ()Ljava/lang/String;
+	public final fun getPinned ()Ljava/util/Map;
+	public final fun getTitle ()Lnet/kyori/adventure/text/Component;
+	public fun icon (Lorg/bukkit/entity/Player;)Lorg/bukkit/inventory/ItemStack;
+	public fun visibleTo (Lorg/bukkit/entity/Player;)Z
+}
+
+public final class com/tricrotism/cryon/paper/api/menu/MenuChildren {
+	public final fun add (Lcom/tricrotism/cryon/paper/api/menu/MenuNode;)V
+	public final fun branch (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Lorg/bukkit/Material;Lnet/kyori/adventure/text/Component;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)V
+	public static synthetic fun branch$default (Lcom/tricrotism/cryon/paper/api/menu/MenuChildren;Ljava/lang/String;Lnet/kyori/adventure/text/Component;Lorg/bukkit/Material;Lnet/kyori/adventure/text/Component;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public final fun leaf (Ljava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Ljava/lang/Integer;Lkotlin/jvm/functions/Function1;)V
+	public final fun leaf (Ljava/lang/String;Lorg/bukkit/Material;Lnet/kyori/adventure/text/Component;Ljava/util/List;Lkotlin/jvm/functions/Function1;Ljava/lang/Integer;Lkotlin/jvm/functions/Function1;)V
+	public static synthetic fun leaf$default (Lcom/tricrotism/cryon/paper/api/menu/MenuChildren;Ljava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Ljava/lang/Integer;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public static synthetic fun leaf$default (Lcom/tricrotism/cryon/paper/api/menu/MenuChildren;Ljava/lang/String;Lorg/bukkit/Material;Lnet/kyori/adventure/text/Component;Ljava/util/List;Lkotlin/jvm/functions/Function1;Ljava/lang/Integer;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public final fun pin (ILcom/tricrotism/cryon/paper/api/menu/MenuNode;)V
+}
+
+public abstract interface class com/tricrotism/cryon/paper/api/menu/MenuContent {
+	public static final field Companion Lcom/tricrotism/cryon/paper/api/menu/MenuContent$Companion;
+	public abstract fun page (Lorg/bukkit/entity/Player;IILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class com/tricrotism/cryon/paper/api/menu/MenuContent$Companion {
+	public final fun of (Ljava/util/List;)Lcom/tricrotism/cryon/paper/api/menu/MenuContent;
+}
+
+public final class com/tricrotism/cryon/paper/api/menu/MenuLeaf : com/tricrotism/cryon/paper/api/menu/MenuNode {
+	public fun <init> (Ljava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)V
+	public synthetic fun <init> (Ljava/lang/String;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun getId ()Ljava/lang/String;
+	public final fun getOnClick ()Lkotlin/jvm/functions/Function1;
+	public fun icon (Lorg/bukkit/entity/Player;)Lorg/bukkit/inventory/ItemStack;
+	public fun visibleTo (Lorg/bukkit/entity/Player;)Z
+}
+
+public abstract interface class com/tricrotism/cryon/paper/api/menu/MenuNode {
+	public abstract fun getId ()Ljava/lang/String;
+	public abstract fun icon (Lorg/bukkit/entity/Player;)Lorg/bukkit/inventory/ItemStack;
+	public abstract fun visibleTo (Lorg/bukkit/entity/Player;)Z
+}
+
+public abstract interface class com/tricrotism/cryon/paper/api/menu/MenuObserver {
+	public fun clicked (Ljava/util/UUID;Ljava/lang/String;Ljava/lang/String;)V
+	public fun opened (Ljava/util/UUID;Ljava/lang/String;I)V
+}
+
+public final class com/tricrotism/cryon/paper/api/menu/MenuObserver$DefaultImpls {
+	public static fun clicked (Lcom/tricrotism/cryon/paper/api/menu/MenuObserver;Ljava/util/UUID;Ljava/lang/String;Ljava/lang/String;)V
+	public static fun opened (Lcom/tricrotism/cryon/paper/api/menu/MenuObserver;Ljava/util/UUID;Ljava/lang/String;I)V
+}
+
+public final class com/tricrotism/cryon/paper/api/menu/MenuPalette {
+	public static final field EMPTY C
+	public static final field INSTANCE Lcom/tricrotism/cryon/paper/api/menu/MenuPalette;
+	public final fun installGlobalIngredients ()V
+	public final fun pane (C)Lorg/bukkit/inventory/ItemStack;
+	public final fun pane (Lorg/bukkit/Material;)Lorg/bukkit/inventory/ItemStack;
+}
+
+public final class com/tricrotism/cryon/paper/api/menu/MenuTree {
+	public static final field INSTANCE Lcom/tricrotism/cryon/paper/api/menu/MenuTree;
+	public final fun getRESERVED_SLOTS ()Ljava/util/Set;
+	public final fun getSLOT_COUNT ()I
+	public final fun observe (Lcom/tricrotism/cryon/paper/api/menu/MenuObserver;)Ljava/lang/AutoCloseable;
+	public final fun open (Lorg/bukkit/entity/Player;Lcom/tricrotism/cryon/paper/api/menu/MenuBranch;Lkotlinx/coroutines/CoroutineScope;)Lcom/tricrotism/cryon/paper/api/menu/MenuTree$Session;
+}
+
+public final class com/tricrotism/cryon/paper/api/menu/MenuTree$Session : java/lang/AutoCloseable {
+	public fun close ()V
+	public final fun refresh ()V
+}
+
+public final class com/tricrotism/cryon/paper/api/menu/MenuTreeKt {
+	public static final fun branch (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Lorg/bukkit/Material;Lnet/kyori/adventure/text/Component;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)Lcom/tricrotism/cryon/paper/api/menu/MenuBranch;
+	public static synthetic fun branch$default (Ljava/lang/String;Lnet/kyori/adventure/text/Component;Lorg/bukkit/Material;Lnet/kyori/adventure/text/Component;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lcom/tricrotism/cryon/paper/api/menu/MenuBranch;
+}
+
+public final class com/tricrotism/cryon/paper/api/packet/PacketEntities {
+	public static final field INSTANCE Lcom/tricrotism/cryon/paper/api/packet/PacketEntities;
+	public final fun allocateId ()I
+	public final fun allocateIds (I)[I
+	public final fun install ()V
+	public final fun uninstall ()V
+}
+
+public abstract class com/tricrotism/cryon/paper/api/packet/PacketEntity : java/lang/AutoCloseable {
+	public fun <init> ()V
+	public final fun addViewer (Lorg/bukkit/entity/Player;)Z
+	public fun close ()V
+	public final fun despawnAll ()V
+	protected abstract fun despawnFor (Lorg/bukkit/entity/Player;)V
+	protected final fun forEachViewer (Lkotlin/jvm/functions/Function1;)V
+	public final fun forget (Ljava/util/UUID;)V
+	public final fun getViewerCount ()I
+	public final fun isViewing (Lorg/bukkit/entity/Player;)Z
+	public final fun removeViewer (Lorg/bukkit/entity/Player;)Z
+	protected abstract fun spawnFor (Lorg/bukkit/entity/Player;)V
+}
+
+public final class com/tricrotism/cryon/paper/api/packet/PacketSubscription : java/lang/AutoCloseable {
+	public fun close ()V
+	public final fun isActive ()Z
+	public final fun unregister ()V
+}
+
+public final class com/tricrotism/cryon/paper/api/packet/PacketSubscriptionBuilder {
+	public final fun expireAfter (J)Lcom/tricrotism/cryon/paper/api/packet/PacketSubscriptionBuilder;
+	public final fun filter (Lkotlin/jvm/functions/Function1;)Lcom/tricrotism/cryon/paper/api/packet/PacketSubscriptionBuilder;
+	public final fun handler (Lkotlin/jvm/functions/Function1;)Lcom/tricrotism/cryon/paper/api/packet/PacketSubscription;
+	public final fun priority (Lcom/github/retrooper/packetevents/event/PacketListenerPriority;)Lcom/tricrotism/cryon/paper/api/packet/PacketSubscriptionBuilder;
+}
+
+public final class com/tricrotism/cryon/paper/api/packet/Packets {
+	public static final field INSTANCE Lcom/tricrotism/cryon/paper/api/packet/Packets;
+	public final fun isReady ()Z
+	public final fun onReceive ([Lcom/github/retrooper/packetevents/protocol/packettype/PacketTypeCommon;)Lcom/tricrotism/cryon/paper/api/packet/PacketSubscriptionBuilder;
+	public final fun onSend ([Lcom/github/retrooper/packetevents/protocol/packettype/PacketTypeCommon;)Lcom/tricrotism/cryon/paper/api/packet/PacketSubscriptionBuilder;
+	public final fun uninstall ()V
+}
+
+public final class com/tricrotism/cryon/paper/api/packet/PacketsKt {
+	public static final fun sendPacket (Lorg/bukkit/entity/Player;Lcom/github/retrooper/packetevents/wrapper/PacketWrapper;)V
+}
+
+public abstract interface class com/tricrotism/cryon/paper/api/placeholder/PlaceholderProvider {
+	public abstract fun getIdentifier ()Ljava/lang/String;
+	public fun getPlaceholders ()Ljava/util/Collection;
+	public abstract fun onRequest (Lorg/bukkit/OfflinePlayer;Ljava/lang/String;)Ljava/lang/String;
+}
+
+public final class com/tricrotism/cryon/paper/api/placeholder/PlaceholderProvider$DefaultImpls {
+	public static fun getPlaceholders (Lcom/tricrotism/cryon/paper/api/placeholder/PlaceholderProvider;)Ljava/util/Collection;
+}
+
+public abstract interface class com/tricrotism/cryon/paper/api/placeholder/PlaceholderService {
+	public abstract fun identifiers (Ljava/lang/String;)Ljava/util/Collection;
+	public abstract fun placeholders (Ljava/lang/String;)Ljava/util/List;
+	public abstract fun register (Ljava/lang/String;Lcom/tricrotism/cryon/paper/api/placeholder/PlaceholderProvider;)Ljava/lang/AutoCloseable;
+}
+
+public final class com/tricrotism/cryon/paper/api/scheduler/CryonDispatchers {
+	public static final field INSTANCE Lcom/tricrotism/cryon/paper/api/scheduler/CryonDispatchers;
+	public final fun entity (Lorg/bukkit/entity/Entity;)Lkotlinx/coroutines/CoroutineDispatcher;
+	public final fun getAsync ()Lkotlinx/coroutines/CoroutineDispatcher;
+	public final fun getGlobal ()Lkotlinx/coroutines/CoroutineDispatcher;
+	public final fun region (Lorg/bukkit/Location;)Lkotlinx/coroutines/CoroutineDispatcher;
+}
+
+public final class com/tricrotism/cryon/paper/api/scheduler/Schedulers {
+	public static final field INSTANCE Lcom/tricrotism/cryon/paper/api/scheduler/Schedulers;
+	public final fun async (Lkotlin/jvm/functions/Function0;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	public final fun asyncLater (JLjava/util/concurrent/TimeUnit;Lkotlin/jvm/functions/Function0;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	public final fun asyncTimer (JJLjava/util/concurrent/TimeUnit;Lkotlin/jvm/functions/Function1;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	public final fun entity (Lorg/bukkit/entity/Entity;Ljava/lang/Runnable;Lkotlin/jvm/functions/Function0;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	public static synthetic fun entity$default (Lcom/tricrotism/cryon/paper/api/scheduler/Schedulers;Lorg/bukkit/entity/Entity;Ljava/lang/Runnable;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	public final fun entityLater (Lorg/bukkit/entity/Entity;JLjava/lang/Runnable;Lkotlin/jvm/functions/Function0;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	public static synthetic fun entityLater$default (Lcom/tricrotism/cryon/paper/api/scheduler/Schedulers;Lorg/bukkit/entity/Entity;JLjava/lang/Runnable;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	public final fun entityTimer (Lorg/bukkit/entity/Entity;JJLjava/lang/Runnable;Lkotlin/jvm/functions/Function1;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	public static synthetic fun entityTimer$default (Lcom/tricrotism/cryon/paper/api/scheduler/Schedulers;Lorg/bukkit/entity/Entity;JJLjava/lang/Runnable;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	public final fun global (Lkotlin/jvm/functions/Function0;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	public final fun globalLater (JLkotlin/jvm/functions/Function0;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	public final fun globalTimer (JJLkotlin/jvm/functions/Function1;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	public final fun region (Lorg/bukkit/Location;Lkotlin/jvm/functions/Function0;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	public final fun regionLater (Lorg/bukkit/Location;JLkotlin/jvm/functions/Function0;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+	public final fun regionTimer (Lorg/bukkit/Location;JJLkotlin/jvm/functions/Function1;)Lio/papermc/paper/threadedregions/scheduler/ScheduledTask;
+}
+

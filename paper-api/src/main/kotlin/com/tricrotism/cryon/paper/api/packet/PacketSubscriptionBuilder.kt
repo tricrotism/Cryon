@@ -1,13 +1,9 @@
 package com.tricrotism.cryon.paper.api.packet
 
 import com.github.retrooper.packetevents.PacketEvents
-import com.github.retrooper.packetevents.event.*
+import com.github.retrooper.packetevents.event.PacketListenerPriority
+import com.github.retrooper.packetevents.event.ProtocolPacketEvent
 import com.github.retrooper.packetevents.protocol.packettype.PacketTypeCommon
-import com.tricrotism.cryon.paper.api.CryonPaper
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicReference
-import java.util.logging.Level
 
 class PacketSubscriptionBuilder<T : ProtocolPacketEvent> internal constructor(
     private val types: Array<out PacketTypeCommon>,
@@ -20,52 +16,35 @@ class PacketSubscriptionBuilder<T : ProtocolPacketEvent> internal constructor(
     fun priority(priority: PacketListenerPriority): PacketSubscriptionBuilder<T> =
         apply { this.priority = priority }
 
+    /**
+     * Only run the handler when [predicate] holds.
+     *
+     * **This is where a subscription is scoped to particular players.** A packet listener sees every
+     * packet of every online player, so a feature that concerns one player, one world or one gamemode
+     * says so here rather than checking at the top of a handler that is otherwise doing work. Filters
+     * run on a Netty thread for every packet of a subscribed type, so keep them to field reads: no
+     * Bukkit API, no lookups that touch disk or a database.
+     */
     fun filter(predicate: (T) -> Boolean): PacketSubscriptionBuilder<T> = apply { filters.add(predicate) }
 
     /** Auto-unregister after [calls] successful handler invocations. */
     fun expireAfter(calls: Long): PacketSubscriptionBuilder<T> = apply { expiry = calls }
 
+    @Suppress("UNCHECKED_CAST")
     fun handler(handler: (T) -> Unit): PacketSubscription {
-        val api = PacketEvents.getAPI() ?: error("The packet layer is not initialized yet")
-        val plugin = CryonPaper.plugin
-        val active = AtomicBoolean(true)
-        val count = AtomicLong(0)
-        val types = this.types
-        val filters = this.filters.toTypedArray()
-        val expiry = this.expiry
-        val subscription = AtomicReference<PacketSubscription>()
+        checkNotNull(PacketEvents.getAPI()) { "The packet layer is not initialized yet" }
 
-        fun dispatch(event: T) {
-            if (!active.get()) return
-            var matched = false
-            for (type in types) if (event.packetType === type) {
-                matched = true; break
-            }
-            if (!matched) return
-            for (predicate in filters) if (!predicate(event)) return
-            try {
-                handler(event)
-            } catch (t: Throwable) {
-                plugin.logger.log(Level.SEVERE, "Error in packet handler for ${event.packetType}", t)
-                return
-            }
-            if (expiry > 0 && count.incrementAndGet() >= expiry) subscription.get()?.unregister()
-        }
+        val registration = PacketDispatcher.Registration(
+            filters = filters.toTypedArray() as Array<(ProtocolPacketEvent) -> Boolean>,
+            handler = handler as (ProtocolPacketEvent) -> Unit,
+            expiry = expiry,
+        )
+        val subscription = PacketDispatcher.register(types, direction, priority, registration)
 
-        @Suppress("UNCHECKED_CAST")
-        val listener = when (direction) {
-            Packets.Direction.RECEIVE -> object : PacketListener {
-                override fun onPacketReceive(event: PacketReceiveEvent) = dispatch(event as T)
-            }
+        // Set after registering, because expiry can only unregister something that exists. A packet
+        // arriving in between is dispatched normally and simply does not count toward the expiry.
+        registration.onExpiry = subscription::unregister
 
-            Packets.Direction.SEND -> object : PacketListener {
-                override fun onPacketSend(event: PacketSendEvent) = dispatch(event as T)
-            }
-        }
-
-        val handle = api.eventManager.registerListener(listener, priority)
-        val registered = PacketSubscription(handle, active)
-        subscription.set(registered)
-        return registered
+        return subscription
     }
 }

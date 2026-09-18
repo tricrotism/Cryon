@@ -166,17 +166,23 @@ object Dialogs {
     /**
      * One option in a [choose], and the value it stands for.
      */
-    data class Choice<T>(val label: Component, val value: T, val tooltip: Component? = null)
+    data class Choice<T> @JvmOverloads constructor(
+        val label: Component,
+        val value: T,
+        val tooltip: Component? = null,
+    )
 
     /**
      * A single-line text field. Read back with `getText(key)`.
      */
+    @JvmOverloads
     fun textInput(key: String, label: Component, initial: String = "", maxLength: Int = 64): DialogInput =
         DialogInput.text(key, label).initial(initial).maxLength(maxLength).build()
 
     /**
      * A checkbox. Read back with `getBoolean(key)`.
      */
+    @JvmOverloads
     fun boolInput(key: String, label: Component, initial: Boolean = false): DialogInput =
         DialogInput.bool(key, label).initial(initial).build()
 
@@ -220,7 +226,11 @@ object Dialogs {
     /**
      * One entry of an [optionInput] dropdown.
      */
-    data class Option(val id: String, val display: Component, val selected: Boolean = false)
+    data class Option @JvmOverloads constructor(
+        val id: String,
+        val display: Component,
+        val selected: Boolean = false,
+    )
 
     /**
      * Build a dialog, show it, and suspend until exactly one outcome fires.

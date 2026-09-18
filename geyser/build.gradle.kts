@@ -1,6 +1,7 @@
 plugins {
     id("cryon.kotlin")
     id("com.gradleup.shadow")
+    id("cryon.publish-shaded")
 }
 
 repositories {
@@ -8,6 +9,10 @@ repositories {
 }
 
 dependencies {
+    // Keeps the shipped config.yml and the declared ConfigKeys agreeing; see PaperConfigDriftTest.
+    testImplementation(kotlin("test"))
+    testImplementation(libs.snakeyaml)
+
     compileOnly(libs.geyser.api)
     compileOnly(libs.slf4j)
     compileOnly(libs.bundles.adventure)
@@ -29,6 +34,10 @@ tasks {
     }
 
     shadowJar {
+        // Named for the extensions folder it lands in, not for the Gradle module it came from.
+        archiveBaseName.set("Cryon-Geyser")
+        archiveClassifier.set("")
+
         relocate("org.yaml.snakeyaml", "com.tricrotism.cryon.geyser.libs.snakeyaml")
     }
 

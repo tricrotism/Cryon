@@ -126,10 +126,10 @@ Rebuild the plugin jars and recopy them (world data and configs are preserved):
 ```powershell
 cd D:\git\tricrotism\Cryon
 .\gradlew :paper:shadowJar :velocity:shadowJar :geyser:shadowJar
-Copy-Item paper\build\libs\paper-1.0-SNAPSHOT-all.jar   test-network\paper1\plugins\paper-1.0-SNAPSHOT-all.jar -Force
-Copy-Item paper\build\libs\paper-1.0-SNAPSHOT-all.jar   test-network\paper2\plugins\paper-1.0-SNAPSHOT-all.jar -Force
-Copy-Item velocity\build\libs\velocity-1.0-SNAPSHOT-all.jar test-network\velocity\plugins\cryon-velocity.jar -Force
-Copy-Item geyser\build\libs\geyser-1.0-SNAPSHOT-all.jar     test-network\geyser\extensions\cryon-geyser.jar -Force
+Copy-Item paper\build\libs\Cryon-Paper-1.0-SNAPSHOT.jar     test-network\paper1\plugins\Cryon-Paper-1.0-SNAPSHOT.jar -Force
+Copy-Item paper\build\libs\Cryon-Paper-1.0-SNAPSHOT.jar     test-network\paper2\plugins\Cryon-Paper-1.0-SNAPSHOT.jar -Force
+Copy-Item velocity\build\libs\Cryon-Velocity-1.0-SNAPSHOT.jar test-network\velocity\plugins\cryon-velocity.jar -Force
+Copy-Item geyser\build\libs\Cryon-Geyser-1.0-SNAPSHOT.jar     test-network\geyser\extensions\cryon-geyser.jar -Force
 ```
 
 Paper picks a replaced module jar up live and Velocity needs a proxy restart, but the Geyser extension needs **Geyser
@@ -137,7 +137,7 @@ restarted**: it scans `extensions/` once at startup, and nothing here has been t
 `cryon-geyser` window and run `.\start-geyser.ps1`
 again. Nothing else has to come down with it.
 
-**Keep the deployed filename.** The core plugin is `paper-1.0-SNAPSHOT-all.jar` in both `plugins/`
+**Keep the deployed filename.** The core plugin is `Cryon-Paper-1.0-SNAPSHOT.jar` in both `plugins/`
 folders. Copying the same build in under a second name (`Cryon.jar`) leaves two jars declaring
 `name: Cryon`, and Paper refuses both with `Ambiguous plugin name 'Cryon'`. Overwrite in place rather than adding a
 copy.

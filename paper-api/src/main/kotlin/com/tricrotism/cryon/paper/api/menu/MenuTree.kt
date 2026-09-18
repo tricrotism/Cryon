@@ -6,6 +6,7 @@ import com.tricrotism.cryon.paper.api.scheduler.Schedulers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import net.kyori.adventure.text.Component
+import org.bukkit.Bukkit
 import org.bukkit.Material
 import org.bukkit.Sound
 import org.bukkit.entity.Player
@@ -13,7 +14,9 @@ import org.bukkit.inventory.ItemStack
 import xyz.xenondevs.invui.gui.Gui
 import xyz.xenondevs.invui.item.Item
 import xyz.xenondevs.invui.window.Window
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.logging.Level
 
 /**
  * One entry in a menu tree: either a [MenuBranch] that opens another page, or a [MenuLeaf] that does
@@ -87,6 +90,11 @@ fun interface MenuContent {
 
 /**
  * A page. Its entries may themselves be branches, which is what makes the nesting unbounded.
+ *
+ * [pinned] is for the entries whose position is part of the design rather than a consequence of how
+ * many siblings they have: a switch that governs the page, a notice, a filter that applies to the
+ * list. A node in the flow moves every time the list above it grows and lands on a different page
+ * when the list is long enough to page, which is exactly what you do not want from a control.
  */
 class MenuBranch(
     override val id: String,
@@ -94,6 +102,7 @@ class MenuBranch(
     private val iconProvider: (Player) -> ItemStack,
     val content: MenuContent,
     private val visible: (Player) -> Boolean = { true },
+    val pinned: Map<Int, MenuNode> = emptyMap(),
 ) : MenuNode {
 
     /**
@@ -105,7 +114,28 @@ class MenuBranch(
         iconProvider: (Player) -> ItemStack,
         children: List<MenuNode>,
         visible: (Player) -> Boolean = { true },
-    ) : this(id, title, iconProvider, MenuContent.of(children), visible)
+        pinned: Map<Int, MenuNode> = emptyMap(),
+    ) : this(id, title, iconProvider, MenuContent.of(children), visible, pinned)
+
+    /**
+     * The slots the flow may use, which is every content slot no pinned node is sitting in.
+     *
+     * Held rather than derived per draw because it also sets the page size: a page that pinned two of
+     * its content slots shows two fewer entries, and the paging arrows have to agree with that or the
+     * last entries of a list become unreachable.
+     */
+    internal val contentSlots: IntArray =
+        if (pinned.isEmpty()) MenuTree.CONTENT_SLOTS
+        else MenuTree.CONTENT_SLOTS.filter { it !in pinned }.toIntArray()
+
+    init {
+        pinned.keys.firstOrNull { it !in 0 until MenuTree.SLOT_COUNT || it in MenuTree.RESERVED_SLOTS }?.let {
+            throw IllegalArgumentException(
+                "Menu '$id' pins slot $it, which is out of range or one of the navigation slots " +
+                        "${MenuTree.RESERVED_SLOTS.sorted()}"
+            )
+        }
+    }
 
     override fun icon(viewer: Player): ItemStack = iconProvider(viewer)
     override fun visibleTo(viewer: Player): Boolean = visible(viewer)
@@ -140,13 +170,18 @@ fun branch(
     name: Component = title,
     visible: (Player) -> Boolean = { true },
     children: MenuChildren.() -> Unit,
-): MenuBranch = MenuBranch(
-    id,
-    title,
-    { icon.toItem().name(name).build() },
-    MenuChildren().apply(children).build(),
-    visible,
-)
+): MenuBranch {
+    val declared = MenuChildren().apply(children)
+
+    return MenuBranch(
+        id,
+        title,
+        { icon.toItem().name(name).build() },
+        declared.build(),
+        visible,
+        declared.pinned(),
+    )
+}
 
 /**
  * Collects the children of a [branch]. Order is the order they were declared in.
@@ -154,9 +189,26 @@ fun branch(
 class MenuChildren internal constructor() {
 
     private val nodes = ArrayList<MenuNode>()
+    private val pins = HashMap<Int, MenuNode>()
 
     fun add(node: MenuNode) {
         nodes += node
+    }
+
+    /**
+     * Place [node] at a fixed inventory slot instead of in the flow, as [MenuBranch.pinned] describes.
+     *
+     * The slot is a raw index into the window, so anything outside the content area is fair game and
+     * the border is the usual home for a control. The navigation slots are not: pinning one is refused
+     * when the branch is built.
+     */
+    fun pin(slot: Int, node: MenuNode) {
+        // a map would take the second quietly and the first control would simply not be there
+        pins[slot]?.let {
+            throw IllegalArgumentException("Slot $slot is pinned by both '${it.id}' and '${node.id}'")
+        }
+
+        pins[slot] = node
     }
 
     fun branch(
@@ -176,8 +228,9 @@ class MenuChildren internal constructor() {
         name: Component,
         lore: List<Component> = emptyList(),
         visible: (Player) -> Boolean = { true },
+        slot: Int? = null,
         onClick: (Player) -> Unit,
-    ) = add(MenuLeaf(id, { icon.toItem().name(name).lore(lore).build() }, visible, onClick))
+    ) = place(slot, MenuLeaf(id, { icon.toItem().name(name).lore(lore).build() }, visible, onClick))
 
     /**
      * For a leaf whose icon depends on the viewer or on live state.
@@ -186,10 +239,16 @@ class MenuChildren internal constructor() {
         id: String,
         icon: (Player) -> ItemStack,
         visible: (Player) -> Boolean = { true },
+        slot: Int? = null,
         onClick: (Player) -> Unit,
-    ) = add(MenuLeaf(id, icon, visible, onClick))
+    ) = place(slot, MenuLeaf(id, icon, visible, onClick))
+
+    private fun place(slot: Int?, leaf: MenuLeaf) {
+        if (slot == null) add(leaf) else pin(slot, leaf)
+    }
 
     internal fun build(): List<MenuNode> = nodes.toList()
+    internal fun pinned(): Map<Int, MenuNode> = pins.toMap()
 }
 
 /**
@@ -242,10 +301,28 @@ object MenuTree {
     // Content is placed by index after the page is built rather than bound to the `x` character:
     // binding an ingredient maps *every* occurrence of that character to the same item, so a loop
     // over the children would leave twenty-eight copies of whichever one bound last
-    private val CONTENT_SLOTS: IntArray =
+    internal val CONTENT_SLOTS: IntArray =
         (1..4).flatMap { row -> (1..7).map { column -> row * 9 + column } }.toIntArray()
 
-    private val PAGE_SIZE = CONTENT_SLOTS.size
+    // The structure with its spacing removed, one character per slot, which is how both of the
+    // tables below read positions off it rather than repeating the layout as numbers
+    private val KEYS: String = STRUCTURE.joinToString("") { row -> row.filterNot(Char::isWhitespace) }
+
+    /**
+     * How many slots a page has, so a caller taking a slot from an operator can bound the value it
+     * accepts rather than hardcoding the window size.
+     */
+    val SLOT_COUNT: Int = KEYS.length
+
+    /**
+     * The paging and back slots, which [MenuBranch] refuses to pin over.
+     *
+     * Public because the caller taking a slot from a config file is the one that can do something
+     * sensible about a bad one: fall back to its own default and carry on, where the branch can only
+     * refuse to build. Replacing a navigation button would stand the viewer on the page for good.
+     */
+    val RESERVED_SLOTS: Set<Int> =
+        KEYS.indices.filterTo(HashSet()) { KEYS[it] == '<' || KEYS[it] == '>' || KEYS[it] == 'b' }
 
     /**
      * Open [root] for [player]. Safe from any thread; the window itself is built on their own
@@ -255,6 +332,37 @@ object MenuTree {
         val session = Session(player, scope)
         session.navigate(root, page = 0, pushPath = true)
         return session
+    }
+
+    // Copy-on-write: read on every page draw and every click, written twice in a server's life
+    private val observers = CopyOnWriteArrayList<MenuObserver>()
+
+    /**
+     * Watches every menu in every feature. Nothing in the core consumes this; it exists so one
+     * registration covers screens the observer has never heard of. A server with nothing registered
+     * pays one field read per draw and per click.
+     *
+     * @return the handle that stops it
+     */
+    fun observe(observer: MenuObserver): AutoCloseable {
+        observers += observer
+        return AutoCloseable { observers -= observer }
+    }
+
+    /**
+     * An observer that throws is a bug in the observer, and must not cost the player their menu, so it
+     * is caught and the remaining observers still run. [what] names the hook for the log line.
+     */
+    private inline fun fire(what: String, block: (MenuObserver) -> Unit) {
+        if (observers.isEmpty()) return
+
+        observers.forEach { observer ->
+            try {
+                block(observer)
+            } catch (e: Exception) {
+                Bukkit.getLogger().log(Level.WARNING, "Menu observer failed on $what", e)
+            }
+        }
     }
 
     /**
@@ -275,11 +383,36 @@ object MenuTree {
 
         @Volatile
         private var window: Window? = null
+        // the page last drawn, so a refresh redraws that one rather than starting the branch over
+        @Volatile
+        private var shownPage = 0
 
         // Set while a navigation is replacing the window, so the close handler ignores that close
         private val navigating = AtomicBoolean(false)
 
         private val closed = AtomicBoolean(false)
+
+        /**
+         * Redraw the page the viewer is on, leaving their place in the tree alone.
+         *
+         * For the click that changes what its own page says: a settings toggle, a purchase that moves
+         * a balance. Re-opening the tree instead is correct but costs the player their position every
+         * time they change one of several things on the same page, and a menu that throws you back to
+         * the front on every click is the thing players complain about.
+         *
+         * The path is untouched, so back still goes where it went before, and so is the page number,
+         * so a toggle on page three stays on page three. Safe from any thread. A no-op on a closed
+         * session, and on one whose window has not been drawn yet.
+         */
+        fun refresh() {
+            if (closed.get()) return
+
+            scope.launch(CryonDispatchers.entity(player)) {
+                val current = path.lastOrNull() ?: return@launch
+
+                show(current, shownPage, pushPath = false)
+            }
+        }
 
         /**
          * Draw [branch] on the viewer's own thread, resolving the page as it goes.
@@ -298,11 +431,15 @@ object MenuTree {
             if (pushPath) path.addLast(branch)
 
             val current = page.coerceAtLeast(0)
-            val fetched = branch.content.page(player, current * PAGE_SIZE, PAGE_SIZE + 1)
-            val hasNext = fetched.size > PAGE_SIZE
-            val shown = if (hasNext) fetched.subList(0, PAGE_SIZE) else fetched
+            val slots = branch.contentSlots
+            val size = slots.size
+            val fetched = branch.content.page(player, current * size, size + 1)
+            val hasNext = fetched.size > size
+            val shown = if (hasNext) fetched.subList(0, size) else fetched
 
             if (shown.isEmpty() && current > 0) return show(branch, current - 1, pushPath = false)
+
+            shownPage = current
 
             val gui = Gui.builder()
                 .setStructure(*STRUCTURE)
@@ -313,7 +450,15 @@ object MenuTree {
                 .addIngredient('x', empty())
                 .build()
 
-            shown.forEachIndexed { index, node -> gui.setItem(CONTENT_SLOTS[index], nodeItem(node)) }
+            val breadcrumb = breadcrumb()
+            shown.forEachIndexed { index, node ->
+                gui.setItem(slots[index], nodeItem(breadcrumb, node))
+            }
+
+            // after the flow, so a pinned control is never the thing a long list paints over
+            for ((slot, node) in branch.pinned) {
+                if (node.visibleTo(player)) gui.setItem(slot, nodeItem(breadcrumb, node))
+            }
 
             val previous = window
             navigating.set(true)
@@ -328,11 +473,25 @@ object MenuTree {
             previous?.close()
             navigating.set(false)
             if (closed.get()) opened.close()
+
+            // After open(), not before: this reports what the player was actually shown, and the early
+            // returns above are pages that were resolved and then abandoned
+            fire("open") { it.opened(player.uniqueId, breadcrumb, current) }
         }
 
-        private fun nodeItem(node: MenuNode): Item = Item.builder()
+        /**
+         * Built from the walked path rather than from the branch alone because [MenuNode.id] is only
+         * unique within its parent, so two unrelated pages both named `page` would otherwise be one row
+         * wherever these are counted.
+         *
+         * @return the path of node ids to the page being drawn, `shop/blocks`
+         */
+        private fun breadcrumb(): String = path.joinToString("/") { it.id }
+
+        private fun nodeItem(menu: String, node: MenuNode): Item = Item.builder()
             .setItemProvider(node.icon(player))
             .addClickHandler { _ ->
+                fire("click") { it.clicked(player.uniqueId, menu, node.id) }
                 when (node) {
                     is MenuBranch -> {
                         player.playSound(player.location, Sound.UI_BUTTON_CLICK, 0.6f, 1.4f)
